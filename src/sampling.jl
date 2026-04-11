@@ -5,34 +5,31 @@ using ForwardDiff
 using LogDensityProblems
 using LogDensityProblemsAD
 
-const DEFAULT_PARAMETER_ORDER = (:H0, :Omega_m, :chi0, :chin, :gamma, :kappa, :z_peak)
-
 struct ASGWBLogDensity{
     C<:ImportanceSamplingProblem,
-    P<:AbstractDict{<:AbstractString,<:Distribution},
     D,
     B,
     N<:Tuple,
 }
     problem::C
-    priors::P
+    priors::InferencePriors
     prior_distribution::D
     transform::B
     parameter_order::N
 end
 
 function build_prior_distribution(
-    priors::AbstractDict{<:AbstractString,<:Distribution},
+    priors::InferencePriors,
     parameter_order::Tuple=DEFAULT_PARAMETER_ORDER,
 )
     return product_distribution((;
-        (name => priors[String(name)] for name in parameter_order)...
+        (name => getfield(priors, name) for name in parameter_order)...
     ))
 end
 
 function ASGWBLogDensity(
     problem::ImportanceSamplingProblem,
-    priors::AbstractDict{<:AbstractString,<:Distribution};
+    priors::InferencePriors;
     parameter_order::Tuple=DEFAULT_PARAMETER_ORDER,
 )
     prior_distribution = build_prior_distribution(priors, parameter_order)
@@ -47,12 +44,12 @@ function ASGWBLogDensity(
 end
 
 function constrained_parameters(ld::ASGWBLogDensity, z::AbstractVector{<:Real})
-    theta, logabsdet = with_logabsdet_jacobian(inverse(ld.transform), z)
-    return theta, logabsdet
+    theta_nt, logabsdet = with_logabsdet_jacobian(inverse(ld.transform), z)
+    return theta_nt, logabsdet
 end
 
-function unconstrained_initial_point(ld::ASGWBLogDensity, theta::NamedTuple)
-    return collect(Bijectors.link(ld.prior_distribution, theta))
+function unconstrained_initial_point(ld::ASGWBLogDensity, theta0::HyperParameters)
+    return collect(Bijectors.link(ld.prior_distribution, as_flat_constrained(theta0)))
 end
 
 LogDensityProblems.dimension(ld::ASGWBLogDensity) = length(ld.parameter_order)
@@ -63,8 +60,9 @@ function LogDensityProblems.logdensity(
     ld::ASGWBLogDensity,
     z::AbstractVector{<:Real},
 )
-    theta, logabsdet = constrained_parameters(ld, z)
-    return logposterior(theta, ld.problem, ld.priors) + logabsdet
+    theta_nt, logabsdet = constrained_parameters(ld, z)
+    h = HyperParameters(theta_nt)
+    return logposterior(h, ld.problem, ld.priors) + logabsdet
 end
 
 function ad_logdensity(ld::ASGWBLogDensity)
@@ -87,8 +85,8 @@ end
 
 function sample_with_advancedhmc(
     problem::ImportanceSamplingProblem,
-    priors::AbstractDict{<:AbstractString,<:Distribution},
-    theta0::NamedTuple;
+    priors::InferencePriors,
+    theta0::HyperParameters;
     n_adapts::Int=25,
     n_samples::Int=25,
     target_acceptance::Float64=0.8,
@@ -121,8 +119,8 @@ function sample_with_advancedhmc(
     )
 
     samples_constrained = map(samples_unconstrained) do z
-        theta, _ = constrained_parameters(ld, z)
-        theta
+        theta_nt, _ = constrained_parameters(ld, z)
+        HyperParameters(theta_nt)
     end
 
     return samples_constrained, stats, ld

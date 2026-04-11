@@ -9,10 +9,10 @@ using Test
 
     h5open(fixture_path, "r") do file
         group = file["posterior_case"]
-        theta = (; (
+        theta = HyperParameters((; (
             Symbol(name) => Float64(read(group["theta/$(name)"])) for
             name in ("H0", "Omega_m", "chi0", "chin", "gamma", "kappa", "z_peak")
-        )...)
+        )...,))
         expected_dgw_theta_sq = vec(Float64.(read(group["dgw_theta_sq"])))
         expected_weights = vec(Float64.(read(group["weights"])))
         expected_spectral_density = vec(Float64.(read(group["spectral_density_full"])))

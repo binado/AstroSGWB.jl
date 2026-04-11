@@ -8,13 +8,31 @@ const BNS_SPIN_A_MAX = 0.99
 function build_uniform_priors(
     bounds::AbstractDict{<:AbstractString,<:Tuple{<:Real,<:Real}},
 )
-    return Dict{String,Distribution}(
-        String(name) => Uniform(Float64(low), Float64(high)) for (name, (low, high)) in bounds
+    return InferencePriors(
+        Uniform(Float64(bounds["H0"][1]), Float64(bounds["H0"][2])),
+        Uniform(Float64(bounds["Omega_m"][1]), Float64(bounds["Omega_m"][2])),
+        Uniform(Float64(bounds["chi0"][1]), Float64(bounds["chi0"][2])),
+        Uniform(Float64(bounds["chin"][1]), Float64(bounds["chin"][2])),
+        Uniform(Float64(bounds["gamma"][1]), Float64(bounds["gamma"][2])),
+        Uniform(Float64(bounds["kappa"][1]), Float64(bounds["kappa"][2])),
+        Uniform(Float64(bounds["z_peak"][1]), Float64(bounds["z_peak"][2])),
     )
 end
 
-function logprior(theta, priors::AbstractDict{<:AbstractString,<:Distribution})
-    return sum(logpdf(prior, getproperty(theta, Symbol(name))) for (name, prior) in priors)
+function logprior(h::HyperParameters, priors::InferencePriors)
+    pop = h.population
+    pop isa MadauDickinsonParameters || throw(
+        ArgumentError("logprior with InferencePriors requires MadauDickinsonParameters"),
+    )
+    return (
+        logpdf(priors.H0, h.cosmological.H0) +
+        logpdf(priors.Omega_m, h.cosmological.Omega_m) +
+        logpdf(priors.chi0, h.propagation.chi0) +
+        logpdf(priors.chin, h.propagation.chin) +
+        logpdf(priors.gamma, pop.gamma) +
+        logpdf(priors.kappa, pop.kappa) +
+        logpdf(priors.z_peak, pop.z_peak)
+    )
 end
 
 function ordered_uniform_source_masses_logprob(
@@ -63,17 +81,16 @@ function bounded_uniform_logprob(
 end
 
 function bns_intrinsic_log_prob_samples(
-    problem::ImportanceSamplingProblem,
+    samples::FullBNSSamples,
     redshift_log_prob::AbstractVector{<:Real},
 )
-    samples = problem.proposal.samples
     return ordered_uniform_source_masses_logprob(
-        samples["mass_1_source"],
-        samples["mass_2_source"],
+        samples.mass_1_source,
+        samples.mass_2_source,
     ) .+
            redshift_log_prob .+
-           aligned_spin_chi_simple_logprob(samples["chi_1"]) .+
-           aligned_spin_chi_simple_logprob(samples["chi_2"]) .+
-           bounded_uniform_logprob(samples["lambda_1"]; low=0.0, high=BNS_LAMBDA_HIGH) .+
-           bounded_uniform_logprob(samples["lambda_2"]; low=0.0, high=BNS_LAMBDA_HIGH)
+           aligned_spin_chi_simple_logprob(samples.chi_1) .+
+           aligned_spin_chi_simple_logprob(samples.chi_2) .+
+           bounded_uniform_logprob(samples.lambda_1; low=0.0, high=BNS_LAMBDA_HIGH) .+
+           bounded_uniform_logprob(samples.lambda_2; low=0.0, high=BNS_LAMBDA_HIGH)
 end

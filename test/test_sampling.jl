@@ -12,10 +12,10 @@ using Test
         )
             cache = load_cache(joinpath(@__DIR__, "fixtures", cache_filename))
             group = file[group_name]
-            theta0 = (; (
+            theta0 = HyperParameters((; (
                 Symbol(name) => Float64(read(group["theta/$(name)"])) for
                 name in ("H0", "Omega_m", "chi0", "chin", "gamma", "kappa", "z_peak")
-            )...)
+            )...,))
             prior_bounds = Dict(
                 name => (
                     Float64(read(group["prior_bounds/$(name)/low"])),
@@ -47,8 +47,9 @@ using Test
             @test length(stats) == 3
 
             for sample in samples
+                flat = as_flat_constrained(sample)
                 for (name, (low, high)) in prior_bounds
-                    value = getproperty(sample, Symbol(name))
+                    value = getproperty(flat, Symbol(name))
                     @test isfinite(value)
                     @test low <= value <= high
                 end

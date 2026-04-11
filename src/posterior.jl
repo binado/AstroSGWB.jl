@@ -1,5 +1,5 @@
-function target_log_prob_samples(theta, problem::ImportanceSamplingProblem)
-    bundle = build_redshift_grid_bundle(theta, problem.redshift_prior_spec)
+function target_log_prob_samples(h::HyperParameters, problem::ImportanceSamplingProblem)
+    bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec)
     redshift_log_prob = log_prob_from_bundle.(redshift(problem), Ref(bundle))
     intrinsic_log_prob = _intrinsic_log_prob(problem.strategy, problem, redshift_log_prob)
     return intrinsic_log_prob, bundle
@@ -14,16 +14,16 @@ end
 function _intrinsic_log_prob(
     ::FullBNS, problem::ImportanceSamplingProblem, redshift_log_prob::AbstractVector{<:Real},
 )
-    return bns_intrinsic_log_prob_samples(problem, redshift_log_prob)
+    return bns_intrinsic_log_prob_samples(problem.proposal.samples, redshift_log_prob)
 end
 
-function evaluate_importance_terms(theta, problem::ImportanceSamplingProblem)
+function evaluate_importance_terms(h::HyperParameters, problem::ImportanceSamplingProblem)
     z = redshift(problem)
-    d_l = luminosity_distance.(z, theta.H0, theta.Omega_m)
-    dgw_theta = gravitational_wave_distance.(z, d_l, theta.chi0, theta.chin)
+    d_l = luminosity_distance.(z, h.cosmological.H0, h.cosmological.Omega_m)
+    dgw_theta = gravitational_wave_distance.(z, d_l, h.propagation.chi0, h.propagation.chin)
     dgw_theta_sq = dgw_theta .^ 2
 
-    target_log_prob, redshift_bundle = target_log_prob_samples(theta, problem)
+    target_log_prob, redshift_bundle = target_log_prob_samples(h, problem)
     log_ratio = target_log_prob .- problem.proposal.log_prob
     weights = importance_weights(log_ratio, problem.proposal.dgw_fid_sq, dgw_theta_sq)
 
@@ -55,11 +55,11 @@ function evaluate_importance_terms(theta, problem::ImportanceSamplingProblem)
 end
 
 function loglikelihood(
-    theta,
+    h::HyperParameters,
     problem::ImportanceSamplingProblem;
     observed_spectral_density::AbstractVector{<:Real}=problem.observation.fiducial_spectral_density,
 )
-    evaluation = evaluate_importance_terms(theta, problem)
+    evaluation = evaluate_importance_terms(h, problem)
     observed_in_band = observed_spectral_density[problem.observation.in_band_mask]
     residual = observed_in_band .- evaluation.spectral_density_in_band
     return -0.5 * sum(
@@ -69,13 +69,13 @@ function loglikelihood(
 end
 
 function logposterior(
-    theta,
+    h::HyperParameters,
     problem::ImportanceSamplingProblem,
-    priors::AbstractDict{<:AbstractString,<:Distribution};
+    priors::InferencePriors;
     observed_spectral_density::AbstractVector{<:Real}=problem.observation.fiducial_spectral_density,
 )
-    return logprior(theta, priors) + loglikelihood(
-        theta,
+    return logprior(h, priors) + loglikelihood(
+        h,
         problem;
         observed_spectral_density=observed_spectral_density,
     )

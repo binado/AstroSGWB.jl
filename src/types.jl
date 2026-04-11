@@ -40,15 +40,6 @@ struct RedshiftOnly <: IntrinsicPriorStrategy end
 """Full binary neutron star intrinsic variables in proposal samples."""
 struct FullBNS <: IntrinsicPriorStrategy end
 
-struct ProposalData
-    intrinsic_site_order::Vector{String}
-    samples::Dict{String,Vector{Float64}}
-    log_prob::Vector{Float64}
-    intrinsic_vector::Matrix{Float64}
-    cached_flux_over_dgw2::Matrix{Float64}
-    dgw_fid_sq::Vector{Float64}
-end
-
 """
     ObservationConfig
 
@@ -90,38 +81,17 @@ function ObservationConfig(
 end
 
 """
-    HyperParameters
+    ProposalFiducialParameters
 
-Cosmology / propagation hyperparameters stored with an importance cache (proposal
-reference values). Keys in HDF5 must match the field names exactly with no extras.
+Fiducial cosmology and propagation scalars stored in the HDF5 `hyperparameters`
+group with the importance cache (not the live MCMC state).
 """
-Base.@kwdef struct HyperParameters
+Base.@kwdef struct ProposalFiducialParameters
     H0::Float64
     Omega_m::Float64
     chi0::Float64
     chin::Float64
 end
-
-"""
-    ImportanceSamplingProblem
-
-In-memory importance-sampling context: proposal draws, observation configuration,
-redshift prior spec, scalar metadata, and [`HyperParameters`](@ref).
-
-Construct via [`importance_sampling_problem`](@ref) or load from disk with
-[`load_cache`](@ref).
-"""
-struct ImportanceSamplingProblem{S<:IntrinsicPriorStrategy}
-    proposal::ProposalData
-    observation::ObservationConfig
-    redshift_prior_spec::RedshiftPriorSpec
-    local_merger_rate::Float64
-    redshift_integral_fiducial::Float64
-    hyperparameters::HyperParameters
-    strategy::S
-end
-
-redshift(problem::ImportanceSamplingProblem) = problem.proposal.samples["redshift"]
 
 const FULL_BNS_INTRINSIC_ORDER = [
     "mass_1_source", "mass_2_source", "redshift",
@@ -141,43 +111,3 @@ function resolve_intrinsic_strategy(intrinsic_site_order::Vector{String})::Intri
         )
     end
 end
-
-"""
-    importance_sampling_problem(
-        proposal::ProposalData,
-        observation::ObservationConfig,
-        redshift_prior_spec::RedshiftPriorSpec,
-        local_merger_rate::Real,
-        redshift_integral_fiducial::Real,
-        hyperparameters::HyperParameters,
-    ) -> ImportanceSamplingProblem
-
-Canonical in-memory constructor. Chooses [`IntrinsicPriorStrategy`](@ref) from
-`proposal.intrinsic_site_order` and validates consistency.
-"""
-function importance_sampling_problem(
-    proposal::ProposalData,
-    observation::ObservationConfig,
-    redshift_prior_spec::RedshiftPriorSpec,
-    local_merger_rate::Real,
-    redshift_integral_fiducial::Real,
-    hyperparameters::HyperParameters,
-)
-    strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
-    return ImportanceSamplingProblem(
-        proposal,
-        observation,
-        redshift_prior_spec,
-        Float64(local_merger_rate),
-        Float64(redshift_integral_fiducial),
-        hyperparameters,
-        strategy,
-    )::ImportanceSamplingProblem{typeof(strategy)}
-end
-
-"""
-    ImportanceCache
-
-Deprecated alias for [`ImportanceSamplingProblem`](@ref); use `ImportanceSamplingProblem` in new code.
-"""
-const ImportanceCache = ImportanceSamplingProblem

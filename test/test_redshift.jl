@@ -6,12 +6,12 @@ using Test
 
     h5open(fixture_path, "r") do file
         group = file["redshift_case"]
-        theta = (
-            H0 = Float64(read(group["theta/H0"])),
-            Omega_m = Float64(read(group["theta/Omega_m"])),
-            gamma = Float64(read(group["theta/gamma"])),
-            kappa = Float64(read(group["theta/kappa"])),
-            z_peak = Float64(read(group["theta/z_peak"])),
+        theta = HyperParameters(;
+            H0=Float64(read(group["theta/H0"])),
+            Omega_m=Float64(read(group["theta/Omega_m"])),
+            gamma=Float64(read(group["theta/gamma"])),
+            kappa=Float64(read(group["theta/kappa"])),
+            z_peak=Float64(read(group["theta/z_peak"])),
         )
         spec = RedshiftPriorSpec(
             parse_redshift_prior_family(String(read(group["spec/family"]))),

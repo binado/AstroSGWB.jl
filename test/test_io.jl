@@ -7,7 +7,7 @@ using Test
     sgwb_scale = [1 / sqrt(63115200.0), 1 / sqrt(63115200.0)]
     proposal = ProposalData(
         ["redshift"],
-        Dict("redshift" => [0.1, 0.2]),
+        RedshiftOnlySamples([0.1, 0.2]),
         [0.0, 0.0],
         reshape([0.1, 0.2], :, 1),
         [1.0 2.0; 1.5 2.5],
@@ -23,18 +23,18 @@ using Test
         1.0,
     )
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 1024, nothing)
-    hyper = HyperParameters(; H0=67.0, Omega_m=0.315, chi0=1.0, chin=0.0)
+    fid = ProposalFiducialParameters(; H0=67.0, Omega_m=0.315, chi0=1.0, chin=0.0)
     from_memory = importance_sampling_problem(
         proposal,
         observation,
         spec,
         161.0,
         1.0,
-        hyper,
+        fid,
     )
 
     @test from_memory.proposal.intrinsic_site_order == from_file.proposal.intrinsic_site_order
-    @test from_memory.proposal.samples == from_file.proposal.samples
+    @test from_memory.proposal.samples.redshift == from_file.proposal.samples.redshift
     @test from_memory.proposal.log_prob ≈ from_file.proposal.log_prob
     @test from_memory.proposal.intrinsic_vector ≈ from_file.proposal.intrinsic_vector
     @test from_memory.proposal.cached_flux_over_dgw2 ≈ from_file.proposal.cached_flux_over_dgw2
@@ -53,10 +53,10 @@ using Test
     @test from_memory.redshift_prior_spec.num_interp == from_file.redshift_prior_spec.num_interp
     @test from_memory.redshift_prior_spec.time_delay_model ===
         from_file.redshift_prior_spec.time_delay_model
-    @test from_memory.hyperparameters.H0 == from_file.hyperparameters.H0
-    @test from_memory.hyperparameters.Omega_m == from_file.hyperparameters.Omega_m
-    @test from_memory.hyperparameters.chi0 == from_file.hyperparameters.chi0
-    @test from_memory.hyperparameters.chin == from_file.hyperparameters.chin
+    @test from_memory.fiducial_parameters.H0 == from_file.fiducial_parameters.H0
+    @test from_memory.fiducial_parameters.Omega_m == from_file.fiducial_parameters.Omega_m
+    @test from_memory.fiducial_parameters.chi0 == from_file.fiducial_parameters.chi0
+    @test from_memory.fiducial_parameters.chin == from_file.fiducial_parameters.chin
     @test from_memory.local_merger_rate == from_file.local_merger_rate
     @test from_memory.redshift_integral_fiducial == from_file.redshift_integral_fiducial
     @test typeof(from_memory.strategy) == typeof(from_file.strategy)
@@ -67,7 +67,7 @@ end
     problem = load_cache(fixture_path)
 
     @test problem.proposal.intrinsic_site_order == ["redshift"]
-    @test problem.proposal.samples["redshift"] ≈ [0.1, 0.2]
+    @test problem.proposal.samples.redshift ≈ [0.1, 0.2]
     @test problem.proposal.log_prob ≈ [0.0, 0.0]
     @test problem.proposal.intrinsic_vector ≈ reshape([0.1, 0.2], :, 1)
     @test problem.proposal.cached_flux_over_dgw2 ≈ [1.0 2.0; 1.5 2.5]
@@ -79,10 +79,10 @@ end
     @test problem.observation.fiducial_spectral_density ≈ [0.0, 0.0]
     @test problem.observation.sgwb_scale_in_band ≈ problem.observation.sgwb_scale
     @test problem.observation.fiducial_spectral_density_in_band ≈ [0.0, 0.0]
-    @test problem.hyperparameters.H0 == 67.0
-    @test problem.hyperparameters.Omega_m == 0.315
-    @test problem.hyperparameters.chi0 == 1.0
-    @test problem.hyperparameters.chin == 0.0
+    @test problem.fiducial_parameters.H0 == 67.0
+    @test problem.fiducial_parameters.Omega_m == 0.315
+    @test problem.fiducial_parameters.chi0 == 1.0
+    @test problem.fiducial_parameters.chin == 0.0
     @test problem.redshift_prior_spec.family == MadauDickinson
     @test problem.redshift_prior_spec.z_min == 0.001
     @test problem.redshift_prior_spec.z_max == 20.0

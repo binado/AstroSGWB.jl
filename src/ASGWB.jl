@@ -5,11 +5,14 @@ Astrophysical stochastic gravitational-wave background modeling: importance
 caches, redshift grids, likelihoods, and sampling (AdvancedHMC and Turing).
 
 Use [`importance_sampling_problem`](@ref) to build problems in memory, or
-[`load_cache`](@ref) to read the Julia HDF5 cache format.
+[`load_cache`](@ref) to read the Julia HDF5 cache format. Inference state is a nested
+[`HyperParameters`](@ref); caches carry [`ProposalFiducialParameters`](@ref) in
+`fiducial_parameters` (HDF5 group `hyperparameters`).
 """
 module ASGWB
 
 include("types.jl")
+include("inference_types.jl")
 include("io.jl")
 include("cosmology.jl")
 include("redshift.jl")
@@ -27,6 +30,18 @@ export ImportanceSamplingProblem, ImportanceCache,
     RedshiftPriorSpec, RedshiftPriorFamily, MadauDickinson, PowerLaw,
     parse_redshift_prior_family,
     HyperParameters,
+    CosmologicalParameters,
+    ModifiedPropagationParameters,
+    PopulationParameters,
+    MadauDickinsonParameters,
+    PowerLawRedshiftParameters,
+    InferencePriors,
+    ProposalFiducialParameters,
+    ProposalSampleBundle,
+    RedshiftOnlySamples,
+    FullBNSSamples,
+    as_flat_constrained,
+    validate_redshift_spec_population,
     RedshiftGridBundle,
     IntrinsicPriorStrategy, RedshiftOnly, FullBNS,
     ASGWBLogDensity, redshift

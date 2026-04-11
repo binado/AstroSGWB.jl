@@ -61,23 +61,56 @@ function _read_redshift_prior_spec(group)::RedshiftPriorSpec
     )
 end
 
-const _CACHE_HYPERPARAMETER_KEYS = ("H0", "Omega_m", "chi0", "chin")
+const _CACHE_FIDUCIAL_KEYS = ("H0", "Omega_m", "chi0", "chin")
 
-function _read_hyperparameters(group::HDF5.Group)::HyperParameters
-    for k in _CACHE_HYPERPARAMETER_KEYS
+function _read_proposal_fiducial_parameters(group::HDF5.Group)::ProposalFiducialParameters
+    for k in _CACHE_FIDUCIAL_KEYS
         haskey(group, k) || throw(ArgumentError("missing hyperparameter $(k)"))
     end
     for k in keys(group)
         kn = String(k)
-        kn in _CACHE_HYPERPARAMETER_KEYS ||
+        kn in _CACHE_FIDUCIAL_KEYS ||
             throw(ArgumentError("unknown hyperparameter $(kn)"))
     end
-    return HyperParameters(;
+    return ProposalFiducialParameters(;
         H0=_read_float_scalar_dataset(group, "H0"),
         Omega_m=_read_float_scalar_dataset(group, "Omega_m"),
         chi0=_read_float_scalar_dataset(group, "chi0"),
         chin=_read_float_scalar_dataset(group, "chin"),
     )
+end
+
+function bundle_from_hdf5(
+    intrinsic_site_order::Vector{String},
+    proposal_samples::Dict{String,Vector{Float64}},
+)::ProposalSampleBundle
+    if intrinsic_site_order == ["redshift"]
+        haskey(proposal_samples, "redshift") || throw(
+            ArgumentError("proposal_samples must include a redshift entry"),
+        )
+        return RedshiftOnlySamples(copy(proposal_samples["redshift"]))
+    elseif intrinsic_site_order == FULL_BNS_INTRINSIC_ORDER
+        for key in FULL_BNS_INTRINSIC_ORDER
+            haskey(proposal_samples, key) || throw(
+                ArgumentError("proposal_samples must include $(key) for full BNS layout"),
+            )
+        end
+        return FullBNSSamples(
+            copy(proposal_samples["mass_1_source"]),
+            copy(proposal_samples["mass_2_source"]),
+            copy(proposal_samples["redshift"]),
+            copy(proposal_samples["chi_1"]),
+            copy(proposal_samples["chi_2"]),
+            copy(proposal_samples["lambda_1"]),
+            copy(proposal_samples["lambda_2"]),
+        )
+    else
+        throw(
+            ArgumentError(
+                "unsupported intrinsic_site_order $(intrinsic_site_order); supported layouts are redshift-only and the full BNS intrinsic prior",
+            ),
+        )
+    end
 end
 
 """
@@ -143,7 +176,9 @@ function load_cache(path::AbstractString)::ImportanceSamplingProblem
             )
         end
 
-        hyperparameters = _read_hyperparameters(_require_child(file, "hyperparameters"))
+        fiducial_parameters = _read_proposal_fiducial_parameters(
+            _require_child(file, "hyperparameters"),
+        )
 
         redshift_prior_spec = _read_redshift_prior_spec(file)
 
@@ -196,9 +231,11 @@ function load_cache(path::AbstractString)::ImportanceSamplingProblem
             ArgumentError("proposal_samples must include a redshift entry"),
         )
 
+        samples_bundle = bundle_from_hdf5(intrinsic_site_order, proposal_samples)
+
         proposal = ProposalData(
             intrinsic_site_order,
-            proposal_samples,
+            samples_bundle,
             proposal_log_prob,
             proposal_intrinsic_vector,
             cached_flux_over_dgw2,
@@ -221,7 +258,7 @@ function load_cache(path::AbstractString)::ImportanceSamplingProblem
             redshift_prior_spec,
             Float64(_read_attr(attrs, "local_merger_rate")),
             Float64(_read_attr(attrs, "redshift_integral_fiducial")),
-            hyperparameters,
+            fiducial_parameters,
         )
     end
 end

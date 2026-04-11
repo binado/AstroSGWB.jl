@@ -13,10 +13,10 @@ using Turing
             cache = load_cache(joinpath(@__DIR__, "fixtures", cache_filename))
             group = file[group_name]
 
-            theta0 = (; (
+            theta0 = HyperParameters((; (
                 Symbol(name) => Float64(read(group["theta/$(name)"])) for
                 name in ("H0", "Omega_m", "chi0", "chin", "gamma", "kappa", "z_peak")
-            )...)
+            )...,))
             prior_bounds = Dict(
                 name => (
                     Float64(read(group["prior_bounds/$(name)/low"])),
@@ -27,14 +27,15 @@ using Turing
             priors = build_uniform_priors(prior_bounds)
 
             model = build_turing_model(cache, priors)
-            @test Turing.logjoint(model, theta0) ≈ logposterior(theta0, cache, priors) rtol =
-                1e-6
+            theta_flat = as_flat_constrained(theta0)
+            @test Turing.logjoint(model, theta_flat) ≈
+                logposterior(theta0, cache, priors) rtol = 1e-6
 
             chain, sampled_model =
                 sample_with_turing(cache, priors, theta0; n_adapts=3, n_samples=3)
 
-            @test Turing.logjoint(sampled_model, theta0) ≈ Turing.logjoint(model, theta0) rtol =
-                1e-6
+            @test Turing.logjoint(sampled_model, theta_flat) ≈
+                Turing.logjoint(model, theta_flat) rtol = 1e-6
             @test size(chain, 1) == 3
 
             for (name, (low, high)) in prior_bounds

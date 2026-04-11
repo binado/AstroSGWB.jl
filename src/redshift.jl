@@ -76,25 +76,35 @@ function _build_redshift_grid(
     return z_grid, pdf_unnorm
 end
 
-function _source_frame_fn(spec::RedshiftPriorSpec, theta)
-    if spec.family == MadauDickinson
-        return z -> madau_dickinson_source_frame_distribution(
-            z; gamma=theta.gamma, kappa=theta.kappa, z_peak=theta.z_peak,
-        )
-    elseif spec.family == PowerLaw
-        return z -> power_law_source_frame_distribution(z; lamb=theta.lamb)
-    else
-        throw(ArgumentError("unsupported redshift prior family $(spec.family)"))
-    end
+function _source_frame_fn(spec::RedshiftPriorSpec, pop::MadauDickinsonParameters)
+    spec.family == MadauDickinson || throw(
+        ArgumentError("MadauDickinson population requires MadauDickinson redshift prior family"),
+    )
+    return z -> madau_dickinson_source_frame_distribution(
+        z; gamma=pop.gamma, kappa=pop.kappa, z_peak=pop.z_peak,
+    )
 end
 
-function build_redshift_grid_bundle(theta, spec::RedshiftPriorSpec)
+function _source_frame_fn(spec::RedshiftPriorSpec, pop::PowerLawRedshiftParameters)
+    spec.family == PowerLaw || throw(
+        ArgumentError("PowerLawRedshiftParameters require PowerLaw redshift prior family"),
+    )
+    return z -> power_law_source_frame_distribution(z; lamb=pop.lamb)
+end
+
+function build_redshift_grid_bundle(h::HyperParameters, spec::RedshiftPriorSpec)
     isnothing(spec.time_delay_model) || throw(
         ArgumentError("time-delay redshift models are not supported in the Julia v0 port"),
     )
-    sfn = _source_frame_fn(spec, theta)
+    validate_redshift_spec_population(spec, h.population)
+    sfn = _source_frame_fn(spec, h.population)
     z_grid, pdf_unnorm = _build_redshift_grid(
-        sfn, theta.H0, theta.Omega_m, spec.z_min, spec.z_max, spec.num_interp,
+        sfn,
+        h.cosmological.H0,
+        h.cosmological.Omega_m,
+        spec.z_min,
+        spec.z_max,
+        spec.num_interp,
     )
     return RedshiftGridBundle(z_grid, pdf_unnorm, trapezoid_integral(z_grid, pdf_unnorm))
 end

@@ -9,10 +9,10 @@ using Test
 
     h5open(fixture_path, "r") do file
         group = file["posterior_case"]
-        theta = (; (
+        theta = HyperParameters((; (
             Symbol(name) => Float64(read(group["theta/$(name)"])) for
             name in ("H0", "Omega_m", "chi0", "chin", "gamma", "kappa", "z_peak")
-        )...)
+        )...,))
         priors = build_uniform_priors(
             Dict(
                 name => (
