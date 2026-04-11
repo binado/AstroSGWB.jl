@@ -5,14 +5,21 @@ Astrophysical stochastic gravitational-wave background modeling: importance
 caches, redshift grids, likelihoods, and sampling (AdvancedHMC and Turing).
 
 Use [`importance_sampling_problem`](@ref) to build problems in memory, or
-[`load_cache`](@ref) to read the Julia HDF5 cache format. Inference state is a nested
-[`HyperParameters`](@ref); caches carry [`ProposalFiducialParameters`](@ref) in
-`fiducial_parameters` (HDF5 group `hyperparameters`).
+[`load_cache`](@ref) to read the Julia HDF5 cache format (`format_version` 1 or 2).
+For version 2 caches that omit `covariance` / `sgwb_scale`, pass `detectors=` to
+[`load_cache`](@ref) so those fields are rebuilt from [`Detector`](@ref) PSDs and ORFs.
+Inference state is a nested [`HyperParameters`](@ref); caches carry
+[`ProposalFiducialParameters`](@ref) in `fiducial_parameters` (HDF5 group `hyperparameters`).
 """
 module ASGWB
 
 include("types.jl")
 include("inference_types.jl")
+include("detector/psd.jl")
+include("detector/detector.jl")
+include("detector/overlap.jl")
+include("detector/covariance.jl")
+include("detector/observation.jl")
 include("io.jl")
 include("cosmology.jl")
 include("redshift.jl")
@@ -48,6 +55,12 @@ export ImportanceSamplingProblem, ImportanceCache,
 
 # IO
 export load_cache
+
+# Detector network (ORF / PSD covariance; optional HDF5 format v2)
+export Detector, PowerSpectralDensity, default_detector_data_dir,
+    overlap_reduction_function, pairwise_overlap_reduction_function,
+    covariance_on_grid, gaussian_bin_scale, gaussian_bin_variance,
+    frequency_bin_width, build_observation_config
 
 # Cosmology
 export E, comoving_distance, luminosity_distance,

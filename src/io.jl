@@ -2,6 +2,7 @@ using HDF5
 
 const JULIA_IMPORTANCE_CACHE_FORMAT_NAME = "asgwb.julia.importance_cache"
 const JULIA_IMPORTANCE_CACHE_FORMAT_VERSION = 1
+const JULIA_IMPORTANCE_CACHE_FORMAT_VERSION_2 = 2
 
 _as_string(value::AbstractString) = String(value)
 _as_string(value::AbstractVector{UInt8}) = String(copy(value))
@@ -114,15 +115,23 @@ function bundle_from_hdf5(
 end
 
 """
-    load_cache(path::AbstractString) -> ImportanceSamplingProblem
+    load_cache(path; detectors=nothing) -> ImportanceSamplingProblem
 
 Read a Julia-native HDF5 importance cache written with format
 `asgwb.julia.importance_cache` and return an [`ImportanceSamplingProblem`](@ref).
 
+Format version `1` stores `covariance` and `sgwb_scale` on disk. Version `2` may omit
+those datasets; in that case pass `detectors` as a vector of [`Detector`](@ref) so
+covariance and per-bin scales are rebuilt from tabulated PSDs and overlap reduction
+functions (requires at least two detectors).
+
 This is a convenience wrapper around disk I/O; equivalent in-memory problems can
 be built with [`importance_sampling_problem`](@ref).
 """
-function load_cache(path::AbstractString)::ImportanceSamplingProblem
+function load_cache(
+    path::AbstractString;
+    detectors::Union{Nothing,AbstractVector{<:Detector}}=nothing,
+)::ImportanceSamplingProblem
     return h5open(path, "r") do file
         attrs = attributes(file)
         format_name = _as_string(_read_attr(attrs, "format_name"))
@@ -133,11 +142,13 @@ function load_cache(path::AbstractString)::ImportanceSamplingProblem
         )
 
         format_version = Int(_read_attr(attrs, "format_version"))
-        format_version == JULIA_IMPORTANCE_CACHE_FORMAT_VERSION || throw(
-            ArgumentError(
-                "unsupported cache format version $(format_version), expected $(JULIA_IMPORTANCE_CACHE_FORMAT_VERSION)",
-            ),
-        )
+        if !(format_version in (JULIA_IMPORTANCE_CACHE_FORMAT_VERSION, JULIA_IMPORTANCE_CACHE_FORMAT_VERSION_2))
+            throw(
+                ArgumentError(
+                    "unsupported cache format version $(format_version), expected $(JULIA_IMPORTANCE_CACHE_FORMAT_VERSION) or $(JULIA_IMPORTANCE_CACHE_FORMAT_VERSION_2)",
+                ),
+            )
+        end
 
         intrinsic_site_order = _read_string_vector(
             _require_child(file, "intrinsic_site_order"),
@@ -159,13 +170,42 @@ function load_cache(path::AbstractString)::ImportanceSamplingProblem
             _require_child(file, "frequencies"),
             "frequencies",
         )
-        covariance = _read_float_vector(_require_child(file, "covariance"), "covariance")
-        sgwb_scale = _read_float_vector(_require_child(file, "sgwb_scale"), "sgwb_scale")
         in_band_mask = _read_bool_vector(_require_child(file, "in_band_mask"))
         fiducial_spectral_density = _read_float_vector(
             _require_child(file, "fiducial_spectral_density"),
             "fiducial_spectral_density",
         )
+
+        has_cov = haskey(file, "covariance") && haskey(file, "sgwb_scale")
+        if has_cov
+            covariance = _read_float_vector(_require_child(file, "covariance"), "covariance")
+            sgwb_scale = _read_float_vector(_require_child(file, "sgwb_scale"), "sgwb_scale")
+        else
+            format_version == JULIA_IMPORTANCE_CACHE_FORMAT_VERSION_2 || throw(
+                ArgumentError(
+                    "cache missing covariance/sgwb_scale datasets requires format_version $(JULIA_IMPORTANCE_CACHE_FORMAT_VERSION_2)",
+                ),
+            )
+            detectors === nothing && throw(
+                ArgumentError(
+                    "load_cache: covariance and sgwb_scale are absent; pass detectors=(::Vector{Detector}) to reconstruct them",
+                ),
+            )
+            isempty(detectors) && throw(ArgumentError("load_cache: detectors must be non-empty"))
+            obs_sec = Float64(_read_attr(attrs, "observation_time_sec"))
+            obs_yr = Float64(_read_attr(attrs, "observation_time_yr"))
+            det_vec = Vector{Detector}(collect(detectors))
+            observation = build_observation_config(
+                collect(Float64, frequencies),
+                det_vec,
+                in_band_mask,
+                collect(Float64, fiducial_spectral_density),
+                obs_sec,
+                obs_yr,
+            )
+            covariance = observation.covariance
+            sgwb_scale = observation.sgwb_scale
+        end
 
         proposal_samples = Dict{String,Vector{Float64}}()
         proposal_samples_group = _require_child(file, "proposal_samples")

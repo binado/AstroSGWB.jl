@@ -2,6 +2,7 @@ using Test
 using ASGWB
 
 include("test_io.jl")
+include("test_detector.jl")
 include("test_cosmology.jl")
 include("test_redshift.jl")
 include("test_importance.jl")
