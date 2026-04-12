@@ -150,6 +150,10 @@ Version `3` stores per-frequency `cached_flux` (flux before multiplying by
 `gamma`, `kappa`, `z_peak` for Madau–Dickinson or `lamb` for power-law when
 `proposal_log_prob` is absent).
 
+Any format version may omit `fiducial_spectral_density`; it is then filled using
+[`fiducial_spectral_density`](@ref), which requires the same population entries on
+`hyperparameters` as for reconstructing an omitted `proposal_log_prob`.
+
 This is a convenience wrapper around disk I/O; equivalent in-memory problems can
 be built with [`importance_sampling_problem`](@ref).
 """
@@ -193,10 +197,15 @@ function load_cache(
             "frequencies",
         )
         in_band_mask = _read_bool_vector(_require_child(file, "in_band_mask"))
-        fiducial_spectral_density = _read_float_vector(
-            _require_child(file, "fiducial_spectral_density"),
-            "fiducial_spectral_density",
-        )
+        fiducial_spectral_density_on_disk = haskey(file, "fiducial_spectral_density")
+        fiducial_spectral_density_vec = if fiducial_spectral_density_on_disk
+            _read_float_vector(
+                _require_child(file, "fiducial_spectral_density"),
+                "fiducial_spectral_density",
+            )
+        else
+            zeros(Float64, length(frequencies))
+        end
 
         has_cov = haskey(file, "covariance") && haskey(file, "sgwb_scale")
         if has_cov
@@ -221,7 +230,7 @@ function load_cache(
                 collect(Float64, frequencies),
                 det_vec,
                 in_band_mask,
-                collect(Float64, fiducial_spectral_density),
+                collect(Float64, fiducial_spectral_density_vec),
                 obs_sec,
                 obs_yr,
             )
@@ -338,7 +347,7 @@ function load_cache(
         length(in_band_mask) == n_frequencies || throw(
             ArgumentError("in_band_mask length must match frequencies length"),
         )
-        length(fiducial_spectral_density) == n_frequencies || throw(
+        length(fiducial_spectral_density_vec) == n_frequencies || throw(
             ArgumentError("fiducial_spectral_density length must match frequencies length"),
         )
 
@@ -356,12 +365,12 @@ function load_cache(
             covariance,
             sgwb_scale,
             in_band_mask,
-            fiducial_spectral_density,
+            fiducial_spectral_density_vec,
             Float64(_read_attr(attrs, "observation_time_sec")),
             Float64(_read_attr(attrs, "observation_time_yr")),
         )
 
-        return importance_sampling_problem(
+        p = importance_sampling_problem(
             proposal,
             observation,
             redshift_prior_spec,
@@ -369,5 +378,37 @@ function load_cache(
             Float64(_read_attr(attrs, "redshift_integral_fiducial")),
             fiducial_parameters,
         )
+        if !fiducial_spectral_density_on_disk
+            fs = try
+                fiducial_spectral_density(p)
+            catch err
+                throw(
+                    ArgumentError(
+                        "cache omits fiducial_spectral_density but recomputation failed; " *
+                        "ensure `hyperparameters` includes population keys for the redshift prior " *
+                        "(e.g. gamma, kappa, z_peak for Madau–Dickinson). Underlying error: " *
+                        sprint(showerror, err),
+                    ),
+                )
+            end
+            observation2 = ObservationConfig(
+                p.observation.frequencies,
+                p.observation.covariance,
+                p.observation.sgwb_scale,
+                p.observation.in_band_mask,
+                fs,
+                p.observation.observation_time_sec,
+                p.observation.observation_time_yr,
+            )
+            p = importance_sampling_problem(
+                p.proposal,
+                observation2,
+                p.redshift_prior_spec,
+                p.local_merger_rate,
+                p.redshift_integral_fiducial,
+                p.fiducial_parameters,
+            )
+        end
+        return p
     end
 end

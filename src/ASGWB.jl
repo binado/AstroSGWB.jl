@@ -10,6 +10,9 @@ For version 2 caches that omit `covariance` / `sgwb_scale`, pass `detectors=` to
 [`load_cache`](@ref) so those fields are rebuilt from [`Detector`](@ref) PSDs and ORFs.
 Version 3 stores raw per-sample `cached_flux` and may omit `proposal_log_prob` and
 `dgw_fid_sq` when fiducial population scalars are present in `hyperparameters`.
+Caches may omit `fiducial_spectral_density`; it is then filled from the fiducial
+[`HyperParameters`](@ref) implied by `hyperparameters` and the redshift prior (see
+[`fiducial_spectral_density`](@ref)).
 Inference state is a nested [`HyperParameters`](@ref); caches carry
 [`ProposalFiducialParameters`](@ref) in `fiducial_parameters` (HDF5 group `hyperparameters`).
 """
@@ -26,10 +29,10 @@ include("cosmology.jl")
 include("redshift.jl")
 include("priors.jl")
 include("cache.jl")
-include("io.jl")
 include("importance.jl")
 include("diagnostics.jl")
 include("posterior.jl")
+include("io.jl")
 include("sampling.jl")
 include("turing_model.jl")
 
@@ -88,7 +91,8 @@ export importance_weights, spectral_density_from_cache,
 export normalized_ess, max_normalized_weight, log_ratio_variance
 
 # Posterior
-export loglikelihood, logposterior
+export loglikelihood, logposterior,
+    fiducial_hyperparameters, fiducial_spectral_density
 
 # Sampling (AdvancedHMC)
 export DEFAULT_PARAMETER_ORDER,

@@ -80,3 +80,28 @@ function logposterior(
         observed_spectral_density=observed_spectral_density,
     )
 end
+
+"""
+    fiducial_hyperparameters(problem::ImportanceSamplingProblem) -> HyperParameters
+
+Build [`HyperParameters`](@ref) from the cache’s [`ProposalFiducialParameters`](@ref)
+and [`RedshiftPriorSpec`](@ref). Same rules as [`hyperparameters_from_fiducial`](@ref)
+(population scalars on the proposal fiducial dict when the prior family requires them).
+"""
+function fiducial_hyperparameters(problem::ImportanceSamplingProblem)
+    return hyperparameters_from_fiducial(
+        problem.fiducial_parameters,
+        problem.redshift_prior_spec,
+    )
+end
+
+"""
+    fiducial_spectral_density(problem::ImportanceSamplingProblem) -> Vector{Float64}
+
+Predicted isotropic SGWB spectrum ``Ω_\\mathrm{GW}(f)`` at [`fiducial_hyperparameters`](@ref),
+using [`evaluate_importance_terms`](@ref) (cached flux, importance weights, and event rate).
+"""
+function fiducial_spectral_density(problem::ImportanceSamplingProblem)
+    h = fiducial_hyperparameters(problem)
+    return evaluate_importance_terms(h, problem).spectral_density
+end

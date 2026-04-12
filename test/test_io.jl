@@ -52,7 +52,6 @@ using Test
             )
             write(f, "frequencies", ref.observation.frequencies)
             write(f, "in_band_mask", Vector{Bool}(ref.observation.in_band_mask))
-            write(f, "fiducial_spectral_density", ref.observation.fiducial_spectral_density)
             write(f, "covariance", ref.observation.covariance)
             write(f, "sgwb_scale", ref.observation.sgwb_scale)
             write(f, "cached_flux", Matrix(permutedims(raw_flux)))
@@ -80,6 +79,7 @@ using Test
         @test p.proposal.cached_flux_over_dgw2 ≈ ref.proposal.cached_flux_over_dgw2
         @test p.proposal.dgw_fid_sq ≈ d_gw .^ 2
         @test p.proposal.log_prob ≈ expected_lp
+        @test fiducial_spectral_density(p) ≈ p.observation.fiducial_spectral_density
     finally
         rm(path; force=true)
     end
