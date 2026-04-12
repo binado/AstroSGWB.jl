@@ -34,9 +34,6 @@ end
 
 abstract type IntrinsicPriorStrategy end
 
-"""Intrinsic site order is redshift-only (no BNS mass/spin/tidal parameters)."""
-struct RedshiftOnly <: IntrinsicPriorStrategy end
-
 """Full binary neutron star intrinsic variables in proposal samples."""
 struct FullBNS <: IntrinsicPriorStrategy end
 
@@ -104,16 +101,21 @@ const FULL_BNS_INTRINSIC_ORDER = [
     "chi_1", "chi_2", "lambda_1", "lambda_2",
 ]
 
-function resolve_intrinsic_strategy(intrinsic_site_order::Vector{String})::IntrinsicPriorStrategy
-    if intrinsic_site_order == ["redshift"]
-        return RedshiftOnly()
-    elseif intrinsic_site_order == FULL_BNS_INTRINSIC_ORDER
+"""HDF5 `proposal_samples` group attribute naming the compact-object proposal class."""
+const PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR = "source_type"
+
+"""`proposal_samples` / [`PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR`](@ref) value for BNS importance samples."""
+const PROPOSAL_SAMPLES_SOURCE_TYPE_BNS = "BNS"
+
+function resolve_intrinsic_strategy(intrinsic_site_order::Vector{String})::FullBNS
+    if intrinsic_site_order == FULL_BNS_INTRINSIC_ORDER
         return FullBNS()
-    else
-        throw(
-            ArgumentError(
-                "unsupported intrinsic_site_order $(intrinsic_site_order); supported layouts are redshift-only and the full BNS intrinsic prior",
-            ),
-        )
     end
+    throw(
+        ArgumentError(
+            "unsupported intrinsic_site_order $(repr(intrinsic_site_order)); " *
+            "only the full BNS layout is supported: $(repr(FULL_BNS_INTRINSIC_ORDER)). " *
+            "Redshift-only caches are no longer supported.",
+        ),
+    )
 end

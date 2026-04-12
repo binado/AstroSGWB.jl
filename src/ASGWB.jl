@@ -12,7 +12,8 @@ Version 3 stores raw per-sample `cached_flux` and may omit `proposal_log_prob` a
 `dgw_fid_sq` when fiducial population scalars are present in `hyperparameters`.
 Caches may omit `fiducial_spectral_density`; it is then filled from the fiducial
 [`HyperParameters`](@ref) implied by `hyperparameters` and the redshift prior (see
-[`fiducial_spectral_density`](@ref)).
+[`fiducial_spectral_density`](@ref)). Caches may omit `redshift_integral_fiducial`; it is
+then set from [`fiducial_redshift_integral`](@ref) with the same population-key requirements.
 Inference state is a nested [`HyperParameters`](@ref); caches carry
 [`ProposalFiducialParameters`](@ref) in `fiducial_parameters` (HDF5 group `hyperparameters`).
 """
@@ -51,16 +52,17 @@ export ImportanceSamplingProblem, ImportanceCache,
     InferencePriors,
     ProposalFiducialParameters,
     ProposalSampleBundle,
-    RedshiftOnlySamples,
     FullBNSSamples,
+    FULL_BNS_INTRINSIC_ORDER,
+    PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR, PROPOSAL_SAMPLES_SOURCE_TYPE_BNS,
     as_flat_constrained,
     validate_redshift_spec_population,
     RedshiftGridBundle,
-    IntrinsicPriorStrategy, RedshiftOnly, FullBNS,
+    IntrinsicPriorStrategy, FullBNS,
     ASGWBLogDensity, redshift
 
 # IO
-export load_cache
+export load_cache, reconstruct_proposal_log_prob
 
 # Detector network (ORF / PSD covariance; optional HDF5 format v2)
 export Detector, PowerSpectralDensity, default_detector_data_dir,
@@ -92,7 +94,7 @@ export normalized_ess, max_normalized_weight, log_ratio_variance
 
 # Posterior
 export loglikelihood, logposterior,
-    fiducial_hyperparameters, fiducial_spectral_density
+    fiducial_hyperparameters, fiducial_spectral_density, fiducial_redshift_integral
 
 # Sampling (AdvancedHMC)
 export DEFAULT_PARAMETER_ORDER,

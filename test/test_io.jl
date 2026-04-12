@@ -1,7 +1,9 @@
 using HDF5
+using HDF5: delete_attribute
 using Test
+using Base.Filesystem: cp
 
-@testset "load_cache format v3 omits proposal_log_prob and dgw_fid_sq" begin
+@testset "load_cache format v3 omits proposal_log_prob, dgw_fid_sq, fiducial spectrum; full BNS reconstruction" begin
     fixture_path = joinpath(@__DIR__, "fixtures", "importance_context_julia.h5")
     ref = load_cache(fixture_path)
     z = ref.proposal.samples.redshift
@@ -30,7 +32,8 @@ using Test
         z_peak=zp,
     )
     bundle = build_redshift_grid_bundle(h, spec)
-    expected_lp = log_prob_from_bundle.(z, Ref(bundle))
+    expected_lp = reconstruct_proposal_log_prob(ref.proposal.samples, spec, fid)
+    expected_ri = Float64(bundle.norm)
 
     path, io = mktemp()
     close(io)
@@ -42,8 +45,6 @@ using Test
             a["local_merger_rate"] = ref.local_merger_rate
             a["observation_time_sec"] = ref.observation.observation_time_sec
             a["observation_time_yr"] = ref.observation.observation_time_yr
-            a["redshift_integral_fiducial"] = ref.redshift_integral_fiducial
-
             write(f, "intrinsic_site_order", ref.proposal.intrinsic_site_order)
             write(
                 f,
@@ -57,7 +58,15 @@ using Test
             write(f, "cached_flux", Matrix(permutedims(raw_flux)))
 
             g = create_group(f, "proposal_samples")
-            write(g, "redshift", z)
+            attributes(g)[PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR] = PROPOSAL_SAMPLES_SOURCE_TYPE_BNS
+            s = ref.proposal.samples
+            write(g, "mass_1_source", s.mass_1_source)
+            write(g, "mass_2_source", s.mass_2_source)
+            write(g, "redshift", s.redshift)
+            write(g, "chi_1", s.chi_1)
+            write(g, "chi_2", s.chi_2)
+            write(g, "lambda_1", s.lambda_1)
+            write(g, "lambda_2", s.lambda_2)
 
             hg = create_group(f, "hyperparameters")
             write(hg, "H0", fid.H0)
@@ -80,6 +89,8 @@ using Test
         @test p.proposal.dgw_fid_sq ≈ d_gw .^ 2
         @test p.proposal.log_prob ≈ expected_lp
         @test fiducial_spectral_density(p) ≈ p.observation.fiducial_spectral_density
+        @test fiducial_redshift_integral(p) ≈ p.redshift_integral_fiducial rtol = 1e-6
+        @test p.redshift_integral_fiducial ≈ expected_ri rtol = 1e-6
     finally
         rm(path; force=true)
     end
@@ -90,11 +101,29 @@ end
     from_file = load_cache(fixture_path)
 
     sgwb_scale = [1 / sqrt(63115200.0), 1 / sqrt(63115200.0)]
-    proposal = ProposalData(
-        ["redshift"],
-        RedshiftOnlySamples([0.1, 0.2]),
+    samples = FullBNSSamples(
+        [1.4, 1.4],
+        [1.2, 1.2],
+        [0.1, 0.2],
         [0.0, 0.0],
-        reshape([0.1, 0.2], :, 1),
+        [0.0, 0.0],
+        [100.0, 100.0],
+        [100.0, 100.0],
+    )
+    lp = reconstruct_proposal_log_prob(
+        samples,
+        from_file.redshift_prior_spec,
+        from_file.fiducial_parameters,
+    )
+    intrinsic_mat = Float64[
+        1.4 1.2 0.1 0.0 0.0 100.0 100.0
+        1.4 1.2 0.2 0.0 0.0 100.0 100.0
+    ]
+    proposal = ProposalData(
+        FULL_BNS_INTRINSIC_ORDER,
+        samples,
+        lp,
+        intrinsic_mat,
         [1.0 2.0; 1.5 2.5],
         [4.0, 9.0],
     )
@@ -108,14 +137,13 @@ end
         1.0,
     )
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 1024, nothing)
-    fid = ProposalFiducialParameters(; H0=67.0, Omega_m=0.315, chi0=1.0, chin=0.0)
     from_memory = importance_sampling_problem(
         proposal,
         observation,
         spec,
         161.0,
         1.0,
-        fid,
+        from_file.fiducial_parameters,
     )
 
     @test from_memory.proposal.intrinsic_site_order == from_file.proposal.intrinsic_site_order
@@ -151,10 +179,20 @@ end
     fixture_path = joinpath(@__DIR__, "fixtures", "importance_context_julia.h5")
     problem = load_cache(fixture_path)
 
-    @test problem.proposal.intrinsic_site_order == ["redshift"]
-    @test problem.proposal.samples.redshift ≈ [0.1, 0.2]
-    @test problem.proposal.log_prob ≈ [0.0, 0.0]
-    @test problem.proposal.intrinsic_vector ≈ reshape([0.1, 0.2], :, 1)
+    @test problem.proposal.intrinsic_site_order == FULL_BNS_INTRINSIC_ORDER
+    s = problem.proposal.samples
+    @test s.redshift ≈ [0.1, 0.2]
+    @test s.mass_1_source ≈ [1.4, 1.4]
+    @test s.mass_2_source ≈ [1.2, 1.2]
+    @test s.chi_1 ≈ [0.0, 0.0]
+    @test s.chi_2 ≈ [0.0, 0.0]
+    @test s.lambda_1 ≈ [100.0, 100.0]
+    @test s.lambda_2 ≈ [100.0, 100.0]
+    @test problem.proposal.log_prob ≈ [-17.12928958264864, -15.702803964648165]
+    @test problem.proposal.intrinsic_vector ≈ Float64[
+        1.4 1.2 0.1 0.0 0.0 100.0 100.0
+        1.4 1.2 0.2 0.0 0.0 100.0 100.0
+    ]
     @test problem.proposal.cached_flux_over_dgw2 ≈ [1.0 2.0; 1.5 2.5]
     @test problem.proposal.dgw_fid_sq ≈ [4.0, 9.0]
     @test problem.observation.frequencies ≈ [1.0, 2.0]
@@ -177,6 +215,61 @@ end
     @test problem.observation.observation_time_yr == 1.0
     @test problem.observation.observation_time_sec == 365.25 * 24 * 3600
     @test problem.redshift_integral_fiducial == 1.0
-    @test problem.strategy isa RedshiftOnly
+    @test problem.strategy isa FullBNS
     @test redshift(problem) ≈ [0.1, 0.2]
+end
+
+@testset "load_cache rejects unsupported proposal_samples source_type" begin
+    fixture_path = joinpath(@__DIR__, "fixtures", "importance_context_julia.h5")
+    path = joinpath(mktempdir(), "bad_source_type.h5")
+    cp(fixture_path, path; force=true)
+    h5open(path, "r+") do f
+        g = f["proposal_samples"]
+        delete_attribute(g, PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR)
+        attributes(g)[PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR] = "BBH"
+    end
+    @test_throws ArgumentError load_cache(path)
+end
+
+@testset "importance_sampling_problem 5-arg infers redshift integral" begin
+    fid = ProposalFiducialParameters(;
+        H0=67.0,
+        Omega_m=0.315,
+        chi0=1.0,
+        chin=0.0,
+        gamma=2.7,
+        kappa=3.0,
+        z_peak=2.5,
+    )
+    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
+    ri = fiducial_redshift_integral(fid, spec)
+    samples = FullBNSSamples(
+        [1.4],
+        [1.2],
+        [0.1],
+        [0.0],
+        [0.0],
+        [100.0],
+        [100.0],
+    )
+    lp = reconstruct_proposal_log_prob(samples, spec, fid)
+    proposal = ProposalData(
+        FULL_BNS_INTRINSIC_ORDER,
+        samples,
+        lp,
+        reshape([1.4, 1.2, 0.1, 0.0, 0.0, 100.0, 100.0], 1, :),
+        fill(1.0, 1, 2),
+        [1.0],
+    )
+    observation = ObservationConfig(
+        [1.0, 2.0],
+        [1.0, 1.0],
+        [1.0, 1.0],
+        BitVector([true, true]),
+        [0.0, 0.0],
+        1.0,
+        1.0,
+    )
+    p = importance_sampling_problem(proposal, observation, spec, 1.0, fid)
+    @test p.redshift_integral_fiducial ≈ ri rtol = 1e-10
 end

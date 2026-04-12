@@ -42,6 +42,22 @@ function hyperparameters_from_fiducial(
 end
 
 """
+    fiducial_redshift_integral(fid::ProposalFiducialParameters, spec::RedshiftPriorSpec) -> Float64
+
+Trapezoid integral ``\\int p(z)\\,dz`` of the detector-frame merger-rate density on the
+redshift grid defined by `spec` and the population in `hyperparameters_from_fiducial(fid, spec)`
+(same population-key requirements as reconstructing an omitted `proposal_log_prob`).
+"""
+function fiducial_redshift_integral(
+    fid::ProposalFiducialParameters,
+    spec::RedshiftPriorSpec,
+)::Float64
+    h = hyperparameters_from_fiducial(fid, spec)
+    bundle = build_redshift_grid_bundle(h, spec)
+    return Float64(bundle.norm)
+end
+
+"""
     reconstruct_dgw_fid_sq(z, fid::ProposalFiducialParameters) -> Vector{Float64}
 
 Per-sample squared gravitational-wave luminosity distance at fiducial cosmology
@@ -78,15 +94,14 @@ function reconstruct_cached_flux_over_dgw2(
 end
 
 """
-    reconstruct_proposal_log_prob(strategy, samples, spec, fid::ProposalFiducialParameters) -> Vector{Float64}
+    reconstruct_proposal_log_prob(samples, spec, fid::ProposalFiducialParameters) -> Vector{Float64}
 
 Proposal log-density per sample: redshift grid log-density from
 [`hyperparameters_from_fiducial`](@ref) / [`build_redshift_grid_bundle`](@ref), plus
-full-BNS intrinsic uniform factors when `strategy` is [`FullBNS`](@ref).
+full-BNS intrinsic uniform factors on [`FullBNSSamples`](@ref).
 """
 function reconstruct_proposal_log_prob(
-    strategy::IntrinsicPriorStrategy,
-    samples::ProposalSampleBundle,
+    samples::FullBNSSamples,
     spec::RedshiftPriorSpec,
     fid::ProposalFiducialParameters,
 )::Vector{Float64}
@@ -94,12 +109,23 @@ function reconstruct_proposal_log_prob(
     bundle = build_redshift_grid_bundle(h, spec)
     z = redshift(samples)
     rz = log_prob_from_bundle.(z, Ref(bundle))
-    if strategy isa RedshiftOnly
-        return Float64.(rz)
-    elseif strategy isa FullBNS
-        samples isa FullBNSSamples || throw(ArgumentError("FullBNS strategy requires FullBNSSamples"))
-        return Float64.(bns_intrinsic_log_prob_samples(samples, rz))
-    else
-        throw(ArgumentError("unsupported intrinsic strategy for proposal log-density reconstruction"))
-    end
+    return Float64.(bns_intrinsic_log_prob_samples(samples, rz))
+end
+
+function importance_sampling_problem(
+    proposal::ProposalData,
+    observation::ObservationConfig,
+    redshift_prior_spec::RedshiftPriorSpec,
+    local_merger_rate::Real,
+    fiducial_parameters::ProposalFiducialParameters,
+)
+    ri = fiducial_redshift_integral(fiducial_parameters, redshift_prior_spec)
+    return importance_sampling_problem(
+        proposal,
+        observation,
+        redshift_prior_spec,
+        local_merger_rate,
+        ri,
+        fiducial_parameters,
+    )
 end

@@ -1,20 +1,7 @@
 function target_log_prob_samples(h::HyperParameters, problem::ImportanceSamplingProblem)
     bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec)
     redshift_log_prob = log_prob_from_bundle.(redshift(problem), Ref(bundle))
-    intrinsic_log_prob = _intrinsic_log_prob(problem.strategy, problem, redshift_log_prob)
-    return intrinsic_log_prob, bundle
-end
-
-function _intrinsic_log_prob(
-    ::RedshiftOnly, ::ImportanceSamplingProblem, redshift_log_prob::AbstractVector{<:Real},
-)
-    return redshift_log_prob
-end
-
-function _intrinsic_log_prob(
-    ::FullBNS, problem::ImportanceSamplingProblem, redshift_log_prob::AbstractVector{<:Real},
-)
-    return bns_intrinsic_log_prob_samples(problem.proposal.samples, redshift_log_prob)
+    return bns_intrinsic_log_prob_samples(problem.proposal.samples, redshift_log_prob), bundle
 end
 
 function evaluate_importance_terms(h::HyperParameters, problem::ImportanceSamplingProblem)
@@ -104,4 +91,14 @@ using [`evaluate_importance_terms`](@ref) (cached flux, importance weights, and 
 function fiducial_spectral_density(problem::ImportanceSamplingProblem)
     h = fiducial_hyperparameters(problem)
     return evaluate_importance_terms(h, problem).spectral_density
+end
+
+"""
+    fiducial_redshift_integral(problem::ImportanceSamplingProblem) -> Float64
+
+[`build_redshift_grid_bundle`](@ref) norm at [`fiducial_hyperparameters`](@ref) (matches
+`problem.redshift_integral_fiducial` when that field was set from the fiducial population).
+"""
+function fiducial_redshift_integral(problem::ImportanceSamplingProblem)
+    return fiducial_redshift_integral(problem.fiducial_parameters, problem.redshift_prior_spec)
 end

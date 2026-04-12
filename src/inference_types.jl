@@ -137,10 +137,6 @@ end
 
 abstract type ProposalSampleBundle end
 
-struct RedshiftOnlySamples <: ProposalSampleBundle
-    redshift::Vector{Float64}
-end
-
 struct FullBNSSamples <: ProposalSampleBundle
     mass_1_source::Vector{Float64}
     mass_2_source::Vector{Float64}
@@ -151,9 +147,9 @@ struct FullBNSSamples <: ProposalSampleBundle
     lambda_2::Vector{Float64}
 end
 
-struct ProposalData{B<:ProposalSampleBundle}
+struct ProposalData
     intrinsic_site_order::Vector{String}
-    samples::B
+    samples::FullBNSSamples
     log_prob::Vector{Float64}
     intrinsic_vector::Matrix{Float64}
     cached_flux_over_dgw2::Matrix{Float64}
@@ -166,53 +162,55 @@ end
 In-memory importance-sampling context. See [`importance_sampling_problem`](@ref) and
 [`load_cache`](@ref). `fiducial_parameters` holds HDF5 `hyperparameters` scalars
 ([`ProposalFiducialParameters`](@ref)), not the live [`HyperParameters`](@ref) state.
+`redshift_integral_fiducial` is carried for cache round-trip and may differ from
+[`fiducial_redshift_integral`](@ref) when a legacy file used another normalization;
+likelihood evaluation uses the integral implied by the live [`HyperParameters`](@ref), not this field.
 """
-struct ImportanceSamplingProblem{S<:IntrinsicPriorStrategy,B<:ProposalSampleBundle}
-    proposal::ProposalData{B}
+struct ImportanceSamplingProblem
+    proposal::ProposalData
     observation::ObservationConfig
     redshift_prior_spec::RedshiftPriorSpec
     local_merger_rate::Float64
     redshift_integral_fiducial::Float64
     fiducial_parameters::ProposalFiducialParameters
-    strategy::S
+    strategy::FullBNS
 end
 
-redshift(s::RedshiftOnlySamples) = s.redshift
 redshift(s::FullBNSSamples) = s.redshift
 
 redshift(problem::ImportanceSamplingProblem) = redshift(problem.proposal.samples)
 
-function _validate_strategy_bundle(strategy::IntrinsicPriorStrategy, proposal::ProposalData)
-    if strategy isa RedshiftOnly && !(proposal.samples isa RedshiftOnlySamples)
-        throw(ArgumentError("RedshiftOnly strategy requires RedshiftOnlySamples"))
-    end
-    if strategy isa FullBNS && !(proposal.samples isa FullBNSSamples)
-        throw(ArgumentError("FullBNS strategy requires FullBNSSamples"))
-    end
+function _validate_strategy_bundle(strategy::FullBNS, proposal::ProposalData)
+    proposal.samples isa FullBNSSamples || throw(ArgumentError("proposal samples must be FullBNSSamples"))
     return nothing
 end
 
 """
     importance_sampling_problem(
-        proposal::ProposalData,
-        observation::ObservationConfig,
-        redshift_prior_spec::RedshiftPriorSpec,
-        local_merger_rate::Real,
-        redshift_integral_fiducial::Real,
-        fiducial_parameters::ProposalFiducialParameters,
+        proposal, observation, redshift_prior_spec,
+        local_merger_rate, fiducial_parameters,
     ) -> ImportanceSamplingProblem
 
-Canonical in-memory constructor. Validates [`IntrinsicPriorStrategy`](@ref) against
-the proposal sample bundle type.
+Five-argument form: the stored fiducial integral is
+[`fiducial_redshift_integral`](@ref) applied to `fiducial_parameters` and `redshift_prior_spec`.
+
+    importance_sampling_problem(
+        proposal, observation, redshift_prior_spec,
+        local_merger_rate, redshift_integral_fiducial, fiducial_parameters,
+    ) -> ImportanceSamplingProblem
+
+Six-argument form: supply a precomputed fiducial redshift integral (e.g. read from a cache file).
+
+Both forms validate [`IntrinsicPriorStrategy`](@ref) against the proposal sample bundle type.
 """
 function importance_sampling_problem(
-    proposal::ProposalData{B},
+    proposal::ProposalData,
     observation::ObservationConfig,
     redshift_prior_spec::RedshiftPriorSpec,
     local_merger_rate::Real,
     redshift_integral_fiducial::Real,
     fiducial_parameters::ProposalFiducialParameters,
-) where {B<:ProposalSampleBundle}
+)
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
     _validate_strategy_bundle(strategy, proposal)
     return ImportanceSamplingProblem(

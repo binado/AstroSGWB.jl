@@ -51,6 +51,22 @@ function _read_optional_string(group, key::AbstractString)::Union{String,Nothing
     return isempty(text) ? nothing : text
 end
 
+function _validate_proposal_samples_source_type(g::HDF5.Group)
+    attrs = attributes(g)
+    if !haskey(attrs, PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR)
+        return nothing
+    end
+    st = strip(_as_string(read(attrs[PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR])))
+    st == PROPOSAL_SAMPLES_SOURCE_TYPE_BNS || throw(
+        ArgumentError(
+            "unsupported proposal_samples/$(PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR)=$(repr(st)); " *
+            "only $(repr(PROPOSAL_SAMPLES_SOURCE_TYPE_BNS)) is implemented " *
+            "(omit the attribute for legacy caches)",
+        ),
+    )
+    return nothing
+end
+
 function _read_redshift_prior_spec(group)::RedshiftPriorSpec
     spec_group = _require_child(group, "redshift_prior_spec")
     family_str = _as_string(read(_require_child(spec_group, "family")))
@@ -71,18 +87,11 @@ function _read_optional_float_scalar(group::HDF5.Group, key::AbstractString)::Un
     return Float64(read(group[key]))
 end
 
-function _read_proposal_fiducial_parameters(
-    group::HDF5.Group,
-    format_version::Integer,
-)::ProposalFiducialParameters
+function _read_proposal_fiducial_parameters(group::HDF5.Group)::ProposalFiducialParameters
     for k in _CACHE_FIDUCIAL_KEYS
         haskey(group, k) || throw(ArgumentError("missing hyperparameter $(k)"))
     end
-    allowed = if format_version >= JULIA_IMPORTANCE_CACHE_FORMAT_VERSION_3
-        Set{String}(collect(_CACHE_FIDUCIAL_KEYS) ∪ collect(_CACHE_OPTIONAL_POPULATION_KEYS))
-    else
-        Set{String}(collect(_CACHE_FIDUCIAL_KEYS))
-    end
+    allowed = Set{String}(collect(_CACHE_FIDUCIAL_KEYS) ∪ collect(_CACHE_OPTIONAL_POPULATION_KEYS))
     for k in keys(group)
         kn = String(k)
         kn in allowed || throw(ArgumentError("unknown hyperparameter $(kn)"))
@@ -102,34 +111,27 @@ end
 function bundle_from_hdf5(
     intrinsic_site_order::Vector{String},
     proposal_samples::Dict{String,Vector{Float64}},
-)::ProposalSampleBundle
-    if intrinsic_site_order == ["redshift"]
-        haskey(proposal_samples, "redshift") || throw(
-            ArgumentError("proposal_samples must include a redshift entry"),
-        )
-        return RedshiftOnlySamples(copy(proposal_samples["redshift"]))
-    elseif intrinsic_site_order == FULL_BNS_INTRINSIC_ORDER
-        for key in FULL_BNS_INTRINSIC_ORDER
-            haskey(proposal_samples, key) || throw(
-                ArgumentError("proposal_samples must include $(key) for full BNS layout"),
-            )
-        end
-        return FullBNSSamples(
-            copy(proposal_samples["mass_1_source"]),
-            copy(proposal_samples["mass_2_source"]),
-            copy(proposal_samples["redshift"]),
-            copy(proposal_samples["chi_1"]),
-            copy(proposal_samples["chi_2"]),
-            copy(proposal_samples["lambda_1"]),
-            copy(proposal_samples["lambda_2"]),
-        )
-    else
-        throw(
-            ArgumentError(
-                "unsupported intrinsic_site_order $(intrinsic_site_order); supported layouts are redshift-only and the full BNS intrinsic prior",
-            ),
+)::FullBNSSamples
+    intrinsic_site_order == FULL_BNS_INTRINSIC_ORDER || throw(
+        ArgumentError(
+            "unsupported intrinsic_site_order $(repr(intrinsic_site_order)); " *
+            "only full BNS is supported: $(repr(FULL_BNS_INTRINSIC_ORDER))",
+        ),
+    )
+    for key in FULL_BNS_INTRINSIC_ORDER
+        haskey(proposal_samples, key) || throw(
+            ArgumentError("proposal_samples must include $(key) for full BNS layout"),
         )
     end
+    return FullBNSSamples(
+        copy(proposal_samples["mass_1_source"]),
+        copy(proposal_samples["mass_2_source"]),
+        copy(proposal_samples["redshift"]),
+        copy(proposal_samples["chi_1"]),
+        copy(proposal_samples["chi_2"]),
+        copy(proposal_samples["lambda_1"]),
+        copy(proposal_samples["lambda_2"]),
+    )
 end
 
 """
@@ -150,9 +152,17 @@ Version `3` stores per-frequency `cached_flux` (flux before multiplying by
 `gamma`, `kappa`, `z_peak` for Madau–Dickinson or `lamb` for power-law when
 `proposal_log_prob` is absent).
 
+The `proposal_samples` group may carry a string attribute [`PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR`](@ref);
+when present it must be [`PROPOSAL_SAMPLES_SOURCE_TYPE_BNS`](@ref). If absent, caches are
+treated as BNS (legacy files).
+
 Any format version may omit `fiducial_spectral_density`; it is then filled using
 [`fiducial_spectral_density`](@ref), which requires the same population entries on
 `hyperparameters` as for reconstructing an omitted `proposal_log_prob`.
+
+The root attribute `redshift_integral_fiducial` may be omitted; it is then set to
+[`fiducial_redshift_integral`](@ref) on the fiducial `hyperparameters` and
+[`RedshiftPriorSpec`](@ref) (same population-key requirements as above).
 
 This is a convenience wrapper around disk I/O; equivalent in-memory problems can
 be built with [`importance_sampling_problem`](@ref).
@@ -240,6 +250,7 @@ function load_cache(
 
         proposal_samples = Dict{String,Vector{Float64}}()
         proposal_samples_group = _require_child(file, "proposal_samples")
+        _validate_proposal_samples_source_type(proposal_samples_group)
         for key in intrinsic_site_order
             proposal_samples[key] = _read_float_vector(
                 _require_child(proposal_samples_group, key),
@@ -247,10 +258,7 @@ function load_cache(
             )
         end
 
-        fiducial_parameters = _read_proposal_fiducial_parameters(
-            _require_child(file, "hyperparameters"),
-            format_version,
-        )
+        fiducial_parameters = _read_proposal_fiducial_parameters(_require_child(file, "hyperparameters"))
 
         redshift_prior_spec = _read_redshift_prior_spec(file)
 
@@ -258,7 +266,6 @@ function load_cache(
             ArgumentError("proposal_samples must include a redshift entry"),
         )
         n_samples = length(proposal_samples["redshift"])
-        strategy = resolve_intrinsic_strategy(intrinsic_site_order)
         samples_bundle = bundle_from_hdf5(intrinsic_site_order, proposal_samples)
 
         proposal_log_prob = if haskey(file, "proposal_log_prob")
@@ -270,7 +277,6 @@ function load_cache(
                 ),
             )
             reconstruct_proposal_log_prob(
-                strategy,
                 samples_bundle,
                 redshift_prior_spec,
                 fiducial_parameters,
@@ -370,12 +376,29 @@ function load_cache(
             Float64(_read_attr(attrs, "observation_time_yr")),
         )
 
+        redshift_integral_fiducial = if haskey(attrs, "redshift_integral_fiducial")
+            Float64(_read_attr(attrs, "redshift_integral_fiducial"))
+        else
+            try
+                fiducial_redshift_integral(fiducial_parameters, redshift_prior_spec)
+            catch err
+                throw(
+                    ArgumentError(
+                        "cache omits redshift_integral_fiducial but recomputation failed; " *
+                        "ensure `hyperparameters` includes population keys for the redshift prior " *
+                        "(e.g. gamma, kappa, z_peak for Madau–Dickinson, or lamb for power-law). " *
+                        "Underlying error: " * sprint(showerror, err),
+                    ),
+                )
+            end
+        end
+
         p = importance_sampling_problem(
             proposal,
             observation,
             redshift_prior_spec,
             Float64(_read_attr(attrs, "local_merger_rate")),
-            Float64(_read_attr(attrs, "redshift_integral_fiducial")),
+            redshift_integral_fiducial,
             fiducial_parameters,
         )
         if !fiducial_spectral_density_on_disk
