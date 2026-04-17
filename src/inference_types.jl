@@ -147,6 +147,16 @@ struct FullBNSSamples <: ProposalSampleBundle
     lambda_2::Vector{Float64}
 end
 
+"""
+    ProposalData
+
+Proposal-sample bundle for the importance-sampling problem.
+
+Matrix layouts:
+- `intrinsic_vector` is `(n_samples, n_intrinsic)` (rows = samples, columns = intrinsic sites).
+- `cached_flux_over_dgw2` is `(n_freq, n_samples)` (column-major friendly: each proposal
+  sample is a contiguous column; `fluxes * weights` contracts to a per-frequency vector).
+"""
 struct ProposalData
     intrinsic_site_order::Vector{String}
     samples::FullBNSSamples

@@ -4,40 +4,36 @@ function target_log_prob_samples(h::HyperParameters, problem::ImportanceSampling
     return bns_intrinsic_log_prob_samples(problem.proposal.samples, redshift_log_prob), bundle
 end
 
+"""
+    evaluate_importance_terms(h, problem) -> NamedTuple
+
+Thin composition of [`compute_importance_weights`](@ref), [`merger_rate_per_sec`](@ref),
+and [`spectral_density`](@ref) that exposes every intermediate used by parity tests and
+the AdvancedHMC likelihood (`dgw_theta_sq`, `target_log_prob`, `log_ratio`, `weights`,
+`redshift_integral`, `expected_number_of_sources`, `spectral_density`,
+`spectral_density_in_band`).
+"""
 function evaluate_importance_terms(h::HyperParameters, problem::ImportanceSamplingProblem)
-    z = redshift(problem)
-    d_l = luminosity_distance.(z, h.cosmological.H0, h.cosmological.Omega_m)
-    dgw_theta = gravitational_wave_distance.(z, d_l, h.propagation.chi0, h.propagation.chin)
-    dgw_theta_sq = dgw_theta .^ 2
-
-    target_log_prob, redshift_bundle = target_log_prob_samples(h, problem)
-    log_ratio = target_log_prob .- problem.proposal.log_prob
-    weights = importance_weights(log_ratio, problem.proposal.dgw_fid_sq, dgw_theta_sq)
-
-    redshift_integral = redshift_bundle.norm
-    number_of_sources = expected_number_of_events(
+    bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec)
+    iw = compute_importance_weights(problem, h, bundle)
+    rate = merger_rate_per_sec(
+        bundle,
         problem.local_merger_rate,
-        redshift_integral,
         problem.observation.observation_time_yr,
-    )
-
-    spectral_density = spectral_density_from_cache(
-        problem.proposal.cached_flux_over_dgw2,
-        weights,
-        number_of_sources,
         problem.observation.observation_time_sec,
     )
-    spectral_density_in_band = spectral_density[problem.observation.in_band_mask]
-
+    sd = spectral_density(
+        problem.proposal.cached_flux_over_dgw2, rate; weights=iw.weights,
+    )
     return (
-        dgw_theta_sq=dgw_theta_sq,
-        target_log_prob=target_log_prob,
-        log_ratio=log_ratio,
-        weights=weights,
-        redshift_integral=redshift_integral,
-        expected_number_of_sources=number_of_sources,
-        spectral_density=spectral_density,
-        spectral_density_in_band=spectral_density_in_band,
+        dgw_theta_sq=iw.dgw_theta_sq,
+        target_log_prob=iw.target_log_prob,
+        log_ratio=iw.log_ratio,
+        weights=iw.weights,
+        redshift_integral=bundle.norm,
+        expected_number_of_sources=rate * problem.observation.observation_time_sec,
+        spectral_density=sd,
+        spectral_density_in_band=sd[problem.observation.in_band_mask],
     )
 end
 

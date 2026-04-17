@@ -34,12 +34,23 @@ using Turing
             @test Turing.logjoint(model, theta_flat) ≈
                 logposterior(theta0, cache, priors) rtol = 1e-6
 
+            returned_nt = Turing.returned(model, theta_flat)
+            @test haskey(returned_nt, :effective_sample_size)
+            @test isfinite(returned_nt.effective_sample_size)
+            @test 0 < returned_nt.effective_sample_size <= 1
+
             chain, sampled_model =
                 sample_with_turing(cache, priors, theta0; n_adapts=3, n_samples=3)
 
             @test Turing.logjoint(sampled_model, theta_flat) ≈
                 Turing.logjoint(model, theta_flat) rtol = 1e-6
             @test size(chain, 1) == 3
+
+            chain_h0, cond_h0 =
+                sample_with_turing(cache, priors, theta0; n_adapts=3, n_samples=3, sample_only=(:H0,))
+            pnames = sort(collect(Symbol.(Turing.MCMCChains.names(chain_h0, :parameters))))
+            @test pnames == [:H0]
+            @test all(isfinite, vec(Array(chain_h0[:, :logjoint, :])))
 
             for (name, (low, high)) in prior_bounds
                 values = vec(Array(chain[:, Symbol(name), :]))

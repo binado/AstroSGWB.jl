@@ -1,5 +1,11 @@
 using LinearAlgebra
 
+"""
+    importance_weights(log_ratio, dgw_fid_sq, dgw_theta_sq) -> Vector
+
+Numerical importance weights: `exp(log_ratio) * dgw_fid_sq / dgw_theta_sq`. All inputs
+are vectors of equal length; no high-level objects involved.
+"""
 function importance_weights(
     log_ratio::AbstractVector{<:Real},
     dgw_fid_sq::AbstractVector{<:Real},
@@ -11,16 +17,34 @@ function importance_weights(
     return exp.(log_ratio) .* dgw_fid_sq ./ dgw_theta_sq
 end
 
-function spectral_density_from_cache(
-    cached_flux_over_dgw2::AbstractMatrix{<:Real},
-    weights::AbstractVector{<:Real},
-    number_of_sources::Real,
-    observation_time_sec::Real,
+"""
+    compute_importance_weights(problem, h, bundle) -> NamedTuple
+
+High-level builder: given the [`ImportanceSamplingProblem`](@ref), live
+[`HyperParameters`](@ref), and a precomputed [`RedshiftGridBundle`](@ref), compute
+per-sample importance weights and the intermediate quantities used by diagnostics
+and the parity shim.
+
+Returns a NamedTuple with fields `weights`, `log_ratio`, `target_log_prob`, `dgw_theta_sq`.
+"""
+function compute_importance_weights(
+    problem::ImportanceSamplingProblem,
+    h::HyperParameters,
+    bundle::RedshiftGridBundle,
 )
-    size(cached_flux_over_dgw2, 1) == length(weights) || throw(
-        ArgumentError("cached_flux_over_dgw2 row count must match weight count"),
+    z = redshift(problem)
+    d_l = luminosity_distance.(z, h.cosmological.H0, h.cosmological.Omega_m)
+    dgw_theta = gravitational_wave_distance.(z, d_l, h.propagation.chi0, h.propagation.chin)
+    dgw_theta_sq = dgw_theta .^ 2
+
+    redshift_log_prob = log_prob_from_bundle.(z, Ref(bundle))
+    target_log_prob = bns_intrinsic_log_prob_samples(problem.proposal.samples, redshift_log_prob)
+    log_ratio = target_log_prob .- problem.proposal.log_prob
+    weights = importance_weights(log_ratio, problem.proposal.dgw_fid_sq, dgw_theta_sq)
+    return (;
+        weights=weights,
+        log_ratio=log_ratio,
+        target_log_prob=target_log_prob,
+        dgw_theta_sq=dgw_theta_sq,
     )
-    mean_flux = cached_flux_over_dgw2' * weights ./ size(cached_flux_over_dgw2, 1)
-    rate = number_of_sources / observation_time_sec
-    return 0.4 .* rate .* mean_flux
 end

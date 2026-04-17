@@ -34,5 +34,20 @@ using Test
         @test evaluation.expected_number_of_sources ≈ expected_number_of_sources rtol = 1e-6
         @test evaluation.spectral_density ≈ expected_spectral_density rtol = 1e-6
         @test evaluation.spectral_density_in_band ≈ expected_spectral_density_in_band rtol = 1e-6
+
+        bundle = build_redshift_grid_bundle(theta, cache.redshift_prior_spec)
+        iw = compute_importance_weights(cache, theta, bundle)
+        @test iw.weights ≈ expected_weights rtol = 1e-6
+        @test iw.log_ratio ≈ expected_log_ratio rtol = 1e-6
+        @test iw.target_log_prob ≈ expected_target_log_prob rtol = 1e-6
+        @test iw.dgw_theta_sq ≈ expected_dgw_theta_sq rtol = 1e-6
+
+        rate = merger_rate_per_sec(
+            bundle,
+            cache.local_merger_rate,
+            cache.observation.observation_time_yr,
+            cache.observation.observation_time_sec,
+        )
+        @test rate * cache.observation.observation_time_sec ≈ expected_number_of_sources rtol = 1e-6
     end
 end

@@ -34,6 +34,7 @@ include("redshift.jl")
 include("priors.jl")
 include("cache.jl")
 include("importance.jl")
+include("spectral_density.jl")
 include("diagnostics.jl")
 include("posterior.jl")
 include("io.jl")
@@ -84,14 +85,15 @@ export madau_dickinson_source_frame_distribution,
     detector_frame_merger_rate_density,
     build_redshift_grid_bundle,
     log_prob_from_bundle,
-    expected_number_of_events
+    expected_number_of_events,
+    merger_rate_per_sec
 
 # Priors
 export logprior, build_uniform_priors
 
 # Importance sampling
-export importance_weights, spectral_density_from_cache,
-    evaluate_importance_terms
+export importance_weights, compute_importance_weights,
+    spectral_density, evaluate_importance_terms
 
 # Diagnostics
 export normalized_ess, max_normalized_weight, log_ratio_variance
@@ -108,6 +110,6 @@ export DEFAULT_PARAMETER_ORDER,
     sample_with_advancedhmc
 
 # Turing
-export build_turing_model, sample_with_turing
+export build_turing_model, sample_with_turing, condition_turing_model
 
 end

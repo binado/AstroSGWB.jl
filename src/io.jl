@@ -81,6 +81,36 @@ function _read_hdf5_col_sample_matrix(
     end
 end
 
+"""
+    _read_hdf5_freq_sample_matrix(dataset, name, n_samples, n_freq) -> Matrix{Float64}
+
+Variant of [`_read_hdf5_col_sample_matrix`](@ref) for hot-loop arrays that keep the
+column-major-friendly `(n_freq, n_samples)` layout in memory. The on-disk extent
+is the same `(n_freq, n_samples)`; when `HDF5.read` returns that shape we use it
+as-is, when it returns the transpose we apply `permutedims`.
+"""
+function _read_hdf5_freq_sample_matrix(
+    dataset,
+    name::AbstractString,
+    n_samples::Int,
+    n_freq::Int,
+)::Matrix{Float64}
+    raw = Array{Float64}(read(dataset))
+    ndims(raw) == 2 || throw(ArgumentError("$(name) must be a 2D dataset"))
+    if size(raw) == (n_freq, n_samples)
+        return raw
+    elseif size(raw) == (n_samples, n_freq)
+        return Matrix(permutedims(raw))
+    else
+        throw(
+            ArgumentError(
+                "$(name): HDF5 extent contract is ($n_freq, $n_samples) = (n_columns, n_samples); " *
+                "after read expected size ($n_freq, $n_samples) or ($n_samples, $n_freq), got $(size(raw))",
+            ),
+        )
+    end
+end
+
 function _read_float_scalar_dataset(group::HDF5.Group, key::AbstractString)::Float64
     return Float64(read(group[key]))
 end
@@ -367,7 +397,7 @@ function load_cache(
 
         haskey(file, "cached_flux") || throw(ArgumentError("missing required HDF5 dataset: cached_flux"))
         cached_flux_over_dgw2 = reconstruct_cached_flux_over_dgw2(
-            _read_hdf5_col_sample_matrix(
+            _read_hdf5_freq_sample_matrix(
                 _require_child(file, "cached_flux"),
                 "cached_flux",
                 n_samples,
@@ -393,9 +423,9 @@ function load_cache(
                 "proposal_intrinsic_vector row count must match redshift / sample count",
             ),
         )
-        size(cached_flux_over_dgw2, 1) == n_samples || throw(
+        size(cached_flux_over_dgw2, 2) == n_samples || throw(
             ArgumentError(
-                "cached flux matrix row count must match redshift / sample count",
+                "cached flux matrix column count must match redshift / sample count",
             ),
         )
         length(dgw_fid_sq) == n_samples || throw(
@@ -413,9 +443,9 @@ function load_cache(
         end
 
         n_frequencies = length(frequencies)
-        size(cached_flux_over_dgw2, 2) == n_frequencies || throw(
+        size(cached_flux_over_dgw2, 1) == n_frequencies || throw(
             ArgumentError(
-                "cached flux column count must match frequencies length",
+                "cached flux row count must match frequencies length",
             ),
         )
         length(covariance) == n_frequencies || throw(

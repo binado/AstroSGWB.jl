@@ -23,7 +23,7 @@ const _TEST_LOAD_DETS = [Detector("H1"), Detector("L1")]
     d_l = luminosity_distance.(z, fid.H0, fid.Omega_m)
     d_gw = gravitational_wave_distance.(z, d_l, fid.chi0, fid.chin)
     scale = (d_l ./ d_gw) .^ 2
-    raw_flux = ref.proposal.cached_flux_over_dgw2 ./ reshape(scale, :, 1)
+    raw_flux = ref.proposal.cached_flux_over_dgw2 ./ reshape(scale, 1, :)
     h = HyperParameters(;
         H0=fid.H0,
         Omega_m=fid.Omega_m,
@@ -55,7 +55,7 @@ const _TEST_LOAD_DETS = [Detector("H1"), Detector("L1")]
             )
             write(f, "frequencies", ref.observation.frequencies)
             write(f, "in_band_mask", Vector{Bool}(ref.observation.in_band_mask))
-            write(f, "cached_flux", Matrix(permutedims(raw_flux)))
+            write(f, "cached_flux", raw_flux)
 
             g = create_group(f, "proposal_samples")
             attributes(g)[PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR] = PROPOSAL_SAMPLES_SOURCE_TYPE_BNS
@@ -124,7 +124,7 @@ end
         samples,
         lp,
         intrinsic_mat,
-        [1.0 2.0; 1.5 2.5],
+        [1.0 1.5; 2.0 2.5],
         dgw_sq,
     )
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 1024, nothing)
@@ -184,7 +184,7 @@ end
         1.4 1.2 0.1 0.0 0.0 100.0 100.0
         1.4 1.2 0.2 0.0 0.0 100.0 100.0
     ]
-    @test problem.proposal.cached_flux_over_dgw2 ≈ [1.0 2.0; 1.5 2.5]
+    @test problem.proposal.cached_flux_over_dgw2 ≈ [1.0 1.5; 2.0 2.5]
     @test problem.proposal.dgw_fid_sq ≈
         reconstruct_dgw_fid_sq(problem.proposal.samples.redshift, problem.fiducial_parameters)
     @test problem.observation.frequencies ≈ [1.0, 2.0]

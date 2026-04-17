@@ -47,6 +47,28 @@ function expected_number_of_events(
     return 1e-9 * local_merger_rate_gpc3_yr * redshift_integral_mpc3 * observation_time_yr
 end
 
+"""
+    merger_rate_per_sec(
+        bundle, local_merger_rate_gpc3_yr, observation_time_yr, observation_time_sec,
+    ) -> Float64
+
+Detector-frame merger rate in events/sec: `expected_number_of_events(local_rate, bundle.norm,
+observation_time_yr) / observation_time_sec`. `observation_time_yr` sets the events count,
+`observation_time_sec` converts to per-second units; they are taken independently rather than
+assuming a fixed seconds-per-year so the cache's stored pair of times round-trips exactly.
+"""
+function merger_rate_per_sec(
+    bundle::RedshiftGridBundle,
+    local_merger_rate_gpc3_yr::Real,
+    observation_time_yr::Real,
+    observation_time_sec::Real,
+)
+    n_events = expected_number_of_events(
+        local_merger_rate_gpc3_yr, bundle.norm, observation_time_yr,
+    )
+    return n_events / observation_time_sec
+end
+
 function madau_dickinson_source_frame_distribution(
     z::Real;
     gamma::Real,

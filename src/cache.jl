@@ -75,22 +75,22 @@ end
 """
     reconstruct_cached_flux_over_dgw2(cached_flux, z, fid::ProposalFiducialParameters) -> Matrix{Float64}
 
-Apply the squared ratio of electromagnetic to gravitational-wave luminosity
-distance row-wise so the result matches the `cached_flux_over_dgw2` layout used
-by [`ImportanceSamplingProblem`](@ref).
+Apply the squared ratio of electromagnetic to gravitational-wave luminosity distance
+sample-wise. Inputs and outputs use the `(n_freq, n_samples)` layout (column-major
+friendly; each proposal sample is a contiguous column).
 """
 function reconstruct_cached_flux_over_dgw2(
     cached_flux::AbstractMatrix{<:Real},
     z::AbstractVector{<:Real},
     fid::ProposalFiducialParameters,
 )::Matrix{Float64}
-    size(cached_flux, 1) == length(z) || throw(
-        ArgumentError("cached_flux row count must match redshift sample count"),
+    size(cached_flux, 2) == length(z) || throw(
+        ArgumentError("cached_flux column count must match redshift sample count"),
     )
     d_l = luminosity_distance.(z, fid.H0, fid.Omega_m)
     d_gw = gravitational_wave_distance.(z, d_l, fid.chi0, fid.chin)
-    scale_col = reshape(Float64.((d_l ./ d_gw) .^ 2), :, 1)
-    return Matrix{Float64}(cached_flux) .* scale_col
+    scale_row = reshape(Float64.((d_l ./ d_gw) .^ 2), 1, :)
+    return Matrix{Float64}(cached_flux) .* scale_row
 end
 
 """
