@@ -98,17 +98,17 @@ end
 
 Proposal log-density per sample: redshift grid log-density from
 [`hyperparameters_from_fiducial`](@ref) / [`build_redshift_grid_bundle`](@ref), plus
-full-BNS intrinsic uniform factors on [`FullBNSSamples`](@ref).
+full-BNS intrinsic uniform factors on [`FullBNSSamplesSoA`](@ref).
 """
 function reconstruct_proposal_log_prob(
-    samples::FullBNSSamples,
+    samples::FullBNSSamplesSoA,
     spec::RedshiftPriorSpec,
     fid::ProposalFiducialParameters,
 )::Vector{Float64}
     h = hyperparameters_from_fiducial(fid, spec)
     bundle = build_redshift_grid_bundle(h, spec)
     prior = intrinsic_prior(FullBNS(), bundle)
-    return intrinsic_log_prob_samples(samples, prior)
+    return intrinsic_log_prob_samples(prior, samples)
 end
 
 function importance_sampling_problem(

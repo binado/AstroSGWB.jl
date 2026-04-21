@@ -14,8 +14,10 @@ datasets must not appear in the file). Two-dimensional datasets `cached_flux` an
 `(n_samples, n_columns)` on load. Per-sample flux is stored as `cached_flux` (before the
 fiducial ``(D_L/D_{gw})^2`` factor). Datasets `proposal_log_prob` and `dgw_fid_sq` may be omitted
 and are then reconstructed. Population scalars may live in `hyperparameters` and/or
-`redshift_prior_spec` (duplicate keys must agree). Caches may omit `fiducial_spectral_density`;
-it is then filled using [`fiducial_spectral_density`](@ref). Caches may omit
+`redshift_prior_spec` (duplicate keys must agree). An HDF5 `fiducial_spectral_density` dataset, if
+present, is ignored on load; [`load_cache`](@ref) always fills the observation using
+[`fiducial_spectral_density`](@ref) so the default likelihood data match the current Julia pipeline.
+Caches may omit
 `redshift_integral_fiducial`; it is then set from [`fiducial_redshift_integral`](@ref).
 Inference state is a nested [`HyperParameters`](@ref); caches carry
 [`ProposalFiducialParameters`](@ref) in `fiducial_parameters` (HDF5 group `hyperparameters`).
@@ -57,7 +59,7 @@ export ImportanceSamplingProblem, ImportanceCache,
     InferencePriors,
     ProposalFiducialParameters,
     ProposalSampleBundle,
-    FullBNSSamples,
+    FullBNSSamplesSoA, stack_source_masses,
     FULL_BNS_INTRINSIC_ORDER,
     PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR, PROPOSAL_SAMPLES_SOURCE_TYPE_BNS,
     as_flat_constrained,
@@ -93,12 +95,12 @@ export madau_dickinson_source_frame_distribution,
 # Priors
 export logprior, build_uniform_priors,
     OrderedUniformSourceMassPair, AlignedSpinChiSimple, RedshiftInterpolatedDistribution,
-    FullBNSIntrinsicPrior, intrinsic_prior,
+    intrinsic_prior,
     intrinsic_log_prob_samples, intrinsic_log_prob_samples!
 
 # Importance sampling
 export importance_weights, compute_importance_weights,
-    spectral_density, evaluate_importance_terms
+    spectral_density, omegagw, evaluate_importance_terms
 
 # Diagnostics
 export normalized_ess, max_normalized_weight, log_ratio_variance

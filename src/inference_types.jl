@@ -137,14 +137,41 @@ end
 
 abstract type ProposalSampleBundle end
 
-struct FullBNSSamples <: ProposalSampleBundle
-    mass_1_source::Vector{Float64}
-    mass_2_source::Vector{Float64}
-    redshift::Vector{Float64}
-    chi_1::Vector{Float64}
-    chi_2::Vector{Float64}
-    lambda_1::Vector{Float64}
-    lambda_2::Vector{Float64}
+"""
+    FullBNSSamplesSoA
+
+Struct-of-arrays proposal-sample container matching the NamedTuple returned by
+`rand(prior, n)` when `prior = intrinsic_prior(FullBNS(), bundle)`:
+
+- `mass::Matrix{Float64}` of size `(2, n)`; row 1 is `mass_1_source`, row 2 is `mass_2_source`.
+- `redshift`, `chi_1`, `chi_2`, `lambda_1`, `lambda_2` are `Vector{Float64}` of length `n`.
+
+Matches `keys(prior.dists)` for the full-BNS intrinsic prior.
+"""
+const FullBNSSamplesSoA = @NamedTuple{
+    mass::Matrix{Float64},
+    redshift::Vector{Float64},
+    chi_1::Vector{Float64},
+    chi_2::Vector{Float64},
+    lambda_1::Vector{Float64},
+    lambda_2::Vector{Float64},
+}
+
+"""
+    stack_source_masses(mass_1_source, mass_2_source) -> Matrix{Float64}
+
+Pack two same-length mass vectors into the `2 × n` matrix expected by
+[`FullBNSSamplesSoA`](@ref)`.mass` (row 1 = `mass_1_source`, row 2 = `mass_2_source`).
+"""
+function stack_source_masses(
+    mass_1_source::AbstractVector{<:Real},
+    mass_2_source::AbstractVector{<:Real},
+)::Matrix{Float64}
+    n = length(mass_1_source)
+    length(mass_2_source) == n || throw(
+        ArgumentError("mass_1_source and mass_2_source must have matching lengths"),
+    )
+    return permutedims(hcat(collect(Float64, mass_1_source), collect(Float64, mass_2_source)))
 end
 
 """
@@ -159,7 +186,7 @@ Matrix layouts:
 """
 struct ProposalData
     intrinsic_site_order::Vector{String}
-    samples::FullBNSSamples
+    samples::FullBNSSamplesSoA
     log_prob::Vector{Float64}
     intrinsic_vector::Matrix{Float64}
     cached_flux_over_dgw2::Matrix{Float64}
@@ -187,12 +214,14 @@ struct ImportanceSamplingProblem
     strategy::FullBNS
 end
 
-redshift(s::FullBNSSamples) = s.redshift
+redshift(s::NamedTuple) = s.redshift
 
 redshift(problem::ImportanceSamplingProblem) = redshift(problem.proposal.samples)
 
 function _validate_strategy_bundle(strategy::FullBNS, proposal::ProposalData)
-    proposal.samples isa FullBNSSamples || throw(ArgumentError("proposal samples must be FullBNSSamples"))
+    proposal.samples isa FullBNSSamplesSoA || throw(
+        ArgumentError("proposal samples must match the FullBNSSamplesSoA layout"),
+    )
     return nothing
 end
 

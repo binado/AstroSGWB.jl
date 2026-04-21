@@ -38,7 +38,7 @@ function compute_importance_weights(
     dgw_theta_sq = dgw_theta .^ 2
 
     prior = intrinsic_prior(problem.strategy, bundle)
-    target_log_prob = intrinsic_log_prob_samples(problem.proposal.samples, prior)
+    target_log_prob = intrinsic_log_prob_samples(prior, problem.proposal.samples)
     log_ratio = target_log_prob .- problem.proposal.log_prob
     weights = importance_weights(log_ratio, problem.proposal.dgw_fid_sq, dgw_theta_sq)
     return (;

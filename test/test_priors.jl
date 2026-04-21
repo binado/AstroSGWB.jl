@@ -1,4 +1,5 @@
 import Distributions: insupport, logpdf
+using Distributions: ProductNamedTupleDistribution
 using Random
 using Test
 
@@ -13,6 +14,13 @@ using Test
     mass_sample = rand(MersenneTwister(1), mass_dist)
     @test length(mass_sample) == 2
     @test mass_dist.low <= mass_sample[2] <= mass_sample[1] <= mass_dist.high
+
+    # Batched multivariate draw uses the new _rand! path.
+    mass_batch = rand(MersenneTwister(1), mass_dist, 4)
+    @test size(mass_batch) == (2, 4)
+    @test all(mass_batch[1, :] .>= mass_batch[2, :])
+    @test all(mass_dist.low .<= mass_batch[2, :])
+    @test all(mass_batch[1, :] .<= mass_dist.high)
 
     spin_dist = AlignedSpinChiSimple()
     expected_spin_at_zero = log(
@@ -43,7 +51,7 @@ using Test
     @test minimum(redshift_dist) <= redshift_sample <= maximum(redshift_dist)
 end
 
-@testset "generic intrinsic prior aggregation" begin
+@testset "intrinsic_prior factory returns ProductNamedTupleDistribution" begin
     theta = HyperParameters(;
         H0=67.0,
         Omega_m=0.315,
@@ -54,24 +62,78 @@ end
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     bundle = build_redshift_grid_bundle(theta, spec)
     prior = intrinsic_prior(FullBNS(), bundle)
-    samples = FullBNSSamples(
-        [1.4, 1.5],
-        [1.2, 1.3],
-        [0.1, 0.2],
-        [0.0, 0.1],
-        [0.0, -0.2],
-        [100.0, 200.0],
-        [150.0, 250.0],
+    @test prior isa ProductNamedTupleDistribution
+    @test keys(prior.dists) ==
+        (:mass, :redshift, :chi_1, :chi_2, :lambda_1, :lambda_2)
+
+    single = rand(MersenneTwister(7), prior)
+    @test keys(single) == (:mass, :redshift, :chi_1, :chi_2, :lambda_1, :lambda_2)
+    @test single.mass isa AbstractVector && length(single.mass) == 2
+    @test single.mass[1] >= single.mass[2]
+    @test logpdf(prior, single) isa Real
+
+    # `rand(prior, n)` returns an AoS Vector of NamedTuples for
+    # ProductNamedTupleDistribution. The SoA container is used for proposal samples
+    # loaded from HDF5 and exercised through `intrinsic_log_prob_samples` below.
+    batched = rand(MersenneTwister(7), prior, 5)
+    @test batched isa AbstractVector
+    @test length(batched) == 5
+    @test eltype(batched) <: NamedTuple
+    @test all(s -> length(s.mass) == 2 && s.mass[1] >= s.mass[2], batched)
+end
+
+@testset "intrinsic_log_prob_samples SoA fast path matches native logpdf" begin
+    theta = HyperParameters(;
+        H0=67.0,
+        Omega_m=0.315,
+        gamma=2.7,
+        kappa=3.0,
+        z_peak=2.5,
+    )
+    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
+    bundle = build_redshift_grid_bundle(theta, spec)
+    prior = intrinsic_prior(FullBNS(), bundle)
+    samples = (
+        mass=stack_source_masses([1.4, 1.5], [1.2, 1.3]),
+        redshift=[0.1, 0.2],
+        chi_1=[0.0, 0.1],
+        chi_2=[0.0, -0.2],
+        lambda_1=[100.0, 200.0],
+        lambda_2=[150.0, 250.0],
     )
 
-    expected = Float64[
-        logpdf(prior.mass, [samples.mass_1_source[i], samples.mass_2_source[i]]) +
-        logpdf(prior.redshift, samples.redshift[i]) +
-        logpdf(prior.spin, samples.chi_1[i]) +
-        logpdf(prior.spin, samples.chi_2[i]) +
-        logpdf(prior.lambda, samples.lambda_1[i]) +
-        logpdf(prior.lambda, samples.lambda_2[i]) for i in eachindex(samples.redshift)
+    expected = [
+        logpdf(prior, (
+            mass=[samples.mass[1, i], samples.mass[2, i]],
+            redshift=samples.redshift[i],
+            chi_1=samples.chi_1[i],
+            chi_2=samples.chi_2[i],
+            lambda_1=samples.lambda_1[i],
+            lambda_2=samples.lambda_2[i],
+        )) for i in 1:length(samples.redshift)
     ]
 
-    @test intrinsic_log_prob_samples(samples, prior) ≈ expected
+    @test intrinsic_log_prob_samples(prior, samples) ≈ expected
+
+    out = zeros(Float64, length(samples.redshift))
+    intrinsic_log_prob_samples!(out, prior, samples)
+    @test out ≈ expected
+end
+
+@testset "intrinsic_log_prob_samples AoS fallback" begin
+    theta = HyperParameters(;
+        H0=67.0,
+        Omega_m=0.315,
+        gamma=2.7,
+        kappa=3.0,
+        z_peak=2.5,
+    )
+    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
+    bundle = build_redshift_grid_bundle(theta, spec)
+    prior = intrinsic_prior(FullBNS(), bundle)
+    aos = [
+        (mass=[1.4, 1.2], redshift=0.1, chi_1=0.0, chi_2=0.0, lambda_1=100.0, lambda_2=150.0),
+        (mass=[1.5, 1.3], redshift=0.2, chi_1=0.1, chi_2=-0.2, lambda_1=200.0, lambda_2=250.0),
+    ]
+    @test intrinsic_log_prob_samples(prior, aos) == [logpdf(prior, s) for s in aos]
 end

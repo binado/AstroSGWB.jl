@@ -1,4 +1,5 @@
 using Distributions
+using Distributions: ProductNamedTupleDistribution
 using Random
 
 const BNS_MASS_LOW = 1.1
@@ -18,6 +19,8 @@ end
 
 Base.length(::OrderedUniformSourceMassPair) = 2
 Base.size(::OrderedUniformSourceMassPair) = (2,)
+Base.eltype(::Type{<:OrderedUniformSourceMassPair}) = Float64
+Base.eltype(::OrderedUniformSourceMassPair) = Float64
 
 function Distributions.insupport(
     d::OrderedUniformSourceMassPair,
@@ -50,11 +53,37 @@ function Distributions.logpdf(
     return logpdf(d, (value[1], value[2]))
 end
 
+function Distributions._logpdf(
+    d::OrderedUniformSourceMassPair,
+    value::AbstractVector{<:Real},
+)
+    return logpdf(d, value)
+end
+
 function Random.rand(rng::AbstractRNG, d::OrderedUniformSourceMassPair)
     span = d.high - d.low
     x = d.low + span * rand(rng)
     y = d.low + span * rand(rng)
     return x >= y ? [x, y] : [y, x]
+end
+
+function Distributions._rand!(
+    rng::AbstractRNG,
+    d::OrderedUniformSourceMassPair,
+    x::AbstractVector{<:Real},
+)
+    length(x) == 2 || throw(ArgumentError("ordered mass pair expects length-2 output"))
+    span = d.high - d.low
+    a = d.low + span * rand(rng)
+    b = d.low + span * rand(rng)
+    if a >= b
+        x[1] = a
+        x[2] = b
+    else
+        x[1] = b
+        x[2] = a
+    end
+    return x
 end
 
 struct AlignedSpinChiSimple{T<:Real} <: ContinuousUnivariateDistribution
@@ -111,21 +140,6 @@ function Random.rand(rng::AbstractRNG, d::RedshiftInterpolatedDistribution)
     return x0 + (target - c0) * (x1 - x0) / (c1 - c0)
 end
 
-"""
-    FullBNSIntrinsicPrior{M,Z,C,L}
-
-Intrinsic-parameter prior for the [`FullBNS`](@ref) proposal: an ordered source-frame
-mass pair, a redshift distribution tied to a [`RadialInterpolant`](@ref), a shared
-aligned-spin distribution applied to `chi_1` and `chi_2`, and a shared uniform
-distribution applied to `lambda_1` and `lambda_2`.
-"""
-struct FullBNSIntrinsicPrior{M,Z,C,L}
-    mass::M
-    redshift::Z
-    spin::C
-    lambda::L
-end
-
 function build_uniform_priors(
     bounds::AbstractDict{<:AbstractString,<:Tuple{<:Real,<:Real}},
 )
@@ -157,10 +171,18 @@ function logprior(h::HyperParameters, priors::InferencePriors)
 end
 
 """
-    intrinsic_prior(::FullBNS, bundle; kwargs...) -> FullBNSIntrinsicPrior
+    intrinsic_prior(::FullBNS, bundle; kwargs...) -> ProductNamedTupleDistribution
 
-Build the intrinsic-parameter prior for the full-BNS proposal. `bundle` supplies the
-redshift interpolant used by [`RedshiftInterpolatedDistribution`](@ref).
+Build the intrinsic-parameter prior for the full-BNS proposal as a native
+[`Distributions.product_distribution`](@ref) keyed by a `NamedTuple` with fields
+`mass` (an [`OrderedUniformSourceMassPair`](@ref), a 2-vector component),
+`redshift` (a [`RedshiftInterpolatedDistribution`](@ref) tied to `bundle`),
+`chi_1`/`chi_2` (a shared [`AlignedSpinChiSimple`](@ref)), and `lambda_1`/`lambda_2`
+(a shared [`Distributions.Uniform`](@ref)).
+
+The returned [`ProductNamedTupleDistribution`](@ref) supports `rand`/`rand(prior, n)`
+and `logpdf(prior, sample)` directly; use [`intrinsic_log_prob_samples`](@ref) for the
+batched, allocation-light path on a [`FullBNSSamplesSoA`](@ref) sample container.
 """
 function intrinsic_prior(
     ::FullBNS,
@@ -170,78 +192,94 @@ function intrinsic_prior(
     spin_a_max::Real=BNS_SPIN_A_MAX,
     lambda_high::Real=BNS_LAMBDA_HIGH,
 )
-    return FullBNSIntrinsicPrior(
-        OrderedUniformSourceMassPair(; low=mass_low, high=mass_high),
-        RedshiftInterpolatedDistribution(bundle),
-        AlignedSpinChiSimple(; a_max=spin_a_max),
-        Uniform(0.0, Float64(lambda_high)),
-    )
+    lambda_dist = Uniform(0.0, Float64(lambda_high))
+    spin_dist = AlignedSpinChiSimple(; a_max=spin_a_max)
+    return product_distribution((
+        mass=OrderedUniformSourceMassPair(; low=mass_low, high=mass_high),
+        redshift=RedshiftInterpolatedDistribution(bundle),
+        chi_1=spin_dist,
+        chi_2=spin_dist,
+        lambda_1=lambda_dist,
+        lambda_2=lambda_dist,
+    ))
 end
 
-function _full_bns_logpdf_pointwise(
-    prior::FullBNSIntrinsicPrior,
-    samples::FullBNSSamples,
+"""
+    intrinsic_log_prob_samples(prior, samples) -> Vector{Float64}
+
+Per-sample intrinsic log-prior. Two methods:
+
+- `samples::AbstractVector{<:NamedTuple}` (AoS fallback) broadcasts `logpdf(prior, s)`
+  over the collection.
+- `prior::ProductNamedTupleDistribution` + `samples::FullBNSSamplesSoA` (SoA hot path)
+  evaluates each component `logpdf` over contiguous arrays and sums, with no per-sample
+  heap allocation.
+"""
+intrinsic_log_prob_samples(prior, samples::AbstractVector{<:NamedTuple}) =
+    logpdf.(Ref(prior), samples)
+
+function _full_bns_pointwise_logpdf(
+    prior::ProductNamedTupleDistribution,
+    samples::NamedTuple,
     i::Integer,
 )
     return (
-        logpdf(prior.mass, (samples.mass_1_source[i], samples.mass_2_source[i])) +
-        logpdf(prior.redshift, samples.redshift[i]) +
-        logpdf(prior.spin, samples.chi_1[i]) +
-        logpdf(prior.spin, samples.chi_2[i]) +
-        logpdf(prior.lambda, samples.lambda_1[i]) +
-        logpdf(prior.lambda, samples.lambda_2[i])
+        logpdf(prior.dists.mass, @view samples.mass[:, i]) +
+        logpdf(prior.dists.redshift, samples.redshift[i]) +
+        logpdf(prior.dists.chi_1, samples.chi_1[i]) +
+        logpdf(prior.dists.chi_2, samples.chi_2[i]) +
+        logpdf(prior.dists.lambda_1, samples.lambda_1[i]) +
+        logpdf(prior.dists.lambda_2, samples.lambda_2[i])
     )
 end
 
-function _require_full_bns_matching_lengths(samples::FullBNSSamples)
-    n = length(samples.redshift)
-    (length(samples.mass_1_source) == n &&
-     length(samples.mass_2_source) == n &&
-     length(samples.chi_1) == n &&
-     length(samples.chi_2) == n &&
-     length(samples.lambda_1) == n &&
-     length(samples.lambda_2) == n) || throw(
-        ArgumentError("FullBNSSamples vectors must all have matching lengths"),
-    )
-    return n
-end
-
-"""
-    intrinsic_log_prob_samples!(out, samples, prior) -> out
-
-Write per-sample log-prior into `out`. `out` must match the sample count of `samples`.
-"""
-function intrinsic_log_prob_samples!(
-    out::AbstractVector,
-    samples::FullBNSSamples,
-    prior::FullBNSIntrinsicPrior,
-)
-    n = _require_full_bns_matching_lengths(samples)
-    length(out) == n || throw(
-        ArgumentError("output and sample vectors must have matching lengths"),
-    )
-    @inbounds for i in 1:n
-        out[i] = _full_bns_logpdf_pointwise(prior, samples, i)
-    end
-    return out
-end
-
-"""
-    intrinsic_log_prob_samples(samples, prior) -> Vector
-
-Per-sample log-prior as a freshly allocated vector.
-"""
 function intrinsic_log_prob_samples(
-    samples::FullBNSSamples,
-    prior::FullBNSIntrinsicPrior,
+    prior::ProductNamedTupleDistribution,
+    samples::NamedTuple,
 )
-    n = _require_full_bns_matching_lengths(samples)
+    n = _require_full_bns_soa_matching_lengths(samples)
     n == 0 && return Float64[]
-    first_val = _full_bns_logpdf_pointwise(prior, samples, 1)
+    first_val = _full_bns_pointwise_logpdf(prior, samples, 1)
     out = Vector{typeof(first_val)}(undef, n)
     @inbounds out[1] = first_val
     @inbounds for i in 2:n
-        out[i] = _full_bns_logpdf_pointwise(prior, samples, i)
+        out[i] = _full_bns_pointwise_logpdf(prior, samples, i)
     end
     return out
+end
+
+"""
+    intrinsic_log_prob_samples!(out, prior, samples) -> out
+
+In-place SoA variant of [`intrinsic_log_prob_samples`](@ref). Writes per-sample
+log-prior into `out`; `out` must have length equal to `length(samples.redshift)`.
+"""
+function intrinsic_log_prob_samples!(
+    out::AbstractVector,
+    prior::ProductNamedTupleDistribution,
+    samples::NamedTuple,
+)
+    n = _require_full_bns_soa_matching_lengths(samples)
+    length(out) == n || throw(
+        ArgumentError("output length must match the number of samples"),
+    )
+    @inbounds for i in 1:n
+        out[i] = _full_bns_pointwise_logpdf(prior, samples, i)
+    end
+    return out
+end
+
+function _require_full_bns_soa_matching_lengths(samples::NamedTuple)
+    n = length(samples.redshift)
+    (length(samples.chi_1) == n &&
+     length(samples.chi_2) == n &&
+     length(samples.lambda_1) == n &&
+     length(samples.lambda_2) == n &&
+     size(samples.mass, 2) == n) || throw(
+        ArgumentError("SoA sample vectors must all have matching lengths"),
+    )
+    size(samples.mass, 1) == 2 || throw(
+        ArgumentError("SoA mass matrix must have two rows (m1, m2)"),
+    )
+    return n
 end
