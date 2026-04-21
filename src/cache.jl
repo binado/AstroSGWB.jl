@@ -107,8 +107,8 @@ function reconstruct_proposal_log_prob(
 )::Vector{Float64}
     h = hyperparameters_from_fiducial(fid, spec)
     bundle = build_redshift_grid_bundle(h, spec)
-    terms = intrinsic_prior_terms(FullBNS(), bundle)
-    return intrinsic_log_prob_samples(samples, terms)
+    prior = intrinsic_prior(FullBNS(), bundle)
+    return intrinsic_log_prob_samples(samples, prior)
 end
 
 function importance_sampling_problem(

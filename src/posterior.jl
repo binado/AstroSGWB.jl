@@ -1,7 +1,7 @@
 function target_log_prob_samples(h::HyperParameters, problem::ImportanceSamplingProblem)
     bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec)
-    terms = intrinsic_prior_terms(problem.strategy, bundle)
-    return intrinsic_log_prob_samples(problem.proposal.samples, terms), bundle
+    prior = intrinsic_prior(problem.strategy, bundle)
+    return intrinsic_log_prob_samples(problem.proposal.samples, prior), bundle
 end
 
 """

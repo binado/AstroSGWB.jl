@@ -53,7 +53,7 @@ end
     )
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     bundle = build_redshift_grid_bundle(theta, spec)
-    terms = intrinsic_prior_terms(FullBNS(), bundle)
+    prior = intrinsic_prior(FullBNS(), bundle)
     samples = FullBNSSamples(
         [1.4, 1.5],
         [1.2, 1.3],
@@ -65,13 +65,13 @@ end
     )
 
     expected = Float64[
-        logpdf(terms[1].dist, [samples.mass_1_source[i], samples.mass_2_source[i]]) +
-        logpdf(terms[2].dist, samples.redshift[i]) +
-        logpdf(terms[3].dist, samples.chi_1[i]) +
-        logpdf(terms[4].dist, samples.chi_2[i]) +
-        logpdf(terms[5].dist, samples.lambda_1[i]) +
-        logpdf(terms[6].dist, samples.lambda_2[i]) for i in eachindex(samples.redshift)
+        logpdf(prior.mass, [samples.mass_1_source[i], samples.mass_2_source[i]]) +
+        logpdf(prior.redshift, samples.redshift[i]) +
+        logpdf(prior.spin, samples.chi_1[i]) +
+        logpdf(prior.spin, samples.chi_2[i]) +
+        logpdf(prior.lambda, samples.lambda_1[i]) +
+        logpdf(prior.lambda, samples.lambda_2[i]) for i in eachindex(samples.redshift)
     ]
 
-    @test intrinsic_log_prob_samples(samples, terms) ≈ expected
+    @test intrinsic_log_prob_samples(samples, prior) ≈ expected
 end

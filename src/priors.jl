@@ -111,18 +111,19 @@ function Random.rand(rng::AbstractRNG, d::RedshiftInterpolatedDistribution)
     return x0 + (target - c0) * (x1 - x0) / (c1 - c0)
 end
 
-struct IntrinsicPriorTerm{F,D}
-    name::Symbol
-    fields::F
-    dist::D
-end
+"""
+    FullBNSIntrinsicPrior{M,Z,C,L}
 
-IntrinsicPriorTerm(name::Symbol, field::Symbol, dist) =
-    IntrinsicPriorTerm(name, (field,), dist)
-
-function IntrinsicPriorTerm(name::Symbol, fields::Tuple{Vararg{Symbol}}, dist)
-    isempty(fields) && throw(ArgumentError("IntrinsicPriorTerm fields must be non-empty"))
-    return IntrinsicPriorTerm{typeof(fields),typeof(dist)}(name, fields, dist)
+Intrinsic-parameter prior for the [`FullBNS`](@ref) proposal: an ordered source-frame
+mass pair, a redshift distribution tied to a [`RadialInterpolant`](@ref), a shared
+aligned-spin distribution applied to `chi_1` and `chi_2`, and a shared uniform
+distribution applied to `lambda_1` and `lambda_2`.
+"""
+struct FullBNSIntrinsicPrior{M,Z,C,L}
+    mass::M
+    redshift::Z
+    spin::C
+    lambda::L
 end
 
 function build_uniform_priors(
@@ -155,7 +156,13 @@ function logprior(h::HyperParameters, priors::InferencePriors)
     )
 end
 
-function intrinsic_prior_terms(
+"""
+    intrinsic_prior(::FullBNS, bundle; kwargs...) -> FullBNSIntrinsicPrior
+
+Build the intrinsic-parameter prior for the full-BNS proposal. `bundle` supplies the
+redshift interpolant used by [`RedshiftInterpolatedDistribution`](@ref).
+"""
+function intrinsic_prior(
     ::FullBNS,
     bundle::RadialInterpolant;
     mass_low::Real=BNS_MASS_LOW,
@@ -163,115 +170,87 @@ function intrinsic_prior_terms(
     spin_a_max::Real=BNS_SPIN_A_MAX,
     lambda_high::Real=BNS_LAMBDA_HIGH,
 )
-    return (
-        IntrinsicPriorTerm(
-            :masses,
-            (:mass_1_source, :mass_2_source),
-            OrderedUniformSourceMassPair(; low=mass_low, high=mass_high),
-        ),
-        IntrinsicPriorTerm(:redshift, :redshift, RedshiftInterpolatedDistribution(bundle)),
-        IntrinsicPriorTerm(:chi_1, :chi_1, AlignedSpinChiSimple(; a_max=spin_a_max)),
-        IntrinsicPriorTerm(:chi_2, :chi_2, AlignedSpinChiSimple(; a_max=spin_a_max)),
-        IntrinsicPriorTerm(:lambda_1, :lambda_1, Uniform(0.0, Float64(lambda_high))),
-        IntrinsicPriorTerm(:lambda_2, :lambda_2, Uniform(0.0, Float64(lambda_high))),
+    return FullBNSIntrinsicPrior(
+        OrderedUniformSourceMassPair(; low=mass_low, high=mass_high),
+        RedshiftInterpolatedDistribution(bundle),
+        AlignedSpinChiSimple(; a_max=spin_a_max),
+        Uniform(0.0, Float64(lambda_high)),
     )
 end
 
-function _require_matching_output_length(
-    out::AbstractVector,
-    values::AbstractVector{<:Real}...,
+function _full_bns_logpdf_pointwise(
+    prior::FullBNSIntrinsicPrior,
+    samples::FullBNSSamples,
+    i::Integer,
 )
-    n = length(out)
-    all(length(v) == n for v in values) || throw(
-        ArgumentError(
-            "output and intrinsic prior sample vectors must have matching lengths",
-        ),
+    return (
+        logpdf(prior.mass, (samples.mass_1_source[i], samples.mass_2_source[i])) +
+        logpdf(prior.redshift, samples.redshift[i]) +
+        logpdf(prior.spin, samples.chi_1[i]) +
+        logpdf(prior.spin, samples.chi_2[i]) +
+        logpdf(prior.lambda, samples.lambda_1[i]) +
+        logpdf(prior.lambda, samples.lambda_2[i])
+    )
+end
+
+function _full_bns_logpdf_eltype(
+    prior::FullBNSIntrinsicPrior,
+    samples::FullBNSSamples,
+)
+    return promote_type(
+        typeof(logpdf(prior.mass, (first(samples.mass_1_source), first(samples.mass_2_source)))),
+        typeof(logpdf(prior.redshift, first(samples.redshift))),
+        typeof(logpdf(prior.spin, first(samples.chi_1))),
+        typeof(logpdf(prior.spin, first(samples.chi_2))),
+        typeof(logpdf(prior.lambda, first(samples.lambda_1))),
+        typeof(logpdf(prior.lambda, first(samples.lambda_2))),
+    )
+end
+
+function _require_full_bns_matching_lengths(samples::FullBNSSamples)
+    n = length(samples.redshift)
+    (length(samples.mass_1_source) == n &&
+     length(samples.mass_2_source) == n &&
+     length(samples.chi_1) == n &&
+     length(samples.chi_2) == n &&
+     length(samples.lambda_1) == n &&
+     length(samples.lambda_2) == n) || throw(
+        ArgumentError("FullBNSSamples vectors must all have matching lengths"),
     )
     return n
 end
 
-function _term_result_type(
-    samples,
-    term::IntrinsicPriorTerm{<:Tuple{Symbol}},
-)
-    values = getfield(samples, term.fields[1])
-    return typeof(logpdf(term.dist, first(values)))
-end
+"""
+    intrinsic_log_prob_samples!(out, samples, prior) -> out
 
-function _term_result_type(
-    samples,
-    term::IntrinsicPriorTerm{<:Tuple{Symbol,Symbol}},
-)
-    values1 = getfield(samples, term.fields[1])
-    values2 = getfield(samples, term.fields[2])
-    return typeof(logpdf(term.dist, (first(values1), first(values2))))
-end
-
-_intrinsic_log_prob_type(samples, ::Tuple{}) = Float64
-
-function _intrinsic_log_prob_type(samples, terms::Tuple)
-    return promote_type(
-        _term_result_type(samples, first(terms)),
-        _intrinsic_log_prob_type(samples, Base.tail(terms)),
-    )
-end
-
-function _accumulate_logpdf!(
-    out::AbstractVector,
-    samples,
-    term::IntrinsicPriorTerm{<:Tuple{Symbol}},
-)
-    values = getfield(samples, term.fields[1])
-    _require_matching_output_length(out, values)
-    @inbounds for i in eachindex(out, values)
-        out[i] += logpdf(term.dist, values[i])
-    end
-    return out
-end
-
-function _accumulate_logpdf!(
-    out::AbstractVector,
-    samples,
-    term::IntrinsicPriorTerm{<:Tuple{Symbol,Symbol}},
-)
-    values1 = getfield(samples, term.fields[1])
-    values2 = getfield(samples, term.fields[2])
-    _require_matching_output_length(out, values1, values2)
-    @inbounds for i in eachindex(out, values1, values2)
-        out[i] += logpdf(term.dist, (values1[i], values2[i]))
-    end
-    return out
-end
-
-function _accumulate_logpdf!(out::AbstractVector, samples, term::IntrinsicPriorTerm)
-    throw(
-        ArgumentError(
-            "unsupported intrinsic prior term arity $(length(term.fields)) for $(term.name)",
-        ),
-    )
-end
-
-_intrinsic_log_prob_samples!(out::AbstractVector, samples, ::Tuple{}) = out
-
-function _intrinsic_log_prob_samples!(out::AbstractVector, samples, terms::Tuple)
-    _accumulate_logpdf!(out, samples, first(terms))
-    return _intrinsic_log_prob_samples!(out, samples, Base.tail(terms))
-end
-
+Write per-sample log-prior into `out`. `out` must match the sample count of `samples`.
+"""
 function intrinsic_log_prob_samples!(
     out::AbstractVector,
-    samples,
-    terms::Tuple,
+    samples::FullBNSSamples,
+    prior::FullBNSIntrinsicPrior,
 )
-    fill!(out, zero(eltype(out)))
-    return _intrinsic_log_prob_samples!(out, samples, terms)
+    n = _require_full_bns_matching_lengths(samples)
+    length(out) == n || throw(
+        ArgumentError("output and sample vectors must have matching lengths"),
+    )
+    @inbounds for i in 1:n
+        out[i] = _full_bns_logpdf_pointwise(prior, samples, i)
+    end
+    return out
 end
 
-function intrinsic_log_prob_samples(samples, terms::Tuple)
-    isempty(terms) && return Float64[]
-    first_term = first(terms)
-    first_values = getfield(samples, first(first_term.fields))
-    T = _intrinsic_log_prob_type(samples, terms)
-    out = similar(first_values, T)
-    return intrinsic_log_prob_samples!(out, samples, terms)
+"""
+    intrinsic_log_prob_samples(samples, prior) -> Vector
+
+Per-sample log-prior as a freshly allocated vector.
+"""
+function intrinsic_log_prob_samples(
+    samples::FullBNSSamples,
+    prior::FullBNSIntrinsicPrior,
+)
+    n = _require_full_bns_matching_lengths(samples)
+    T = _full_bns_logpdf_eltype(prior, samples)
+    out = Vector{T}(undef, n)
+    return intrinsic_log_prob_samples!(out, samples, prior)
 end
