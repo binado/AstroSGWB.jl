@@ -193,20 +193,6 @@ function _full_bns_logpdf_pointwise(
     )
 end
 
-function _full_bns_logpdf_eltype(
-    prior::FullBNSIntrinsicPrior,
-    samples::FullBNSSamples,
-)
-    return promote_type(
-        typeof(logpdf(prior.mass, (first(samples.mass_1_source), first(samples.mass_2_source)))),
-        typeof(logpdf(prior.redshift, first(samples.redshift))),
-        typeof(logpdf(prior.spin, first(samples.chi_1))),
-        typeof(logpdf(prior.spin, first(samples.chi_2))),
-        typeof(logpdf(prior.lambda, first(samples.lambda_1))),
-        typeof(logpdf(prior.lambda, first(samples.lambda_2))),
-    )
-end
-
 function _require_full_bns_matching_lengths(samples::FullBNSSamples)
     n = length(samples.redshift)
     (length(samples.mass_1_source) == n &&
@@ -250,7 +236,12 @@ function intrinsic_log_prob_samples(
     prior::FullBNSIntrinsicPrior,
 )
     n = _require_full_bns_matching_lengths(samples)
-    T = _full_bns_logpdf_eltype(prior, samples)
-    out = Vector{T}(undef, n)
-    return intrinsic_log_prob_samples!(out, samples, prior)
+    n == 0 && return Float64[]
+    first_val = _full_bns_logpdf_pointwise(prior, samples, 1)
+    out = Vector{typeof(first_val)}(undef, n)
+    @inbounds out[1] = first_val
+    @inbounds for i in 2:n
+        out[i] = _full_bns_logpdf_pointwise(prior, samples, i)
+    end
+    return out
 end
