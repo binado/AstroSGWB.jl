@@ -62,7 +62,7 @@ One **1D float dataset per name** in `intrinsic_site_order`. Full BNS order is:
 | `frequencies`               | yes      | 1D float, non-empty.                                                                                                                                                                                                                                                  |
 | `in_band_mask`              | yes      | 1D mask; may be bool, integer, or HDF5 enum (`FALSE`/`TRUE`).                                                                                                                                                                                                         |
 | `cached_flux`               | yes      | 2D float; **HDF5 extent** `(n_f, n_samples)` = `(n_cols, n_samples)`; flux **before** multiplying by `(D_L/D_gw)^2` under fiducial `hyperparameters`. Normalized to `(n_f, n_samples)` in Julia (column-major friendly: each proposal sample is a contiguous column). |
-| `fiducial_spectral_density` | no       | 1D float, length `n_f`. If omitted, recomputed via `fiducial_spectral_density` (requires population keys as for omitted `proposal_log_prob`).                                                                                                                         |
+| `fiducial_spectral_density` | no       | 1D float, length `n_f`, optional. If present it is **ignored on load**: `load_cache` always sets the in-memory fiducial spectrum by calling `fiducial_spectral_density` on the assembled problem (same population-key requirements as reconstructing an omitted `proposal_log_prob`). |
 
 
 **Must not be present:** `covariance`, `sgwb_scale`, `cached_flux_over_dgw2`.
@@ -75,7 +75,7 @@ One **1D float dataset per name** in `intrinsic_site_order`. Full BNS order is:
 load_cache(path::AbstractString, detectors::AbstractVector{<:Detector}) -> ImportanceSamplingProblem
 ```
 
-Pass **at least two** detectors. Covariance and `sgwb_scale` are always built from tabulated PSDs and overlap reduction functions for the given detector network.
+Pass **at least two** detectors. Covariance and `sgwb_scale` are always built from tabulated PSDs and overlap reduction functions for the given detector network. The default observed strain spectrum (`ObservationConfig.fiducial_spectral_density`) is **always** computed in Julia from the cache proposal and fiducial hyperparameters, never taken from an on-disk `fiducial_spectral_density` vector (so caches stay consistent when the forward model changes).
 
 ## 2D array storage
 
@@ -83,4 +83,4 @@ Pass **at least two** detectors. Covariance and `sgwb_scale` are always built fr
 
 ## Reference
 
-Authoritative behavior is `load_cache` and helpers in `src/io.jl`, `src/cache.jl`, and tests under `test/test_io.jl`. To refresh committed binary fixtures from an older tree, see `contrib/upgrade_hdf5_importance_caches.jl`.
+Authoritative behavior is `load_cache` and helpers in `src/io.jl`, `src/cache.jl`, and tests under `test/test_io.jl`.
