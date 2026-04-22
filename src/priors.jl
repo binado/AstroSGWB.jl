@@ -228,7 +228,7 @@ function _full_bns_pointwise_logpdf(
     i::Integer,
 )
     return (
-        logpdf(prior.dists.mass, @view samples.mass[:, i]) +
+        logpdf(prior.dists.mass, (samples.mass[1, i], samples.mass[2, i])) +
         logpdf(prior.dists.redshift, samples.redshift[i]) +
         logpdf(prior.dists.chi_1, samples.chi_1[i]) +
         logpdf(prior.dists.chi_2, samples.chi_2[i]) +
