@@ -3,9 +3,9 @@ using DataInterpolations: LinearInterpolation, integral
 """
     CumulativeIntegral1D(x, f)
 
-Uniform-grid linear interpolant of a scalar function `f` sampled on the node
-vector `x`, plus a cumulative antiderivative at each node computed from the
-analytic integral of the `LinearInterpolation` interpolant (piecewise-trapezoidal).
+Linear interpolant of a scalar function `f` on strictly increasing nodes `x`,
+plus a cumulative antiderivative at each node: prefix sum of trapezoids between
+neighbors (exact for the `LinearInterpolation` antiderivative at grid points).
 
 Query entry points:
 - [`interpolate`](@ref) evaluates `f` via linear interpolation on `[x[1], x[end]]`
@@ -17,7 +17,7 @@ Query entry points:
   (`last(cumulative)`).
 
 # Fields
-- `x`          : uniform grid nodes (`Float64`)
+- `x`          : strictly increasing grid nodes (`Float64`)
 - `y`          : `f` evaluated at each node
 - `cumulative` : cumulative antiderivative at each node, `cumulative[1] = 0`
 - `itp`        : cached `LinearInterpolation(y, x)` object
@@ -38,17 +38,35 @@ end
     CumulativeIntegral1D(x, f)
 
 Build a [`CumulativeIntegral1D`](@ref) by evaluating `f` at each node of `x`,
-building a `LinearInterpolation`, and computing the cumulative antiderivative
-via its analytic integral. `x` must be a (uniformly spaced) vector of
-length ≥ 2.
+building a `LinearInterpolation`, and computing nodal cumulative integrals as
+the prefix sum of trapezoids ``(x_{i+1}-x_i)(y_i+y_{i+1})/2`` (O(n), identical
+to the linear interpolant’s antiderivative on the nodes). `x` must be strictly
+increasing with length ≥ 2.
+
+Off-grid [`cdf`](@ref) queries still use `DataInterpolations.integral` on the
+cached interpolant.
 """
+function _cumulative_at_nodes_trapezoid(x::AbstractVector{Float64}, y::AbstractVector)
+    n = length(x)
+    length(y) == n || throw(ArgumentError("x and y must have the same length"))
+    cumulative = similar(y)
+    @inbounds cumulative[1] = zero(y[1])
+    acc = cumulative[1]
+    @inbounds for i in 1:(n - 1)
+        dx = x[i + 1] - x[i]
+        acc = acc + dx * (y[i] + y[i + 1]) * 0.5
+        cumulative[i + 1] = acc
+    end
+    return cumulative
+end
+
 function CumulativeIntegral1D(x::AbstractVector{<:Real}, f)
     n = length(x)
     n >= 2 || throw(ArgumentError("CumulativeIntegral1D requires at least 2 grid points"))
     x_float = x isa AbstractVector{Float64} ? x : collect(Float64, x)
     y = map(f, x_float)
     itp = LinearInterpolation(y, x_float)
-    cumulative = [integral(itp, x_float[1], xi) for xi in x_float]
+    cumulative = _cumulative_at_nodes_trapezoid(x_float, y)
     return CumulativeIntegral1D(x_float, y, cumulative, itp)
 end
 
