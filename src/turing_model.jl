@@ -82,8 +82,9 @@ end
 
     m = problem.observation.in_band_mask
     obs = problem.observation
+    df = frequency_bin_width(obs.frequencies)
     snr_sq = spectral_snr_squared(
-        sd[m], obs.effective_psd[m], obs.frequencies[m], obs.observation_time_sec
+        sd[m], obs.effective_psd[m], obs.frequencies[m], obs.observation_time_sec, df
     )
 
     return (;
