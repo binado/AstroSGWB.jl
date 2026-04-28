@@ -1,5 +1,5 @@
 function target_log_prob_samples(h::HyperParametersNT, problem::ImportanceSamplingProblem)
-    bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec)
+    bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec, problem.redshift_grid)
     prior = intrinsic_prior(problem.strategy, bundle)
     return intrinsic_log_prob_samples(prior, problem.proposal.samples), bundle
 end
@@ -14,7 +14,7 @@ the AdvancedHMC likelihood (`dgw_theta_sq`, `target_log_prob`, `log_ratio`, `wei
 `spectral_density_in_band`).
 """
 function evaluate_importance_terms(h::HyperParametersNT, problem::ImportanceSamplingProblem)
-    bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec)
+    bundle = build_redshift_grid_bundle(h, problem.redshift_prior_spec, problem.redshift_grid)
     iw = compute_importance_weights(problem, h, bundle)
     rate = merger_rate_per_sec(
         bundle,

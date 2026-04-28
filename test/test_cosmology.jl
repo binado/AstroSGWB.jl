@@ -72,6 +72,13 @@ end
         end
     end
 
+    @testset "cdf uses exact within-cell linear antiderivative" begin
+        x = [0.0, 1.0, 2.0]
+        r = CumulativeIntegral1D(x, z -> 2.0 + 3.0z)
+        @test cdf(r, 0.25) ≈ 2.0 * 0.25 + 0.5 * 3.0 * 0.25^2
+        @test cdf(r, 1.5) ≈ cdf(r, 1.0) + 1.0 * (5.0 * 0.5 + 0.5 * 3.0 * 0.5^2)
+    end
+
     @testset "luminosity_distance overload matches scalar path" begin
         H0, Ωm = 67.0, 0.315
         x = collect(LinRange(0.0, 10.0, 1024))

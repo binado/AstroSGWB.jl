@@ -33,3 +33,38 @@ using Test
         @test ASGWB.redshift_integral(bundle) ≈ expected_integral rtol = 5e-3
     end
 end
+
+@testset "sample interpolation helpers" begin
+    theta = HyperParameters(;
+        H0 = 67.0,
+        Ωm = 0.315,
+        γ = 2.7,
+        κ = 3.0,
+        zpeak = 2.5
+    )
+    spec = RedshiftPriorSpec(MadauDickinson, 0.0, 2.0, 101, nothing)
+    z_grid = ASGWB.redshift_grid(spec)
+    bundle = build_redshift_grid_bundle(theta, spec, z_grid)
+    samples = [0.0, 0.137, 0.9, 2.0]
+    interp = ASGWB.SampleInterpolant(samples, z_grid)
+
+    @test ASGWB.interpolate_at_samples(bundle.pdf.y, interp) ≈
+          [ASGWB.interpolate(bundle.pdf, z) for z in samples]
+    @test ASGWB.cdf_at_samples(
+        bundle.distance.cumulative,
+        bundle.distance.y,
+        interp,
+        z_grid
+    ) ≈ [ASGWB.cdf(bundle.distance, z) for z in samples]
+    @test ASGWB.log_prob_at_samples(bundle, interp) ≈
+          [log_prob_from_bundle(z, bundle) for z in samples]
+    @test ASGWB.luminosity_distance_at_samples(
+        bundle,
+        theta.H0,
+        interp,
+        z_grid,
+        samples
+    ) ≈ [luminosity_distance(z, theta.H0, theta.Ωm, bundle.distance) for z in samples]
+    @test_throws ArgumentError ASGWB.SampleInterpolant([-0.1], z_grid)
+    @test_throws ArgumentError ASGWB.SampleInterpolant([2.1], z_grid)
+end

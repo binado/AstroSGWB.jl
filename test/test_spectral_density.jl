@@ -1,4 +1,5 @@
 using ASGWB: HyperParameters, spectral_snr, spectral_snr_squared
+using ForwardDiff
 using Statistics
 using Test
 
@@ -53,6 +54,33 @@ end
         @test length(spectral_density(fluxes, rate)) == size(fluxes, 1)
         @test length(spectral_density(fluxes, rate; weights = rand(n_samples))) ==
               size(fluxes, 1)
+    end
+
+    @testset "dual weighted contraction matches generic expression" begin
+        w = [
+            ForwardDiff.Dual(0.5, 1.0), ForwardDiff.Dual(1.0, -0.5), ForwardDiff.Dual(2.0, 0.25)]
+        expected = 0.4 .* rate .* ((fluxes * w) ./ n_samples)
+        got = spectral_density(fluxes, rate; weights = w)
+        @test ForwardDiff.value.(got) ≈ ForwardDiff.value.(expected)
+        @test [ForwardDiff.partials(x)[1] for x in got] ≈
+              [ForwardDiff.partials(x)[1] for x in expected]
+    end
+
+    @testset "dual weighted contraction handles dual rate and multiple lanes" begin
+        w = [
+            ForwardDiff.Dual{Nothing, Float64, 2}(0.5, ForwardDiff.Partials((1.0, 0.1))),
+            ForwardDiff.Dual{Nothing, Float64, 2}(1.0, ForwardDiff.Partials((-0.5, 0.2))),
+            ForwardDiff.Dual{Nothing, Float64, 2}(2.0, ForwardDiff.Partials((0.25, -0.3)))
+        ]
+        rate_dual = ForwardDiff.Dual{Nothing, Float64, 2}(rate, ForwardDiff.Partials((
+            0.3, -0.1)))
+        expected = 0.4 .* rate_dual .* ((fluxes * w) ./ n_samples)
+        got = spectral_density(fluxes, rate_dual; weights = w)
+        @test ForwardDiff.value.(got) ≈ ForwardDiff.value.(expected)
+        for lane in 1:2
+            @test [ForwardDiff.partials(x)[lane] for x in got] ≈
+                  [ForwardDiff.partials(x)[lane] for x in expected]
+        end
     end
 end
 

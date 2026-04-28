@@ -1,3 +1,5 @@
+using ForwardDiff
+
 """
     spectral_density(fluxes, merger_rate_per_sec; weights=nothing) -> Vector
 
@@ -14,13 +16,112 @@ function spectral_density(
         merger_rate_per_sec::Real;
         weights::Union{Nothing, AbstractVector{<:Real}} = nothing
 )
+    weights === nothing && return _spectral_density_unweighted(fluxes, merger_rate_per_sec)
+    return _spectral_density_weighted(fluxes, merger_rate_per_sec, weights)
+end
+
+function _spectral_density_unweighted(
+        fluxes::AbstractMatrix{<:Real},
+        merger_rate_per_sec::Real
+)
     n_samples = size(fluxes, 2)
-    mean_flux = if weights === nothing
-        vec(sum(fluxes; dims = 2)) ./ n_samples
-    else
-        (fluxes * weights) ./ n_samples
-    end
+    mean_flux = vec(sum(fluxes; dims = 2)) ./ n_samples
     return 0.4 .* merger_rate_per_sec .* mean_flux
+end
+
+function _spectral_density_weighted_generic(
+        fluxes::AbstractMatrix{<:Real},
+        merger_rate_per_sec::Real,
+        weights::AbstractVector{<:Real}
+)
+    n_samples = size(fluxes, 2)
+    mean_flux = (fluxes * weights) ./ n_samples
+    return 0.4 .* merger_rate_per_sec .* mean_flux
+end
+
+function _spectral_density_weighted(
+        fluxes::AbstractMatrix{<:Real},
+        merger_rate_per_sec::Real,
+        weights::AbstractVector{<:Real}
+)
+    return _spectral_density_weighted_generic(fluxes, merger_rate_per_sec, weights)
+end
+
+function _spectral_density_weighted(
+        fluxes::AbstractMatrix{<:Real},
+        merger_rate_per_sec::Real,
+        weights::AbstractVector{<:ForwardDiff.Dual{Tag, V, N}}
+) where {Tag, V, N}
+    merger_rate_per_sec isa ForwardDiff.Dual &&
+        return _spectral_density_weighted_generic(fluxes, merger_rate_per_sec, weights)
+    rate_value = V(merger_rate_per_sec)
+    rate_partials = ntuple(_ -> zero(V), Val(N))
+    return _spectral_density_weighted_dual(
+        fluxes,
+        rate_value,
+        rate_partials,
+        weights,
+        Val(N),
+        Tag,
+        V
+    )
+end
+
+function _spectral_density_weighted(
+        fluxes::AbstractMatrix{<:Real},
+        merger_rate_per_sec::ForwardDiff.Dual{Tag, V, N},
+        weights::AbstractVector{<:ForwardDiff.Dual{Tag, V, N}}
+) where {Tag, V, N}
+    rate_partials = ntuple(j -> ForwardDiff.partials(merger_rate_per_sec)[j], Val(N))
+    return _spectral_density_weighted_dual(
+        fluxes,
+        ForwardDiff.value(merger_rate_per_sec),
+        rate_partials,
+        weights,
+        Val(N),
+        Tag,
+        V
+    )
+end
+
+function _spectral_density_weighted_dual(
+        fluxes::AbstractMatrix{<:Real},
+        rate_value::V,
+        rate_partials::NTuple{N, V},
+        weights::AbstractVector{<:ForwardDiff.Dual{Tag, V, N}},
+        ::Val{N},
+        ::Type{Tag},
+        ::Type{V}
+) where {Tag, V, N}
+    n_freq, n_samples = size(fluxes)
+    length(weights) == n_samples ||
+        throw(DimensionMismatch("weight length must match flux sample dimension"))
+
+    primal_weights = Vector{V}(undef, n_samples)
+    partial_weights = Matrix{V}(undef, n_samples, N)
+    @inbounds for i in 1:n_samples
+        w = weights[i]
+        primal_weights[i] = ForwardDiff.value(w)
+        p = ForwardDiff.partials(w)
+        for j in 1:N
+            partial_weights[i, j] = p[j]
+        end
+    end
+
+    primal_sum = fluxes * primal_weights
+    partial_sums = fluxes * partial_weights
+    scale = V(0.4) / V(n_samples)
+    out = Vector{ForwardDiff.Dual{Tag, V, N}}(undef, n_freq)
+    @inbounds for i in 1:n_freq
+        value = scale * rate_value * primal_sum[i]
+        partials = ntuple(
+            j -> scale *
+                 (rate_partials[j] * primal_sum[i] + rate_value * partial_sums[i, j]),
+            Val(N)
+        )
+        out[i] = ForwardDiff.Dual{Tag, V, N}(value, ForwardDiff.Partials(partials))
+    end
+    return out
 end
 
 """1 Mpc in meters (IAU/CODATA convention)."""

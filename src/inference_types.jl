@@ -142,6 +142,18 @@ struct ProposalData
 end
 
 """
+    SampleInterpolant
+
+Per-sample interpolation metadata for proposal redshifts on the fixed redshift
+grid of an [`ImportanceSamplingProblem`](@ref). `bin_idx[i]` is the lower grid
+cell index for sample `i`; `t[i]` is the within-cell fraction.
+"""
+struct SampleInterpolant
+    bin_idx::Vector{Int}
+    t::Vector{Float64}
+end
+
+"""
     RedshiftLogProbTerm
 
 Dynamic intrinsic term: per-sample redshift log-density from the live
@@ -183,6 +195,8 @@ struct ImportanceSamplingProblem{T <: Tuple}
     proposal::ProposalData
     observation::ObservationConfig
     redshift_prior_spec::RedshiftPriorSpec
+    redshift_grid::Vector{Float64}
+    sample_interpolant::SampleInterpolant
     local_merger_rate::Float64
     redshift_integral_fiducial::Float64
     fiducial_parameters::ProposalFiducialParameters
@@ -229,10 +243,14 @@ function importance_sampling_problem(
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
     _validate_strategy_bundle(strategy, proposal)
     plan = intrinsic_log_prob_plan(strategy, proposal.samples)
+    z_grid = redshift_grid(redshift_prior_spec)
+    interp = SampleInterpolant(proposal.samples.redshift, z_grid)
     return ImportanceSamplingProblem(
         proposal,
         observation,
         redshift_prior_spec,
+        z_grid,
+        interp,
         Float64(local_merger_rate),
         Float64(redshift_integral_fiducial),
         fiducial_parameters,
