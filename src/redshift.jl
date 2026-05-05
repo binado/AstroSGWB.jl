@@ -154,38 +154,6 @@ end
     end
 end
 
-function interpolate_at_samples(
-        y::AbstractVector,
-        interp::SampleInterpolant
-)
-    n = length(interp.bin_idx)
-    n == 0 && return eltype(y)[]
-    first_val = _interpolate_at_sample(y, interp, 1)
-    out = Vector{typeof(first_val)}(undef, n)
-    @inbounds out[1] = first_val
-    @inbounds for i in 2:n
-        out[i] = _interpolate_at_sample(y, interp, i)
-    end
-    return out
-end
-
-function cdf_at_samples(
-        cumulative::AbstractVector,
-        y::AbstractVector,
-        interp::SampleInterpolant,
-        z_grid::AbstractVector{<:Real}
-)
-    n = length(interp.bin_idx)
-    n == 0 && return eltype(cumulative)[]
-    first_val = _cdf_at_sample(cumulative, y, interp, z_grid, 1)
-    out = Vector{typeof(first_val)}(undef, n)
-    @inbounds out[1] = first_val
-    @inbounds for i in 2:n
-        out[i] = _cdf_at_sample(cumulative, y, interp, z_grid, i)
-    end
-    return out
-end
-
 function _build_redshift_grid(
         source_frame_fn,
         H0::Real,
@@ -229,38 +197,6 @@ function log_prob_from_bundle(value::Real, bundle::RedshiftBundle)
     return _normalized_log_density(pdf_at_value, norm, tiny)
 end
 
-function log_prob_at_samples(
-        bundle::RedshiftBundle,
-        interp::SampleInterpolant
-)
-    norm = redshift_integral(bundle)
-    T = promote_type(eltype(bundle.pdf.y), typeof(norm))
-    tiny = floatmin(T)
-    n = length(interp.bin_idx)
-    n == 0 && return T[]
-    first_pdf = _interpolate_at_sample(bundle.pdf.y, interp, 1)
-    first_val = _normalized_log_density(first_pdf, norm, tiny)
-    out = Vector{typeof(first_val)}(undef, n)
-    @inbounds out[1] = first_val
-    @inbounds for i in 2:n
-        pdf_at_value = _interpolate_at_sample(bundle.pdf.y, interp, i)
-        out[i] = _normalized_log_density(pdf_at_value, norm, tiny)
-    end
-    return out
-end
-
-function log_prob_at_sample(
-        bundle::RedshiftBundle,
-        interp::SampleInterpolant,
-        sample_index::Integer
-)
-    norm = redshift_integral(bundle)
-    T = promote_type(eltype(bundle.pdf.y), typeof(norm))
-    tiny = floatmin(T)
-    pdf_at_value = _interpolate_at_sample(bundle.pdf.y, interp, sample_index)
-    return _normalized_log_density(pdf_at_value, norm, tiny)
-end
-
 function luminosity_distance_at_sample(
         bundle::RedshiftBundle,
         H0::Real,
@@ -273,26 +209,6 @@ function luminosity_distance_at_sample(
     integral = _cdf_at_sample(
         bundle.distance.cumulative, bundle.distance.y, interp, z_grid, sample_index)
     return (1 + z) * (SPEED_OF_LIGHT_KM_S / H0) * integral
-end
-
-function luminosity_distance_at_samples(
-        bundle::RedshiftBundle,
-        H0::Real,
-        interp::SampleInterpolant,
-        z_grid::AbstractVector{<:Real},
-        z_samples::AbstractVector{<:Real}
-)
-    n = length(z_samples)
-    length(interp.bin_idx) == n ||
-        throw(ArgumentError("sample interpolant length must match redshift sample length"))
-    n == 0 && return promote_type(eltype(bundle.distance.cumulative), typeof(H0))[]
-    first_val = luminosity_distance_at_sample(bundle, H0, interp, z_grid, z_samples, 1)
-    out = Vector{typeof(first_val)}(undef, n)
-    @inbounds out[1] = first_val
-    @inbounds for i in 2:n
-        out[i] = luminosity_distance_at_sample(bundle, H0, interp, z_grid, z_samples, i)
-    end
-    return out
 end
 
 function build_redshift_grid_bundle(

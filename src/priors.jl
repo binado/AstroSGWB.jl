@@ -320,7 +320,7 @@ end
 @inline function _redshift_logpdf(bundle::RedshiftBundle, z::Real)
     x_lo = first(bundle.pdf.x)
     x_hi = last(bundle.pdf.x)
-    (z < x_lo || z > x_hi) && return log(zero(float(eltype(bundle.pdf.y))))
+    (z < x_lo || z > x_hi) && return -Inf
     return log_prob_from_bundle(z, bundle)
 end
 

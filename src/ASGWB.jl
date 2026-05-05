@@ -48,7 +48,6 @@ include("turing_model.jl")
 export ImportanceSamplingProblem,
        ImportanceCache,
        importance_sampling_problem,
-       RedshiftGridCache,
        ProposalData,
        ObservationConfig,
        RedshiftPriorSpec,

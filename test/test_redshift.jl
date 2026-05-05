@@ -48,23 +48,20 @@ end
     samples = [0.0, 0.137, 0.9, 2.0]
     interp = ASGWB.SampleInterpolant(samples, z_grid)
 
-    @test ASGWB.interpolate_at_samples(bundle.pdf.y, interp) ≈
-          [ASGWB.interpolate(bundle.pdf, z) for z in samples]
-    @test ASGWB.cdf_at_samples(
-        bundle.distance.cumulative,
-        bundle.distance.y,
-        interp,
-        z_grid
-    ) ≈ [ASGWB.cdf(bundle.distance, z) for z in samples]
-    @test ASGWB.log_prob_at_samples(bundle, interp) ≈
-          [log_prob_from_bundle(z, bundle) for z in samples]
-    @test ASGWB.luminosity_distance_at_samples(
-        bundle,
-        theta.H0,
-        interp,
-        z_grid,
-        samples
-    ) ≈ [luminosity_distance(z, theta.H0, theta.Ωm, bundle.distance) for z in samples]
+    @test [ASGWB._interpolate_at_sample(bundle.pdf.y, interp, i)
+           for
+           i in eachindex(samples)] ≈ [ASGWB.interpolate(bundle.pdf, z) for z in samples]
+    @test [ASGWB._cdf_at_sample(
+               bundle.distance.cumulative,
+               bundle.distance.y,
+               interp,
+               z_grid,
+               i
+           ) for i in eachindex(samples)] ≈ [ASGWB.cdf(bundle.distance, z) for z in samples]
+    @test [ASGWB.luminosity_distance_at_sample(
+               bundle, theta.H0, interp, z_grid, samples, i)
+           for i in eachindex(samples)] ≈
+          [luminosity_distance(z, theta.H0, theta.Ωm, bundle.distance) for z in samples]
     @test_throws ArgumentError ASGWB.SampleInterpolant([-0.1], z_grid)
     @test_throws ArgumentError ASGWB.SampleInterpolant([2.1], z_grid)
 end

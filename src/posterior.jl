@@ -4,8 +4,12 @@ function target_log_prob_samples(h::HyperParametersNT, problem::ImportanceSampli
         problem.redshift_prior_spec,
         problem.redshift_cache.redshift_grid
     )
-    prior = intrinsic_prior(problem.strategy, bundle)
-    return intrinsic_log_prob_samples(prior, problem.proposal.samples), bundle
+    target_log_prob = intrinsic_log_prob_samples(
+        problem.redshift_cache.fixed_intrinsic_log_prob,
+        bundle,
+        problem.proposal.samples
+    )
+    return target_log_prob, bundle
 end
 
 """
