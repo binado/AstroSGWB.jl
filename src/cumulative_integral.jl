@@ -1,4 +1,4 @@
-using DataInterpolations: LinearInterpolation, integral
+using DataInterpolations: LinearInterpolation
 
 """
     CumulativeIntegral1D(x, f)
@@ -43,8 +43,8 @@ the prefix sum of trapezoids ``(x_{i+1}-x_i)(y_i+y_{i+1})/2`` (O(n), identical
 to the linear interpolant’s antiderivative on the nodes). `x` must be strictly
 increasing with length ≥ 2.
 
-Off-grid [`cdf`](@ref) queries still use `DataInterpolations.integral` on the
-cached interpolant.
+Off-grid [`cdf`](@ref) queries use a direct analytic trapezoid lookup on the
+cached nodal values.
 """
 function _cumulative_at_nodes_trapezoid(x::AbstractVector{Float64}, y::AbstractVector)
     n = length(x)
@@ -60,14 +60,29 @@ function _cumulative_at_nodes_trapezoid(x::AbstractVector{Float64}, y::AbstractV
     return cumulative
 end
 
+@inline function _linear_cell_integral(cumulative_at_left, y_lo, y_hi, dx, t)
+    return cumulative_at_left + dx * (y_lo * t + 0.5 * (y_hi - y_lo) * t^2)
+end
+
+function _cumulative_integral_from_values(
+        x::AbstractVector{<:Real},
+        y::AbstractVector
+)
+    n = length(x)
+    n >= 2 || throw(ArgumentError("CumulativeIntegral1D requires at least 2 grid points"))
+    length(y) == n || throw(ArgumentError("x and y must have the same length"))
+    x_float = x isa AbstractVector{Float64} ? x : collect(Float64, x)
+    itp = LinearInterpolation(y, x_float)
+    cumulative = _cumulative_at_nodes_trapezoid(x_float, y)
+    return CumulativeIntegral1D(x_float, y, cumulative, itp)
+end
+
 function CumulativeIntegral1D(x::AbstractVector{<:Real}, f)
     n = length(x)
     n >= 2 || throw(ArgumentError("CumulativeIntegral1D requires at least 2 grid points"))
     x_float = x isa AbstractVector{Float64} ? x : collect(Float64, x)
     y = map(f, x_float)
-    itp = LinearInterpolation(y, x_float)
-    cumulative = _cumulative_at_nodes_trapezoid(x_float, y)
-    return CumulativeIntegral1D(x_float, y, cumulative, itp)
+    return _cumulative_integral_from_values(x_float, y)
 end
 
 """
@@ -94,7 +109,14 @@ function cdf(c::CumulativeIntegral1D, x0::Real)
     if x0 >= x_hi
         return @inbounds c.cumulative[end]
     end
-    return integral(c.itp, x_lo, x0)
+    idx = searchsortedlast(c.x, x0)
+    @inbounds begin
+        dx = c.x[idx + 1] - c.x[idx]
+        t = (x0 - c.x[idx]) / dx
+        y_lo = c.y[idx]
+        y_hi = c.y[idx + 1]
+        return _linear_cell_integral(c.cumulative[idx], y_lo, y_hi, dx, t)
+    end
 end
 
 """

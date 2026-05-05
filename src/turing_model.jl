@@ -107,12 +107,11 @@ function build_turing_model(
         track::Bool = false,
         observed_spectral_density::AbstractVector{<:Real} = problem.observation.fiducial_spectral_density
 )
-    z_grid = redshift_grid(problem.redshift_prior_spec)
     return asgwb_importance_turing_model(
         track,
         problem,
         prior,
-        z_grid,
+        problem.redshift_cache.redshift_grid,
         observed_spectral_density[problem.observation.in_band_mask]
     )
 end

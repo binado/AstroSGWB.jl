@@ -112,6 +112,7 @@ export logprior,
        AlignedSpinChiSimple,
        RedshiftInterpolatedDistribution,
        intrinsic_prior,
+       fixed_intrinsic_log_prob,
        intrinsic_log_prob_samples,
        intrinsic_log_prob_samples!
 

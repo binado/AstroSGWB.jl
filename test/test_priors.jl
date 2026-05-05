@@ -1,5 +1,6 @@
 import Distributions: insupport, logpdf
 using Distributions: ProductNamedTupleDistribution
+using ForwardDiff
 using Random
 using Test
 
@@ -154,4 +155,77 @@ end
         )
     ]
     @test intrinsic_log_prob_samples(prior, aos) == [logpdf(prior, s) for s in aos]
+end
+
+@testset "fixed_intrinsic_log_prob matches intrinsic_prior SoA path" begin
+    theta = HyperParameters(;
+        H0 = 67.0,
+        Ωm = 0.315,
+        γ = 2.7,
+        κ = 3.0,
+        zpeak = 2.5
+    )
+    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
+    bundle = build_redshift_grid_bundle(theta, spec)
+    prior = intrinsic_prior(FullBNS(), bundle)
+    samples = (
+        mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),
+        redshift = [0.1, 0.2],
+        χ₁ = [0.0, 0.1],
+        χ₂ = [0.0, -0.2],
+        Λ₁ = [100.0, 200.0],
+        Λ₂ = [150.0, 250.0]
+    )
+    fixed_log_prob = fixed_intrinsic_log_prob(FullBNS(), samples)
+    @test fixed_log_prob isa Vector{Float64}
+    @test length(fixed_log_prob) == length(samples.redshift)
+    expected = intrinsic_log_prob_samples(prior, samples)
+    @test intrinsic_log_prob_samples(fixed_log_prob, bundle, samples) ≈ expected
+    out = similar(expected)
+    intrinsic_log_prob_samples!(out, fixed_log_prob, bundle, samples)
+    @test out ≈ expected
+end
+
+@testset "fixed_intrinsic_log_prob with ForwardDiff.Dual population parameter" begin
+    theta = HyperParameters(;
+        H0 = 67.0,
+        Ωm = 0.315,
+        γ = 2.7,
+        κ = 3.0,
+        zpeak = 2.5
+    )
+    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
+    samples = (
+        mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),
+        redshift = [0.1, 0.2],
+        χ₁ = [0.0, 0.1],
+        χ₂ = [0.0, -0.2],
+        Λ₁ = [100.0, 200.0],
+        Λ₂ = [150.0, 250.0]
+    )
+    fixed_log_prob = fixed_intrinsic_log_prob(FullBNS(), samples)
+    h_dual = (; theta..., γ = ForwardDiff.Dual(2.7, 1.0))
+    bundle_dual = build_redshift_grid_bundle(h_dual, spec)
+    prior_dual = intrinsic_prior(FullBNS(), bundle_dual)
+    expected = intrinsic_log_prob_samples(prior_dual, samples)
+    got = intrinsic_log_prob_samples(fixed_log_prob, bundle_dual, samples)
+    @test expected ≈ got
+    @test eltype(got) <: ForwardDiff.Dual
+
+    empty_samples = (
+        mass = zeros(2, 0),
+        redshift = Float64[],
+        χ₁ = Float64[],
+        χ₂ = Float64[],
+        Λ₁ = Float64[],
+        Λ₂ = Float64[]
+    )
+    empty_fixed_log_prob = fixed_intrinsic_log_prob(FullBNS(), empty_samples)
+    empty_got = intrinsic_log_prob_samples(
+        empty_fixed_log_prob,
+        bundle_dual,
+        empty_samples
+    )
+    @test isempty(empty_got)
+    @test eltype(empty_got) <: ForwardDiff.Dual
 end
