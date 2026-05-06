@@ -34,7 +34,18 @@ begin
     isfile(netcdf_path) ||
         throw(ArgumentError("NetCDF file not found: $(repr(netcdf_path))"))
     idata = from_netcdf(netcdf_path)
-    chain = to_mcmcchains(idata; group = "posterior")
+
+    # Build MCMCChains.Chains from the InferenceData posterior group.
+    # ArviZ.jl only provides `from_mcmcchains` (Chains → InferenceData);
+    # there is no `to_mcmcchains`, so we construct the Chains manually.
+    post = idata.posterior
+    syms = collect(propertynames(post))
+    n_draw, n_chain = size(Array(getproperty(post, first(syms))))
+    vals = zeros(n_draw, n_chain, length(syms))
+    for (i, s) in enumerate(syms)
+        vals[:, :, i] = Array(getproperty(post, s))
+    end
+    chain = Chains(vals, string.(syms))
 end
 
 # ╔═╡ e126abe3-591b-4143-a5bf-2af3390136c5
