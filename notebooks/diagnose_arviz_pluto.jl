@@ -38,12 +38,14 @@ begin
     # Build MCMCChains.Chains from the InferenceData posterior group.
     # ArviZ.jl only provides `from_mcmcchains` (Chains → InferenceData);
     # there is no `to_mcmcchains`, so we construct the Chains manually.
+    # MCMCChains expects (draws, parameters, chains); ArviZ stores each
+    # variable as (draw, chain).
     post = idata.posterior
     syms = collect(propertynames(post))
     n_draw, n_chain = size(Array(getproperty(post, first(syms))))
-    vals = zeros(n_draw, n_chain, length(syms))
+    vals = zeros(n_draw, length(syms), n_chain)
     for (i, s) in enumerate(syms)
-        vals[:, :, i] = Array(getproperty(post, s))
+        vals[:, i, :] = Array(getproperty(post, s))
     end
     chain = Chains(vals, string.(syms))
 end
