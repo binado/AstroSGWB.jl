@@ -11,11 +11,16 @@ begin
     Pkg.instantiate()
 
     using ArviZ
+    using CairoMakie
     using MCMCChains
+    using PairPlots
     using StatsPlots
     using NCDatasets
     using Statistics
 end
+
+# ╔═╡ a1b2c3d4-e5f6-7890-abcd-ef1234567890
+StatsPlots.default(fmt = :svg, dpi = 300)
 
 # ╔═╡ 55bb7b84-631d-4c9a-9295-3ef239427d75
 md"""
@@ -146,7 +151,7 @@ md"""
 # ╔═╡ d08a483d-4823-4cff-9d68-89a29005e51a
 begin
     if length(chain_params) >= 2
-        MCMCChains.corner(chain)
+        pairplot(chain)
     else
         StatsPlots.density(chain)
     end
@@ -154,6 +159,7 @@ end
 
 # ╔═╡ Cell order:
 # ╠═3a065958-b6f1-4855-ad59-803892b592de
+# ╠═a1b2c3d4-e5f6-7890-abcd-ef1234567890
 # ╟─55bb7b84-631d-4c9a-9295-3ef239427d75
 # ╠═c66dee78-6a7e-4891-b90c-85959e2638b7
 # ╠═ef3f89c0-e204-4141-a985-26649d598d9e
