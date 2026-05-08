@@ -20,7 +20,8 @@ using Distributions
 using TOML
 using Pkg
 using LinearAlgebra: BLAS
-using MCMCChains: chainscat
+using MCMCChains: Chains
+using AbstractMCMC: bundle_samples, chainsstack
 using Dates: now, format
 
 
@@ -42,56 +43,76 @@ const PRIORS = (
     Ξₙ = Uniform(0.05, 3),
     γ = Uniform(0.5, 10),
     κ = Uniform(0.05, 10),
-    zpeak = Uniform(0.05, 10),
+    zpeak = Uniform(0.05, 10)
 )
 
 """Resolve `path` relative to `base` if it is not absolute."""
-resolve_path(path::AbstractString, base::AbstractString) =
+function resolve_path(path::AbstractString, base::AbstractString)
     isabspath(path) ? path : normpath(joinpath(base, path))
+end
 
 """
-    sample_with_checkpoints(conditioned, nuts, n_samples, num_chains;
-                            checkpoint_every, checkpoint_path, progress)
+    CheckpointCallback(every, path, model, sampler, num_chains)
 
-Sample in chunks of `checkpoint_every` iterations, serializing the cumulative chain
-to `checkpoint_path` after each chunk. Uses `resume_from` so adaptation only happens
-in the first chunk. If `checkpoint_every >= n_samples` (or non-positive) the run is
-done in a single call.
+AbstractMCMC callback that buffers per-chain transitions and the latest sampler
+state, and serializes a multi-chain `MCMCChains.Chains` snapshot to `path` every
+time the minimum number of samples across chains crosses a new multiple of
+`every`. With `save_state = true` on the bundled samples, the snapshot is
+compatible with `resume_from`.
 """
-function sample_with_checkpoints(
-        conditioned, nuts, n_samples::Int, num_chains::Int;
-        checkpoint_every::Int, checkpoint_path::AbstractString, progress::Bool,
+mutable struct CheckpointCallback{M, S}
+    every::Int
+    path::String
+    model::M
+    sampler::S
+    transitions::Vector{Vector{Any}}
+    states::Vector{Any}
+    last_checkpoint_iter::Int
+    lock::ReentrantLock
+end
+
+function CheckpointCallback(
+        every::Int, path::AbstractString, model, sampler, num_chains::Int
 )
-    if checkpoint_every <= 0 || checkpoint_every >= n_samples
-        chain = sample(
-            conditioned, nuts, MCMCThreads(), n_samples, num_chains;
-            progress = progress, save_state = true,
-        )
-        return chain
-    end
-
-    first_chunk = min(checkpoint_every, n_samples)
-    @info "sampling chunk" chunk_size=first_chunk so_far=0 target=n_samples
-    chain = sample(
-        conditioned, nuts, MCMCThreads(), first_chunk, num_chains;
-        progress = progress, save_state = true,
+    return CheckpointCallback(
+        every,
+        String(path),
+        model,
+        sampler,
+        [Vector{Any}() for _ in 1:num_chains],
+        Vector{Any}(undef, num_chains),
+        0,
+        ReentrantLock()
     )
-    Serialization.serialize(checkpoint_path, chain)
-    @info "checkpoint written" path=checkpoint_path samples=size(chain, 1)
+end
 
-    while size(chain, 1) < n_samples
-        chunk = min(checkpoint_every, n_samples - size(chain, 1))
-        @info "sampling chunk" chunk_size=chunk so_far=size(chain, 1) target=n_samples
-        new_chain = sample(
-            conditioned, nuts, MCMCThreads(), chunk, num_chains;
-            progress = progress, save_state = true, resume_from = chain,
-        )
-        chain = chainscat(chain, new_chain)
-        Serialization.serialize(checkpoint_path, chain)
-        @info "checkpoint written" path=checkpoint_path samples=size(chain, 1)
+function (cb::CheckpointCallback)(
+        rng, model, sampler, transition, state, iteration;
+        chain_number::Int = 1, kwargs...
+)
+    lock(cb.lock) do
+        push!(cb.transitions[chain_number], transition)
+        cb.states[chain_number] = state
+
+        n = minimum(length, cb.transitions)
+        target = (cb.last_checkpoint_iter ÷ cb.every + 1) * cb.every
+        n >= target || return nothing
+
+        per_chain = map(eachindex(cb.transitions)) do c
+            bundle_samples(
+                cb.transitions[c][1:n], cb.model, cb.sampler, cb.states[c],
+                Chains; save_state = true
+            )
+        end
+        snapshot = chainsstack(per_chain)
+
+        tmp = cb.path * ".tmp"
+        Serialization.serialize(tmp, snapshot)
+        mv(tmp, cb.path; force = true)
+        cb.last_checkpoint_iter = n
+        @info "checkpoint written" path=cb.path iteration=n
     end
-
-    return chain
+    return nothing
 end
 
 
@@ -146,7 +167,8 @@ function _run(settings::Dict, settings_dir::AbstractString)
         @warn "num_chains differs from Base.Threads.nthreads()" num_chains num_threads
     end
 
-    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() cache detectors=join((d.name for d in detectors), ",") sample_only output_dir
+    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() cache detectors=join(
+        (d.name for d in detectors), ",") sample_only output_dir
     @info "package versions"
     Pkg.status()
 
@@ -167,14 +189,24 @@ function _run(settings::Dict, settings_dir::AbstractString)
     nuts = Turing.NUTS(
         n_adapts,
         target_acceptance;
-        metricT = AdvancedHMC.DenseEuclideanMetric,
+        metricT = AdvancedHMC.DenseEuclideanMetric
     )
-    chain = sample_with_checkpoints(
-        conditioned, nuts, n_samples, num_chains;
-        checkpoint_every = checkpoint_every,
-        checkpoint_path = checkpoint_path,
-        progress = progress,
-    )
+    callback = checkpoint_every > 0 ?
+               CheckpointCallback(
+        checkpoint_every, checkpoint_path, conditioned, nuts, num_chains
+    ) : nothing
+
+    chain = if callback === nothing
+        sample(
+            conditioned, nuts, MCMCThreads(), n_samples, num_chains;
+            progress = progress, save_state = true
+        )
+    else
+        sample(
+            conditioned, nuts, MCMCThreads(), n_samples, num_chains;
+            progress = progress, save_state = true, callback = callback
+        )
+    end
     @info "NUTS finished" chain_size=size(chain)
 
     @info "writing chain to JLS" path=output_jls

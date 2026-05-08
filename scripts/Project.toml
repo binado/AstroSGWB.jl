@@ -1,5 +1,6 @@
 [deps]
 ASGWB = "6a24b920-6d62-45b7-87dc-84df6f794d62"
+AbstractMCMC = "80f14c24-f653-4e6a-9b94-39d6b0f70001"
 AdvancedHMC = "0bf59076-c3b1-5ca4-86bd-e02cd72cde3d"
 ArviZ = "131c737c-5715-5e2e-ad31-c244f01c1dc7"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
