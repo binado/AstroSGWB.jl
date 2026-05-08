@@ -83,7 +83,7 @@ one combined MCMCChains.Chains object.
     stacked = chainsstack(chains)
     output_dir = dirname(output)
     isempty(output_dir) || mkpath(output_dir)
-    jldsave(output; chain=stacked)
+    jldsave(output; chain = stacked)
 
     @info "wrote stacked chain" path=output size=size(stacked)
     return nothing
