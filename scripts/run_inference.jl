@@ -21,7 +21,7 @@ using TOML
 using Pkg
 using LinearAlgebra: BLAS
 using MCMCChains: Chains
-using AbstractMCMC: bundle_samples, chainsstack
+using AbstractMCMC: bundle_samples
 using Dates: now, format
 
 
@@ -52,38 +52,45 @@ function resolve_path(path::AbstractString, base::AbstractString)
 end
 
 """
-    CheckpointCallback(every, path, model, sampler, num_chains)
+    CheckpointCallback(every, base, output_dir, model, sampler, num_chains)
 
-AbstractMCMC callback that buffers per-chain transitions and the latest sampler
-state, and serializes a multi-chain `MCMCChains.Chains` snapshot to `path` every
-time the minimum number of samples across chains crosses a new multiple of
-`every`. With `save_state = true` on the bundled samples, the snapshot is
-compatible with `resume_from`.
+AbstractMCMC callback that buffers transitions separately for each chain and
+serializes a single-chain `MCMCChains.Chains` snapshot to
+`base.partial.chainN.jls` every time that chain crosses a new multiple of
+`every`. With `save_state = true` on the bundled samples, the snapshot retains
+the matching sampler state for manual recovery/debugging.
 """
 mutable struct CheckpointCallback{M, S}
     every::Int
-    path::String
+    base::String
+    output_dir::String
     model::M
     sampler::S
     transitions::Vector{Vector{Any}}
     states::Vector{Any}
-    last_checkpoint_iter::Int
+    last_checkpoint_iters::Vector{Int}
     lock::ReentrantLock
 end
 
 function CheckpointCallback(
-        every::Int, path::AbstractString, model, sampler, num_chains::Int
+        every::Int, base::AbstractString, output_dir::AbstractString, model, sampler,
+        num_chains::Int
 )
     return CheckpointCallback(
         every,
-        String(path),
+        String(base),
+        String(output_dir),
         model,
         sampler,
         [Vector{Any}() for _ in 1:num_chains],
         Vector{Any}(undef, num_chains),
-        0,
+        zeros(Int, num_chains),
         ReentrantLock()
     )
+end
+
+function checkpoint_path(cb::CheckpointCallback, chain_number::Int)
+    return joinpath(cb.output_dir, "$(cb.base).partial.chain$(chain_number).jls")
 end
 
 function (cb::CheckpointCallback)(
@@ -94,23 +101,24 @@ function (cb::CheckpointCallback)(
         push!(cb.transitions[chain_number], transition)
         cb.states[chain_number] = state
 
-        n = minimum(length, cb.transitions)
-        target = (cb.last_checkpoint_iter ÷ cb.every + 1) * cb.every
+        n = length(cb.transitions[chain_number])
+        target = (cb.last_checkpoint_iters[chain_number] ÷ cb.every + 1) * cb.every
         n >= target || return nothing
 
-        per_chain = map(eachindex(cb.transitions)) do c
-            bundle_samples(
-                cb.transitions[c][1:n], cb.model, cb.sampler, cb.states[c],
-                Chains; save_state = true
-            )
-        end
-        snapshot = chainsstack(per_chain)
+        chain_transitions = cb.transitions[chain_number]
+        typed_transitions = Vector{typeof(chain_transitions[1])}(undef, n)
+        copyto!(typed_transitions, 1, chain_transitions, 1, n)
+        snapshot = bundle_samples(
+            typed_transitions, cb.model, cb.sampler, cb.states[chain_number],
+            Chains; save_state = true
+        )
 
-        tmp = cb.path * ".tmp"
+        path = checkpoint_path(cb, chain_number)
+        tmp = path * ".tmp"
         Serialization.serialize(tmp, snapshot)
-        mv(tmp, cb.path; force = true)
-        cb.last_checkpoint_iter = n
-        @info "checkpoint written" path=cb.path iteration=n
+        mv(tmp, path; force = true)
+        cb.last_checkpoint_iters[chain_number] = n
+        @info "checkpoint written" path=path chain=chain_number iteration=n
     end
     return nothing
 end
@@ -152,7 +160,6 @@ function _run(settings::Dict, settings_dir::AbstractString)
     base = "$(output_prefix)-$(params_suffix)-seed$(seed)-$(timestamp)"
     output_jls = joinpath(output_dir, "$base.jls")
     output_netcdf = joinpath(output_dir, "$base.nc")
-    checkpoint_path = joinpath(output_dir, "$base.partial.jls")
 
     validate_init_against_priors(PRIORS, init)
     priors_turing = product_distribution(PRIORS)
@@ -193,7 +200,7 @@ function _run(settings::Dict, settings_dir::AbstractString)
     )
     callback = checkpoint_every > 0 ?
                CheckpointCallback(
-        checkpoint_every, checkpoint_path, conditioned, nuts, num_chains
+        checkpoint_every, base, output_dir, conditioned, nuts, num_chains
     ) : nothing
 
     chain = if callback === nothing
@@ -218,9 +225,11 @@ function _run(settings::Dict, settings_dir::AbstractString)
     to_netcdf(idata, output_netcdf)
     @info "wrote InferenceData to NetCDF" path=output_netcdf
 
-    if isfile(checkpoint_path)
-        @info "removing checkpoint" path=checkpoint_path
-        rm(checkpoint_path; force = true)
+    if callback !== nothing
+        checkpoint_paths = filter(isfile, checkpoint_path.(Ref(callback), 1:num_chains))
+        if !isempty(checkpoint_paths)
+            @info "retaining partial checkpoint files" paths=checkpoint_paths
+        end
     end
 
     @info "done"
