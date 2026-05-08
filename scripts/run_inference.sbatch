@@ -56,4 +56,10 @@ export OUTPUT="scripts *.nc *.jls *.partial.chain*.jls"
 
 echo "[$(date -Iseconds)] host=$(hostname) job=${SLURM_JOB_ID:-local} cpus=${SLURM_CPUS_PER_TASK:-?} threads=$JULIA_NUM_THREADS config=${MCMC_CONFIG_FILEPATH:-<default>}"
 
-job-nanny julia --project=. scripts/run_inference.jl
+# Resolve to absolute paths so @__DIR__ inside run_inference.jl points at
+# scripts/ regardless of whether job-nanny (or the cluster's Slurmd) changes
+# the working directory between cd and exec.
+SCRIPT_ABS="$(realpath "$REPO_ROOT/scripts/run_inference.jl")"
+PROJECT_ABS="$(realpath "$REPO_ROOT")"
+
+job-nanny julia --project="$PROJECT_ABS" "$SCRIPT_ABS"
