@@ -82,7 +82,7 @@ function CheckpointCallback(
         sampler,
         [Vector{Any}() for _ in 1:num_chains],
         Vector{Any}(undef, num_chains),
-        zeros(Int, num_chains),
+        zeros(Int, num_chains)
     )
 end
 

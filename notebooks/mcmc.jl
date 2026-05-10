@@ -20,7 +20,7 @@
 #
 # On-disk chains use **JLD2** with the top-level key **`chain`**, matching **`scripts/run_inference.jl`**. Set **`chain_input_jld2`** to a path (absolute or relative to the package root, like the cache HDF5 path) to skip sampling and load an existing run for diagnostics only.
 #
-# The first cell activates the **workspace subproject** `Project.toml` under `notebooks/` (Pkg **workspace** with the package root: one shared `Manifest.toml` at the repo root). Notebook-only packages (**`CairoMakie`**, **`LaTeXStrings`**, **`StatsPlots`**, **`Plots`**, **`MCMCChains`**, **`ArviZ`**, **`NCDatasets`**) live there; **`ASGWB`** is a path dev of the parent package. **`CairoMakie`** with **`LaTeXStrings`** (`L"..."`) draws Ω_GW; **`StatsPlots`** covers MCMC diagnostics; **`ArviZ`** (with **`NCDatasets`**) can convert samples to `InferenceData` and write NetCDF. **`Turing`** and the core **`ASGWB`** stack come from the devved package.
+# The first cell activates the **workspace subproject** `Project.toml` under `notebooks/` (Pkg **workspace** with the package root: one shared `Manifest.toml` at the repo root). Notebook-only packages (**`CairoMakie`**, **`LaTeXStrings`**, **`StatsPlots`**, **`Plots`**, **`MCMCChains`**) live there; **`ASGWB`** is a path dev of the parent package. **`CairoMakie`** with **`LaTeXStrings`** (`L"..."`) draws Ω_GW; **`StatsPlots`** covers MCMC diagnostics. **`Turing`** and the core **`ASGWB`** stack come from the devved package.
 
 # %%
 begin
@@ -50,8 +50,6 @@ begin
     using JLD2
     using Logging
     using MCMCChains
-    using ArviZ
-    using NCDatasets
     using StatsPlots
     using Plots
     using CairoMakie
@@ -114,7 +112,6 @@ begin
     observed_spectral_density_csv = nothing
     output_suffix = join(map(string, sample_only), "-")
     output_jld2 = "chains-$output_suffix.jld2"
-    output_netcdf = "chains-$output_suffix.nc"
     chain_input_jld2 = nothing
 
     validate_init_against_priors(priors, init)
@@ -227,14 +224,14 @@ end
 begin
     if chain_input_jld2 !== nothing
         chain_path = isabspath(chain_input_jld2) ? String(chain_input_jld2) :
-            normpath(joinpath(pkgdir(ASGWB), chain_input_jld2))
+                     normpath(joinpath(pkgdir(ASGWB), chain_input_jld2))
         isfile(chain_path) ||
             throw(ArgumentError("JLD2 chain file not found: $(repr(chain_path))"))
         @info "loading chain from JLD2" path = chain_path
         chain = load(chain_path)["chain"]
         @info "chain loaded" chain_size = size(chain)
     else
-        @info "starting NUTS" n_adapts = sam.n_adapts n_samples = sam.n_samples target_acceptance = sam.target_acceptance sample_only = sample_only_tup
+        @info "starting NUTS" n_adapts=sam.n_adapts n_samples=sam.n_samples target_acceptance=sam.target_acceptance sample_only=sample_only_tup
         model = build_turing_model(
             problem, priors_turing; track = true, observed_spectral_density = observed
         )
@@ -263,12 +260,6 @@ end
 
 # %%
 begin
-    idata = from_mcmcchains(chain; library = "Turing")
-    if output_netcdf !== nothing
-        @info "Writing InferenceData to NetCDF" path = output_netcdf
-        to_netcdf(idata, output_netcdf)
-        @info "Done"
-    end
     if chain_input_jld2 === nothing
         @info "Saving chain object to JLD2" path = output_jld2
         jldsave(output_jld2; chain)
