@@ -5,7 +5,7 @@ using ASGWB
 using ASGWBInference: build_turing_model, sample_with_turing
 
 @testset "Turing model parity and smoke test" begin
-    fixture_path = joinpath(@__DIR__, "fixtures", "deterministic_parity.h5")
+    fixture_path = joinpath(@__DIR__, "..", "..", "ASGWB", "test", "fixtures", "deterministic_parity.h5")
 
     h5open(fixture_path, "r") do file
         for (cache_filename, group_name) in (
@@ -13,7 +13,7 @@ using ASGWBInference: build_turing_model, sample_with_turing
             ("full_intrinsic_cache_julia.h5", "full_intrinsic_case")
         )
             cache = load_cache(
-                joinpath(@__DIR__, "fixtures", cache_filename),
+                joinpath(@__DIR__, "..", "..", "ASGWB", "test", "fixtures", cache_filename),
                 [Detector("H1"), Detector("L1")]
             )
             group = file[group_name]

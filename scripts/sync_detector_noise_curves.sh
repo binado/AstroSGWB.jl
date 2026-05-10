@@ -4,7 +4,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${ASGWB_PY_REPO:-${HOME}/work/research/phd/asgbw}/src/asgwb/detector/noise_curves"
-DST="${ROOT}/assets/detector/noise_curves"
+DST="${ROOT}/ASGWB/assets/detector/noise_curves"
 if [[ ! -d "${SRC}" ]]; then
   echo "Noise curve directory not found: ${SRC}" >&2
   echo "Set ASGWB_PY_REPO to your asgwb/asgbw checkout root." >&2

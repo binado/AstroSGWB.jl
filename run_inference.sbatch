@@ -31,7 +31,7 @@ REPO_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
 cd "$REPO_ROOT"
 mkdir -p logs
 
-if [[ ! -f Project.toml || ! -d src || ! -d ASGWBInference ]]; then
+if [[ ! -f Project.toml || ! -d ASGWB || ! -d ASGWBInference ]]; then
     echo "run_inference.sbatch must be submitted from the ASGWB.jl repository root" >&2
     echo "current directory: $PWD" >&2
     exit 2
@@ -56,7 +56,7 @@ export PATH=/home/bernardoveronese/.juliaup/bin:$PATH
 
 # Files copied by job-nanny to the execution partition. Keep these paths
 # relative to REPO_ROOT so the copied tree still has the package layout.
-export INPUT="Project.toml Manifest.toml src assets ASGWBInference *.h5 *.toml"
+export INPUT="Project.toml Manifest.toml ASGWB ASGWBInference *.h5 *.toml"
 export OUTPUT="ASGWBInference scripts output *.nc *.jls *.partial.jls"
 
 echo "[$(date -Iseconds)] host=$(hostname) job=${SLURM_JOB_ID:-local} cpus=${SLURM_CPUS_PER_TASK:-?} threads=$JULIA_NUM_THREADS config=${MCMC_CONFIG_FILEPATH:-<default>}"

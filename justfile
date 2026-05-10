@@ -2,10 +2,11 @@ fmt:
     julia -e 'using JuliaFormatter; format(".")'
 
 test:
-    julia --project=. -e 'using Pkg; Pkg.test()'
+    julia --project=ASGWB -e 'using Pkg; Pkg.test()'
+    julia --project=ASGWBInference -e 'using Pkg; Pkg.test()'
 
-resolve project=".":
-    julia --project={{project}} -e 'using Pkg; Pkg.resolve()'
+resolve package="ASGWB":
+    julia --project={{package}} -e 'using Pkg; Pkg.resolve()'
 
 repl project=".":
     julia --project={{project}}
