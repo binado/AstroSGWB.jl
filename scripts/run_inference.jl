@@ -71,11 +71,12 @@ mutable struct CheckpointCallback{M, S}
     transitions::Vector{Vector{Any}}
     states::Vector{Any}
     last_checkpoint_iters::Vector{Int}
+    save_state::Bool
 end
 
 function CheckpointCallback(
         every::Int, base::AbstractString, output_dir::AbstractString, model, sampler,
-        num_chains::Int
+        num_chains::Int; save_state::Bool = true
 )
     return CheckpointCallback(
         every,
@@ -85,7 +86,8 @@ function CheckpointCallback(
         sampler,
         [Vector{Any}() for _ in 1:num_chains],
         Vector{Any}(undef, num_chains),
-        zeros(Int, num_chains)
+        zeros(Int, num_chains),
+        save_state
     )
 end
 
@@ -113,7 +115,7 @@ function (cb::CheckpointCallback)(
     copyto!(typed_transitions, 1, chain_transitions, 1, n)
     snapshot = bundle_samples(
         typed_transitions, cb.model, cb.sampler, cb.states[chain_number],
-        Chains; save_state = true
+        Chains; save_state = cb.save_state
     )
 
     path = checkpoint_path(cb, chain_number)
@@ -208,6 +210,8 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     @info "seeding RNG" rng_seed=seed
     Random.seed!(seed)
 
+    do_save_state = ad_backend_name != "Mooncake"
+
     @info "starting NUTS" n_adapts n_samples target_acceptance ad_backend=ad_backend_name sample_only checkpoint_every
     model = build_turing_model(
         problem, priors_turing; track = true, observed_spectral_density = observed)
@@ -220,18 +224,19 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     )
     callback = checkpoint_every > 0 ?
                CheckpointCallback(
-        checkpoint_every, base, output_dir, conditioned, nuts, num_chains
+        checkpoint_every, base, output_dir, conditioned, nuts, num_chains;
+        save_state = do_save_state
     ) : nothing
 
     chain = if callback === nothing
         sample(
             conditioned, nuts, MCMCThreads(), n_samples, num_chains;
-            progress = progress, save_state = true
+            progress = progress, save_state = do_save_state
         )
     else
         sample(
             conditioned, nuts, MCMCThreads(), n_samples, num_chains;
-            progress = progress, save_state = true, callback = callback
+            progress = progress, save_state = do_save_state, callback = callback
         )
     end
     @info "NUTS finished" chain_size=size(chain)
