@@ -1,6 +1,0 @@
-name = "asgwb"
-
-[application]
-cpu_target = "native"
-incremental = true
-filter_stdlibs = false

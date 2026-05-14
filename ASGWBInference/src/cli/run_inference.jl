@@ -43,6 +43,46 @@ function resolve_path(path::AbstractString, base::AbstractString)
     isabspath(path) ? path : normpath(joinpath(base, path))
 end
 
+const DEFAULT_CONFIG_RELATIVE_PATH = joinpath("config", "run_inference.toml")
+
+function _has_repo_markers(path::AbstractString)
+    return isfile(joinpath(path, "Project.toml")) &&
+           isdir(joinpath(path, "ASGWB")) &&
+           isdir(joinpath(path, "ASGWBInference"))
+end
+
+function repo_root(start::AbstractString = pwd())
+    env_root = get(ENV, "ASGWB_REPO_ROOT", "")
+    if !isempty(env_root)
+        return normpath(abspath(env_root))
+    end
+
+    current = normpath(abspath(start))
+    while true
+        _has_repo_markers(current) && return current
+        parent = dirname(current)
+        parent == current && break
+        current = parent
+    end
+
+    throw(ArgumentError(
+        "could not find ASGWB.jl repository root from $(repr(start)); " *
+        "set ASGWB_REPO_ROOT to the repository root"
+    ))
+end
+
+function default_config_path()
+    return joinpath(repo_root(), DEFAULT_CONFIG_RELATIVE_PATH)
+end
+
+function resolve_config_path(config::AbstractString)
+    root = repo_root()
+    raw_path = isempty(config) ?
+               get(ENV, "MCMC_CONFIG_FILEPATH", DEFAULT_CONFIG_RELATIVE_PATH) :
+               config
+    return isabspath(raw_path) ? normpath(raw_path) : normpath(joinpath(root, raw_path))
+end
+
 """
     CheckpointCallback(every, base, output_dir, model, sampler, num_chains)
 
@@ -239,105 +279,23 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     return nothing
 end
 
-function resolve_config_path(config::AbstractString)
-    default_path = joinpath(@__DIR__, "..", "..", "run_inference.toml")
-    settings_path = isempty(config) ? get(ENV, "MCMC_CONFIG_FILEPATH", default_path) :
-                    config
-    return abspath(settings_path)
-end
-
-recursive_merge(x::AbstractDict...) = merge(recursive_merge, x...)
-recursive_merge(_, x) = x
-
-function cli_overrides(;
-        seed::Union{Int, Nothing},
-        output_dir::AbstractString,
-        output_prefix::AbstractString,
-        ad_backend::AbstractString,
-        num_chains::Int,
-        n_samples::Int,
-        n_adapts::Int,
-        checkpoint_every::Int
-)
-    overrides = Dict{String, Any}()
-    seed !== nothing && (overrides["seed"] = seed)
-    isempty(output_dir) || (overrides["output_dir"] = String(output_dir))
-    isempty(output_prefix) || (overrides["output_prefix"] = String(output_prefix))
-
-    sampler = Dict{String, Any}()
-    num_chains >= 0 && (sampler["num_chains"] = num_chains)
-    n_samples > 0 && (sampler["n_samples"] = n_samples)
-    n_adapts > 0 && (sampler["n_adapts"] = n_adapts)
-    checkpoint_every >= 0 && (sampler["checkpoint_every"] = checkpoint_every)
-    isempty(ad_backend) || (sampler["ad_backend"] = String(ad_backend))
-    isempty(sampler) || (overrides["sampler"] = sampler)
-
-    return overrides
-end
-
 """
 Run ASGWB inference from a TOML configuration file.
 
-# Options
-
-- `--config=<path>`: TOML settings file. Falls back to `MCMC_CONFIG_FILEPATH`,
-  then `ASGWBInference/run_inference.toml` next to the package directory.
-
-- `--seed=<int>`: RNG seed. Falls back to the `seed` field in the TOML
-  settings when not provided.
-
-- `--output-dir=<path>`: override `output_dir` from the TOML settings.
-
-- `--output-prefix=<name>`: override `output_prefix` from the TOML settings.
-
-- `--num-chains=<int>`: override `sampler.num_chains` from the TOML settings.
-
-- `--n-samples=<int>`: override `sampler.n_samples` from the TOML settings.
-
-- `--n-adapts=<int>`: override `sampler.n_adapts` from the TOML settings.
-
-- `--checkpoint-every=<int>`: override `sampler.checkpoint_every` from the TOML settings.
-
-- `--ad-backend=<name>`: override `sampler.ad_backend` from the TOML settings.
-  Accepted value: `"ForwardDiff"`.
-
-- `--interactive`: enable Turing's sampling progress bar.
-
-Invoke from the repo root, for example:
-
-    julia --project=ASGWBInference -e 'using ASGWBInference; exit(ASGWBInference.command_main())' mcmc --config=ASGWBInference/run_inference.toml
+Configuration is selected with `MCMC_CONFIG_FILEPATH`, or defaults to
+`config/run_inference.toml` relative to the repository root. A relative
+`MCMC_CONFIG_FILEPATH` is also resolved against the repository root.
 """
-function run(;
-        config::String = "",
-        seed::Int = -1,
-        output_dir::String = "",
-        output_prefix::String = "",
-        ad_backend::String = "",
-        num_chains::Int = -1,
-        n_samples::Int = 0,
-        n_adapts::Int = 0,
-        checkpoint_every::Int = -1,
-        interactive::Bool = false
-)
+function run(config::AbstractString)
     settings_path = resolve_config_path(config)
     @info "loading settings" path=settings_path
     s = TOML.parsefile(settings_path)
 
-    s = recursive_merge(
-        s,
-        cli_overrides(;
-            seed = seed < 0 ? nothing : seed,
-            output_dir,
-            output_prefix,
-            ad_backend,
-            num_chains,
-            n_samples,
-            n_adapts,
-            checkpoint_every
-        )
-    )
+    return _run(s, dirname(settings_path); interactive = false)
+end
 
-    return _run(s, dirname(settings_path); interactive)
+function run_from_env()
+    return run("")
 end
 
 end # module RunInferenceCLI

@@ -11,11 +11,11 @@
 
 # Usage:
 #   cd /path/to/ASGWB.jl
-#   sbatch scripts/run_inference.sbatch [ASGWBInference/run_inference.toml]
+#   sbatch scripts/run_inference.sbatch [config/run_inference.toml]
 #
 # Config resolution (first hit wins):
 #   1. MCMC_CONFIG_FILEPATH env var (set below from $1 if provided)
-#   2. ASGWBInference/run_inference.toml default
+#   2. config/run_inference.toml default
 
 set -euo pipefail
 
@@ -43,19 +43,25 @@ if [[ $# -ge 1 ]]; then
         *) export MCMC_CONFIG_FILEPATH="$CONFIG_PATH" ;;
     esac
 else
-    export MCMC_CONFIG_FILEPATH="ASGWBInference/run_inference.toml"
+    export MCMC_CONFIG_FILEPATH="config/run_inference.toml"
 fi
 
+export ASGWB_REPO_ROOT="$REPO_ROOT"
 export JULIA_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 # Avoid BLAS oversubscription with MCMCThreads (the inference code also sets this,
 # but exporting here covers any pre-sample BLAS calls during init).
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-export INPUT="Project.toml Manifest.toml ASGWB ASGWBInference *.h5 *.toml"
+export INPUT="Project.toml Manifest.toml ASGWB ASGWBInference config *.h5 *.toml"
 export OUTPUT="ASGWBInference scripts output *.jls *.partial.chain*.jls"
 
 echo "[$(date -Iseconds)] host=$(hostname) job=${SLURM_JOB_ID:-local} cpus=${SLURM_CPUS_PER_TASK:-?} threads=$JULIA_NUM_THREADS config=${MCMC_CONFIG_FILEPATH:-<default>}"
 
 INF_PROJECT_ABS="$(realpath "$REPO_ROOT/ASGWBInference")"
+APP_BIN="$INF_PROJECT_ABS/build/asgwb/bin/asgwb"
 
-job-nanny julia --project="$INF_PROJECT_ABS" -e 'using ASGWBInference; exit(ASGWBInference.command_main())' mcmc
+if [[ -x "$APP_BIN" ]]; then
+    job-nanny "$APP_BIN"
+else
+    job-nanny julia --project="$INF_PROJECT_ABS" -e 'using ASGWBInference; exit(ASGWBInference.julia_main())'
+fi

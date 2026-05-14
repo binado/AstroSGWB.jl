@@ -3,7 +3,7 @@
 # the cosmology `quadgk` path.
 #
 # Run from the package root, for example:
-#   julia --project=ASGWBInference -m ASGWBInference profile --config-file=ASGWBInference/profile_turing.toml
+#   julia --project=ASGWBInference -e 'using ASGWBInference; ASGWBInference.ASGWBProfileMainCLI.profile(config_file="config/profile_turing.toml")'
 #
 # Sites under investigation:
 #   - ASGWB/src/cosmology.jl:9-13     quadgk inside comoving_distance

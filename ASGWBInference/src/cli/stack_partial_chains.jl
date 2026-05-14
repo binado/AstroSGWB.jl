@@ -71,9 +71,10 @@ and `snapshot` (checkpoint) keys.
 
 - `-f, --force`: overwrite an existing output file.
 
-Invoke from the repo root, for example:
+Invoke from Julia, for example:
 
-    julia --project=ASGWBInference -e 'using ASGWBInference; exit(ASGWBInference.command_main())' stack-chains partials*.jld2 --output=stacked.jld2
+    using ASGWBInference
+    ASGWBInference.StackPartialChainsCLI.stack("partials*.jld2"; output = "stacked.jld2")
 """
 function stack(
         inputs::String...;
