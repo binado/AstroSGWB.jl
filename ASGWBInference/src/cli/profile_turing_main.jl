@@ -5,25 +5,17 @@
 # Run from the package root, for example:
 #   julia --project=ASGWBInference -e 'using ASGWBInference; ASGWBInference.ASGWBProfileMainCLI.profile(config_file="config/profile_turing.toml")'
 #
-# Or the standalone script (ASGWBInference env):
-#   julia --project=ASGWBInference scripts/profile_turing.jl --config-file=config/profile_turing.toml
-#
 # Sites under investigation:
 #   - ASGWB/src/cosmology.jl:9-13     quadgk inside comoving_distance
 #   - ASGWB/src/redshift.jl           differential_comoving_volume.(z_grid, H0, Ωm) broadcast
 #   - ASGWB/src/importance.jl         luminosity_distance.(z, H0, Ωm) per-sample broadcast
-#   - ASGWBInference/src/turing_model.jl  the model being profiled
+#   - ASGWBInference/src/turing_model.jl:55-97 the model being profiled
 #
 # This script is *measurement only*: it does not edit any ASGWB/src/ files.
 
-module ASGWBProfileCLI
+module ASGWBProfileMainCLI
 
 using ASGWB
-using ASGWBInference.InferenceImpl:
-                                    build_turing_model,
-                                    ASGWBLogDensity,
-                                    ad_logdensity,
-                                    unconstrained_initial_point
 using ASGWB:
              build_uniform_priors,
              load_cache,
@@ -37,6 +29,11 @@ using ASGWB:
              redshift,
              HyperParameters,
              Detector
+using ..InferenceImpl:
+                       ASGWBLogDensity,
+                       ad_logdensity,
+                       unconstrained_initial_point,
+                       build_turing_model
 using BenchmarkTools
 using DelimitedFiles
 using LogDensityProblems
@@ -490,7 +487,7 @@ Uses BenchmarkTools for timing and `Profile` (stdlib) for sampling/allocation pr
 
 - `--profile-out=<path>`: write raw `Profile.retrieve()` snapshot via `Serialization`.
 """
-function profile_turing(;
+function profile(;
         config_file::String,
         seconds::Float64 = 2.0,
         profile_samples::Int = 500,
@@ -530,72 +527,4 @@ function profile_turing(;
     )
 end
 
-function _pop_value!(args::Vector{String}, i::Int, option::String)
-    i < length(args) || throw(ArgumentError("$option requires a value"))
-    return args[i + 1], i + 2
-end
-
-function _parse_args(args::Vector{String})
-    config_file = ""
-    seconds = 2.0
-    profile_samples = 500
-    alloc = false
-    profile_out = ""
-
-    i = 1
-    while i <= length(args)
-        arg = args[i]
-        if arg == "-c" || arg == "--config-file"
-            config_file, i = _pop_value!(args, i, arg)
-        elseif startswith(arg, "--config-file=")
-            config_file = arg[(lastindex("--config-file=") + 1):end]
-            i += 1
-        elseif arg == "--seconds"
-            value, i = _pop_value!(args, i, arg)
-            seconds = parse(Float64, value)
-        elseif startswith(arg, "--seconds=")
-            seconds = parse(Float64, arg[(lastindex("--seconds=") + 1):end])
-            i += 1
-        elseif arg == "--profile-samples"
-            value, i = _pop_value!(args, i, arg)
-            profile_samples = parse(Int, value)
-        elseif startswith(arg, "--profile-samples=")
-            profile_samples = parse(Int, arg[(lastindex("--profile-samples=") + 1):end])
-            i += 1
-        elseif arg == "--alloc"
-            alloc = true
-            i += 1
-        elseif arg == "--profile-out"
-            profile_out, i = _pop_value!(args, i, arg)
-        elseif startswith(arg, "--profile-out=")
-            profile_out = arg[(lastindex("--profile-out=") + 1):end]
-            i += 1
-        else
-            throw(ArgumentError("unknown argument: $arg"))
-        end
-    end
-
-    isempty(config_file) && throw(ArgumentError("missing required --config-file=<path>"))
-    return (;
-        config_file,
-        seconds,
-        profile_samples,
-        alloc,
-        profile_out
-    )
-end
-
-function command_main(args::Vector{String} = ARGS)::Cint
-    try
-        profile_turing(; _parse_args(copy(args))...)
-        return Cint(0)
-    catch err
-        showerror(stderr, err, catch_backtrace())
-        println(stderr)
-        return Cint(1)
-    end
-end
-
-end # module ASGWBProfileCLI
-
-exit(Base.invokelatest(ASGWBProfileCLI.command_main))
+end # module ASGWBProfileMainCLI

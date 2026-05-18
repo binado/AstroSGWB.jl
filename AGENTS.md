@@ -2,16 +2,16 @@
 
 ## Project Structure & Module Organization
 
-ASGWB.jl is a Julia package for astrophysical stochastic gravitational-wave background modeling and inference. The package entry point is `src/ASGWB.jl`, which includes and exports the public API. Core modules live in `src/`, with detector-specific code under `src/detector/`. Tests live in `test/` and are listed from `test/runtests.jl`. Detector definitions and noise curves are stored in `assets/detector/`. Scripts live in `scripts/`, while Pluto files are in `notebooks/`.
+ASGWB.jl is a Julia package for astrophysical stochastic gravitational-wave background modeling and inference. The package entry point is `ASGWB/src/ASGWB.jl`, which includes and exports the public API (physics, likelihoods, importance caches). Turing/AdvancedHMC model wrappers and sampling helpers live in the sibling package `ASGWBInference/` (see `ASGWBInference/src/InferenceImpl.jl`). Core modules live in `ASGWB/src/`, with detector-specific code under `ASGWB/src/detector/`. Tests live in `ASGWB/test/` and are listed from `ASGWB/test/runtests.jl`. Detector definitions and noise curves are stored in `ASGWB/assets/detector/`. Production inference is driven by TOML/env config through `ASGWBInference.julia_main()`, while stack/profile helpers remain callable Julia modules under `ASGWBInference/src/cli/`. Developer scripts and utilities remain in `scripts/`, while Pluto files are in `notebooks/`.
 
 ## Build, Test, and Development Commands
 
 - `just fmt`: format the repository using JuliaFormatter.
 - `just test`: run the package test suite through `Pkg.test()`.
 - `just pluto`: instantiate the notebook environment and launch Pluto.
-- `julia --project=. scripts/run_inference.jl scripts/run_inference.toml`: run the TOML-configured inference workflow.
+- `julia --project=ASGWBInference -e 'using ASGWBInference; exit(ASGWBInference.julia_main())'`: run the TOML-configured inference workflow (set `MCMC_CONFIG_FILEPATH`; defaults to `config/run_inference.toml`).
 
-If `just` is unavailable, use the Julia commands in the `justfile`, for example `julia --project=. -e 'using Pkg; Pkg.test()'`.
+If `just` is unavailable, use the Julia commands in the `justfile`, for example `julia --project=ASGWB -e 'using Pkg; Pkg.test()'`.
 
 ## Coding Style & Naming Conventions
 
@@ -21,9 +21,9 @@ Use existing Unicode scientific identifiers, including `Ωm`, `Ξ₀`, `Ξₙ`, 
 
 ## Testing Guidelines
 
-Tests use Julia's standard `Test` framework and are orchestrated by `test/runtests.jl`. Add new test files to `runtests.jl`; otherwise they will not run in CI or `Pkg.test()`. Prefer focused numerical tests with explicit tolerances for cosmology, redshift integrals, likelihoods, and interpolation behavior. Keep fixture changes intentional and document when HDF5 cache fixtures must be regenerated.
+Tests use Julia's standard `Test` framework and are orchestrated by `ASGWB/test/runtests.jl`. Add new test files to `runtests.jl`; otherwise they will not run in CI or `Pkg.test()`. Prefer focused numerical tests with explicit tolerances for cosmology, redshift integrals, likelihoods, and interpolation behavior. Keep fixture changes intentional and document when HDF5 cache fixtures must be regenerated.
 
-Run `just test` before opening a pull request. For narrow changes, also run the closest individual test file during development with `julia --project=. test/test_<area>.jl`.
+Run `just test` before opening a pull request. For narrow changes, also run the closest individual test file during development with `julia --project=ASGWB ASGWB/test/test_<area>.jl`.
 
 ## Commit & Pull Request Guidelines
 
