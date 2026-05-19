@@ -85,44 +85,6 @@ end
 abstract type ProposalSampleBundle end
 
 """
-    FullBNSSamplesSoA
-
-Struct-of-arrays proposal-sample container matching the NamedTuple returned by
-`rand(prior, n)` when `prior = intrinsic_prior(FullBNS(), bundle)`:
-
-- `mass::Matrix{Float64}` of size `(2, n)`; row 1 is `mass_1_source`, row 2 is `mass_2_source`.
-- `redshift`, `χ₁`, `χ₂`, `Λ₁`, `Λ₂` are `Vector{Float64}` of length `n`.
-
-HDF5 proposal columns remain ASCII (`chi_1`, `lambda_1`, …). Matches `keys(prior.dists)` for the full-BNS intrinsic prior.
-"""
-const FullBNSSamplesSoA = @NamedTuple{
-    mass::Matrix{Float64},
-    redshift::Vector{Float64},
-    χ₁::Vector{Float64},
-    χ₂::Vector{Float64},
-    Λ₁::Vector{Float64},
-    Λ₂::Vector{Float64}
-}
-
-"""
-    stack_source_masses(mass_1_source, mass_2_source) -> Matrix{Float64}
-
-Pack two same-length mass vectors into the `2 × n` matrix expected by
-[`FullBNSSamplesSoA`](@ref)`.mass` (row 1 = `mass_1_source`, row 2 = `mass_2_source`).
-"""
-function stack_source_masses(
-        mass_1_source::AbstractVector{<:Real},
-        mass_2_source::AbstractVector{<:Real}
-)::Matrix{Float64}
-    n = length(mass_1_source)
-    length(mass_2_source) == n ||
-        throw(ArgumentError("mass_1_source and mass_2_source must have matching lengths"))
-    return permutedims(
-        hcat(collect(Float64, mass_1_source), collect(Float64, mass_2_source)),
-    )
-end
-
-"""
     ProposalData
 
 Proposal-sample bundle for the importance-sampling problem.

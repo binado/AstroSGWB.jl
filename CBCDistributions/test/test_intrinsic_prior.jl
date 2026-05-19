@@ -5,6 +5,16 @@ using Random
 using Test
 using CBCDistributions
 
+const _theta_default = (
+    H0 = 67.0,
+    Ωm = 0.315,
+    Ξ₀ = 1.0,
+    Ξₙ = 0.0,
+    γ = 2.7,
+    κ = 3.0,
+    zpeak = 2.5
+)
+
 @testset "intrinsic prior distributions" begin
     mass_dist = OrderedUniformSourceMassPair()
     expected_mass_logpdf = log(2.0) - 2.0 * log(mass_dist.high - mass_dist.low)
@@ -37,13 +47,7 @@ using CBCDistributions
     spin_sample = rand(MersenneTwister(2), spin_dist)
     @test minimum(spin_dist) <= spin_sample <= maximum(spin_dist)
 
-    theta = HyperParameters(;
-        H0 = 67.0,
-        Ωm = 0.315,
-        γ = 2.7,
-        κ = 3.0,
-        zpeak = 2.5
-    )
+    theta = _theta_default
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     bundle = build_redshift_grid_bundle(theta, spec)
     redshift_dist = RedshiftInterpolatedDistribution(bundle)
@@ -58,13 +62,7 @@ using CBCDistributions
 end
 
 @testset "intrinsic_prior factory returns ProductNamedTupleDistribution" begin
-    theta = HyperParameters(;
-        H0 = 67.0,
-        Ωm = 0.315,
-        γ = 2.7,
-        κ = 3.0,
-        zpeak = 2.5
-    )
+    theta = _theta_default
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     bundle = build_redshift_grid_bundle(theta, spec)
     prior = intrinsic_prior(FullBNS(), bundle)
@@ -88,13 +86,7 @@ end
 end
 
 @testset "intrinsic_log_prob_samples SoA fast path matches native logpdf" begin
-    theta = HyperParameters(;
-        H0 = 67.0,
-        Ωm = 0.315,
-        γ = 2.7,
-        κ = 3.0,
-        zpeak = 2.5
-    )
+    theta = _theta_default
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     bundle = build_redshift_grid_bundle(theta, spec)
     prior = intrinsic_prior(FullBNS(), bundle)
@@ -127,13 +119,7 @@ end
 end
 
 @testset "intrinsic_log_prob_samples AoS fallback" begin
-    theta = HyperParameters(;
-        H0 = 67.0,
-        Ωm = 0.315,
-        γ = 2.7,
-        κ = 3.0,
-        zpeak = 2.5
-    )
+    theta = _theta_default
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     bundle = build_redshift_grid_bundle(theta, spec)
     prior = intrinsic_prior(FullBNS(), bundle)
@@ -159,13 +145,7 @@ end
 end
 
 @testset "fixed_intrinsic_log_prob matches intrinsic_prior SoA path" begin
-    theta = HyperParameters(;
-        H0 = 67.0,
-        Ωm = 0.315,
-        γ = 2.7,
-        κ = 3.0,
-        zpeak = 2.5
-    )
+    theta = _theta_default
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     bundle = build_redshift_grid_bundle(theta, spec)
     prior = intrinsic_prior(FullBNS(), bundle)
@@ -188,13 +168,7 @@ end
 end
 
 @testset "fixed_intrinsic_log_prob with ForwardDiff.Dual population parameter" begin
-    theta = HyperParameters(;
-        H0 = 67.0,
-        Ωm = 0.315,
-        γ = 2.7,
-        κ = 3.0,
-        zpeak = 2.5
-    )
+    theta = _theta_default
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     samples = (
         mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),

@@ -52,7 +52,7 @@ function _importance_output_eltypes(
 )
     target_log_prob_type = promote_type(
         eltype(problem.redshift_cache.fixed_intrinsic_log_prob),
-        _redshift_logpdf_type(bundle)
+        CBCDistributions._redshift_logpdf_type(bundle)
     )
     log_ratio_type = promote_type(target_log_prob_type, eltype(problem.proposal.log_prob))
     dgw_theta_sq_type = promote_type(
