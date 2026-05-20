@@ -1,6 +1,8 @@
 using Distributions
 using Distributions: ProductNamedTupleDistribution
 
+export redshift_logpdf_eltype
+
 """
     intrinsic_prior(::FullBNS; kwargs...) -> ProductNamedTupleDistribution
 
@@ -150,7 +152,15 @@ end
     return redshift_log_prob(prior, z)
 end
 
-function _redshift_logpdf_type(prior::RedshiftPrior)
+"""
+    redshift_logpdf_eltype(prior::RedshiftPrior) -> Type
+
+Element type of values returned by the redshift log-density associated with
+`prior`. Useful for preallocating output vectors that promote with the
+redshift contribution (for example `ForwardDiff.Dual` when `prior` was built
+under AD).
+"""
+function redshift_logpdf_eltype(prior::RedshiftPrior)
     return promote_type(eltype(prior.dN_dz.y), typeof(redshift_integral(prior)))
 end
 
@@ -193,7 +203,7 @@ function intrinsic_log_prob_samples(
     length(fixed_log_prob) == n ||
         throw(ArgumentError("fixed log-probability length must match the number of samples"))
     if n == 0
-        return Vector{promote_type(eltype(fixed_log_prob), _redshift_logpdf_type(prior))}()
+        return Vector{promote_type(eltype(fixed_log_prob), redshift_logpdf_eltype(prior))}()
     end
     first_val = fixed_log_prob[1] + _redshift_logpdf(prior, samples.redshift[1])
     out = Vector{typeof(first_val)}(undef, n)
