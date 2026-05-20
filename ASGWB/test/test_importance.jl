@@ -1,5 +1,8 @@
+using ASGWB
 using ForwardDiff
 using Test
+
+include(joinpath(@__DIR__, "parity_fixtures.jl"))
 
 function _importance_type_test_problem(n::Integer)
     samples = (

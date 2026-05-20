@@ -1,6 +1,8 @@
 # Shared hyperparameters and priors for inference smoke tests.
 # Importance caches are materialized on demand via `parity_cache_path` (see `ASGWB/src/parity_test_cache.jl`).
+# Included from test files that need `PARITY_THETA` (not from `runtests.jl`).
 
+using ASGWB: HyperParameters
 using Distributions: product_distribution, Uniform
 
 const PARITY_THETA = HyperParameters(;
