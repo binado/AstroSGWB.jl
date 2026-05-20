@@ -115,7 +115,7 @@ live [`RedshiftPrior`](@ref) each likelihood call.
 struct RedshiftGridCache
     redshift_grid::Vector{Float64}
     sample_interpolant::SampleInterpolant
-    fixed_intrinsic_log_prob::Vector{Float64}
+    cached_intrinsic_log_prob::Vector{Float64}
 end
 
 """
@@ -178,14 +178,17 @@ function importance_sampling_problem(
         redshift_prior_spec::RedshiftPriorSpec,
         local_merger_rate::Real,
         redshift_integral_fiducial::Real,
-        fiducial_parameters::ProposalFiducialParameters
+        fiducial_parameters::ProposalFiducialParameters;
+        intrinsic_prior_factory = intrinsic_prior
 )
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
     _validate_strategy_bundle(strategy, proposal)
-    fixed_log_prob = fixed_intrinsic_log_prob(strategy, proposal.samples)
+    prior = intrinsic_prior_factory(strategy)
+    validate_batch(prior, proposal.samples)
+    cached_log_prob = logpdf(prior, proposal.samples)
     z_grid = redshift_grid(redshift_prior_spec)
     interp = SampleInterpolant(proposal.samples.redshift, z_grid)
-    redshift_cache = RedshiftGridCache(z_grid, interp, fixed_log_prob)
+    redshift_cache = RedshiftGridCache(z_grid, interp, cached_log_prob)
     return ImportanceSamplingProblem(
         proposal,
         observation,

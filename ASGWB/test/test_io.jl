@@ -1,5 +1,6 @@
 using HDF5
 using HDF5: delete_attribute
+using Distributions: Uniform, logpdf
 using Test
 using Base.Filesystem: cp
 
@@ -269,4 +270,61 @@ end
     )
     p = importance_sampling_problem(proposal, observation, spec, 1.0, fid)
     @test p.redshift_integral_fiducial ≈ ri rtol = 1e-10
+end
+
+@testset "importance_sampling_problem accepts custom intrinsic prior factory" begin
+    fid = ProposalFiducialParameters(;
+        H0 = 67.0,
+        Ωm = 0.315,
+        Ξ₀ = 1.0,
+        Ξₙ = 0.0,
+        γ = 2.7,
+        κ = 3.0,
+        zpeak = 2.5
+    )
+    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 64, nothing)
+    samples = (
+        mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),
+        redshift = [0.1, 0.2],
+        χ₁ = [0.0, 0.1],
+        χ₂ = [0.0, -0.2],
+        Λ₁ = [100.0, 200.0],
+        Λ₂ = [150.0, 250.0]
+    )
+    proposal = ProposalData(
+        FULL_BNS_INTRINSIC_ORDER,
+        samples,
+        zeros(2),
+        Float64[1.4 1.2 0.1 0.0 0.0 100.0 150.0
+                1.5 1.3 0.2 0.1 -0.2 200.0 250.0],
+        ones(2, 2),
+        ones(2)
+    )
+    observation = ObservationConfig(
+        [1.0, 2.0],
+        [1.0, 1.0],
+        [1.0, 1.0],
+        BitVector([true, true]),
+        [0.0, 0.0],
+        1.0,
+        1.0
+    )
+    factory = strategy -> begin
+        @test strategy isa FullBNS
+        IntrinsicPrior((χ₁ = Uniform(-1.0, 1.0), Λ₁ = Uniform(0.0, 500.0)))
+    end
+
+    p = importance_sampling_problem(
+        proposal,
+        observation,
+        spec,
+        1.0,
+        1.0,
+        fid;
+        intrinsic_prior_factory = factory
+    )
+    expected = [logpdf(Uniform(-1.0, 1.0), samples.χ₁[i]) +
+                logpdf(Uniform(0.0, 500.0), samples.Λ₁[i])
+                for i in eachindex(samples.χ₁)]
+    @test p.redshift_cache.cached_intrinsic_log_prob ≈ expected
 end

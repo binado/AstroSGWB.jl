@@ -2,8 +2,7 @@
     IntrinsicPriorStrategy
 
 Abstract supertype for proposal-sample intrinsic-prior strategies. Concrete subtypes
-(currently [`FullBNS`](@ref)) are used as dispatch tags by [`intrinsic_prior`](@ref) and
-[`fixed_intrinsic_log_prob`](@ref).
+(currently [`FullBNS`](@ref)) are used as dispatch tags by [`intrinsic_prior`](@ref).
 """
 abstract type IntrinsicPriorStrategy end
 
@@ -14,7 +13,7 @@ struct FullBNS <: IntrinsicPriorStrategy end
     FullBNSSamplesSoA
 
 Struct-of-arrays proposal-sample container matching the NamedTuple returned by
-`rand(prior, n)` when `prior = intrinsic_prior(FullBNS())`:
+full-BNS proposal caches:
 
 - `mass::Matrix{Float64}` of size `(2, n)`; row 1 is `mass_1_source`, row 2 is `mass_2_source`.
 - `redshift`, `χ₁`, `χ₂`, `Λ₁`, `Λ₂` are `Vector{Float64}` of length `n`.

@@ -7,8 +7,7 @@ export CumulativeIntegral1D, interpolate, cdf, normalizer
 export IntrinsicPriorStrategy, FullBNS,
        FullBNSSamplesSoA, stack_source_masses,
        FULL_BNS_INTRINSIC_ORDER, resolve_intrinsic_strategy,
-       intrinsic_prior, intrinsic_log_prob_samples, intrinsic_log_prob_samples!,
-       fixed_intrinsic_log_prob
+       IntrinsicPrior, validate_batch, intrinsic_prior
 
 include("types.jl")
 include("cumulative_integral.jl")
