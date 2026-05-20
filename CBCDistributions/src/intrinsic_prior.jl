@@ -1,18 +1,28 @@
 using Distributions
-using Distributions: ProductNamedTupleDistribution
 
 """
-    intrinsic_prior(::FullBNS; kwargs...) -> ProductNamedTupleDistribution
+    IntrinsicPrior(dists::NamedTuple)
 
-Build the intrinsic-parameter prior for the full-BNS proposal as a native
-[`Distributions.product_distribution`](@ref) keyed by a `NamedTuple` with fields
-`mass` (an [`OrderedUniformSourceMassPair`](@ref), a 2-vector component),
-`χ₁`/`χ₂` (a shared [`AlignedSpinChiSimple`](@ref)), and `Λ₁`/`Λ₂`
-(a shared [`Distributions.Uniform`](@ref)).
+Batched intrinsic-prior distribution over a struct-of-arrays sample bundle.
+`dists` maps sample field names to component distributions. Extra fields in
+sample bundles are ignored.
+"""
+struct IntrinsicPrior{Names, Dists}
+    dists::NamedTuple{Names, Dists}
 
-The returned [`ProductNamedTupleDistribution`](@ref) supports `rand`/`rand(prior, n)`
-and `logpdf(prior, sample)` directly; use [`intrinsic_log_prob_samples`](@ref) for the
-batched, allocation-light path on a [`FullBNSSamplesSoA`](@ref) sample container.
+    function IntrinsicPrior(dists::NamedTuple{Names, Dists}) where {Names, Dists}
+        isempty(Names) &&
+            throw(ArgumentError("intrinsic prior must contain at least one component"))
+        return new{Names, Dists}(dists)
+    end
+end
+
+"""
+    intrinsic_prior(::FullBNS; kwargs...) -> IntrinsicPrior
+
+Build the intrinsic-parameter prior for full-BNS proposal samples. The returned
+prior evaluates batches with fields `mass`, `χ₁`, `χ₂`, `Λ₁`, and `Λ₂`;
+proposal fields not present in the prior, such as `redshift`, are ignored.
 """
 function intrinsic_prior(
         ::FullBNS;
@@ -23,7 +33,7 @@ function intrinsic_prior(
 )
     lambda_dist = Uniform(0.0, Float64(lambda_high))
     spin_dist = AlignedSpinChiSimple(; a_max = spin_a_max)
-    return product_distribution((
+    return IntrinsicPrior((
         mass = OrderedUniformSourceMassPair(; low = mass_low, high = mass_high),
         χ₁ = spin_dist,
         χ₂ = spin_dist,
@@ -33,112 +43,119 @@ function intrinsic_prior(
 end
 
 """
-    intrinsic_log_prob_samples(prior, samples) -> Vector{Float64}
+    validate_batch(prior::IntrinsicPrior, samples::NamedTuple) -> Int
 
-Per-sample intrinsic log-prior. Two methods:
-
-- `samples::AbstractVector{<:NamedTuple}` (AoS fallback) broadcasts `logpdf(prior, s)`
-  over the collection.
-- `prior::ProductNamedTupleDistribution` + `samples::FullBNSSamplesSoA` (SoA hot path)
-  evaluates each component `logpdf` over contiguous arrays and sums, with no per-sample
-  heap allocation.
+Validate that `samples` contains every field required by `prior` and that all
+prior fields describe the same number of samples. Extra sample fields are
+ignored. Returns the batch size.
 """
-function intrinsic_log_prob_samples(prior, samples::AbstractVector{<:NamedTuple})
-    logpdf.(Ref(prior), samples)
-end
-
-function _full_bns_pointwise_logpdf(
-        prior::ProductNamedTupleDistribution,
-        samples::NamedTuple,
-        i::Integer
-)
-    return (
-        logpdf(prior.dists.mass, (samples.mass[1, i], samples.mass[2, i])) +
-        logpdf(prior.dists.χ₁, samples.χ₁[i]) +
-        logpdf(prior.dists.χ₂, samples.χ₂[i]) +
-        logpdf(prior.dists.Λ₁, samples.Λ₁[i]) +
-        logpdf(prior.dists.Λ₂, samples.Λ₂[i])
-    )
-end
-
-function intrinsic_log_prob_samples(
-        prior::ProductNamedTupleDistribution,
-        samples::NamedTuple
-)
-    n = _require_full_bns_soa_matching_lengths(samples)
-    n == 0 && return Float64[]
-    first_val = _full_bns_pointwise_logpdf(prior, samples, 1)
-    out = Vector{typeof(first_val)}(undef, n)
-    @inbounds out[1] = first_val
-    @inbounds for i in 2:n
-        out[i] = _full_bns_pointwise_logpdf(prior, samples, i)
+function validate_batch(prior::IntrinsicPrior, samples::NamedTuple)::Int
+    first_key = first(keys(prior.dists))
+    haskey(samples, first_key) ||
+        throw(ArgumentError("samples are missing intrinsic prior field $(repr(first_key))"))
+    n = _component_batch_length(prior.dists[first_key], samples[first_key], first_key)
+    for key in Iterators.drop(keys(prior.dists), 1)
+        haskey(samples, key) ||
+            throw(ArgumentError("samples are missing intrinsic prior field $(repr(key))"))
+        n_key = _component_batch_length(prior.dists[key], samples[key], key)
+        n_key == n ||
+            throw(ArgumentError("intrinsic prior sample fields must have matching lengths"))
     end
-    return out
-end
-
-"""
-    intrinsic_log_prob_samples!(out, prior, samples) -> out
-
-In-place SoA variant of [`intrinsic_log_prob_samples`](@ref). Writes per-sample
-log-prior into `out`; `out` must have length equal to `length(samples.redshift)`.
-"""
-function intrinsic_log_prob_samples!(
-        out::AbstractVector,
-        prior::ProductNamedTupleDistribution,
-        samples::NamedTuple
-)
-    n = _require_full_bns_soa_matching_lengths(samples)
-    length(out) == n ||
-        throw(ArgumentError("output length must match the number of samples"))
-    @inbounds for i in 1:n
-        out[i] = _full_bns_pointwise_logpdf(prior, samples, i)
-    end
-    return out
-end
-
-function _require_full_bns_soa_matching_lengths(samples::NamedTuple)
-    n = length(samples.redshift)
-    (
-        length(samples.χ₁) == n &&
-        length(samples.χ₂) == n &&
-        length(samples.Λ₁) == n &&
-        length(samples.Λ₂) == n &&
-        size(samples.mass, 2) == n
-    ) || throw(ArgumentError("SoA sample vectors must all have matching lengths"))
-    size(samples.mass, 1) == 2 ||
-        throw(ArgumentError("SoA mass matrix must have two rows (m1, m2)"))
     return n
 end
 
-# --- Cached full-BNS intrinsic log-probability terms ---
+function _component_batch_length(d::UnivariateDistribution, field::AbstractVector, key)
+    return length(field)
+end
+
+function _component_batch_length(d::MultivariateDistribution, field::AbstractMatrix, key)
+    expected = _event_size(d)
+    size(field, 1) == expected ||
+        throw(
+            ArgumentError(
+            "intrinsic prior field $(repr(key)) must have $expected rows, got $(size(field, 1))",
+        ),
+        )
+    return size(field, 2)
+end
+
+function _component_batch_length(d, field, key)
+    throw(
+        ArgumentError(
+        "unsupported batch layout for intrinsic prior field $(repr(key)) and distribution $(typeof(d))",
+    ),
+    )
+end
+
+_event_size(d::MultivariateDistribution) = length(d)
+
+function _prior_output_eltype(prior::IntrinsicPrior)
+    return promote_type(map(eltype, values(prior.dists))...)
+end
+
+function Distributions.logpdf(prior::IntrinsicPrior, samples::NamedTuple)
+    n = validate_batch(prior, samples)
+    T = _prior_output_eltype(prior)
+    out = zeros(T, n)
+    return logpdf!(out, prior, samples)
+end
 
 """
-    fixed_intrinsic_log_prob(::FullBNS, samples; kwargs...) -> Vector{Float64}
+    logpdf!(out, prior::IntrinsicPrior, samples::NamedTuple) -> out
 
-Per-sample sum of mass, aligned-spin, and tidal-uniform log-pdfs for full-BNS
-proposal samples. Matches the corresponding terms in [`intrinsic_prior`](@ref)
-(`mass`, `χ₁`, `χ₂`, `Λ₁`, `Λ₂`); redshift is excluded because it depends on
-the live [`RedshiftPrior`](@ref).
+Evaluate per-sample intrinsic log-prior terms in place.
 """
-function fixed_intrinsic_log_prob(
-        ::FullBNS,
-        samples::FullBNSSamplesSoA;
-        mass_low::Real = BNS_MASS_LOW,
-        mass_high::Real = BNS_MASS_HIGH,
-        spin_a_max::Real = BNS_SPIN_A_MAX,
-        lambda_high::Real = BNS_LAMBDA_HIGH
-)
-    n = _require_full_bns_soa_matching_lengths(samples)
-    mass_dist = OrderedUniformSourceMassPair(; low = mass_low, high = mass_high)
-    spin_dist = AlignedSpinChiSimple(; a_max = spin_a_max)
-    lambda_dist = Uniform(0.0, Float64(lambda_high))
-    out = Vector{Float64}(undef, n)
-    @inbounds for i in 1:n
-        out[i] = logpdf(mass_dist, (samples.mass[1, i], samples.mass[2, i])) +
-                 logpdf(spin_dist, samples.χ₁[i]) +
-                 logpdf(spin_dist, samples.χ₂[i]) +
-                 logpdf(lambda_dist, samples.Λ₁[i]) +
-                 logpdf(lambda_dist, samples.Λ₂[i])
+function logpdf!(out::AbstractVector, prior::IntrinsicPrior, samples::NamedTuple)
+    n = validate_batch(prior, samples)
+    length(out) == n ||
+        throw(ArgumentError("output length must match the number of samples"))
+    fill!(out, zero(eltype(out)))
+    for key in keys(prior.dists)
+        _add_component_logpdf!(out, prior.dists[key], samples[key])
     end
     return out
+end
+
+function _add_component_logpdf!(
+        out::AbstractVector,
+        d::UnivariateDistribution,
+        field::AbstractVector
+)
+    @inbounds for i in eachindex(out, field)
+        out[i] += logpdf(d, field[i])
+    end
+    return out
+end
+
+function _add_component_logpdf!(
+        out::AbstractVector,
+        d::MultivariateDistribution,
+        field::AbstractMatrix
+)
+    values = logpdf(d, field)
+    length(values) == length(out) ||
+        throw(ArgumentError("component logpdf length must match output length"))
+    @inbounds for i in eachindex(out, values)
+        out[i] += values[i]
+    end
+    return out
+end
+
+function _add_component_logpdf!(
+        out::AbstractVector,
+        d::OrderedUniformSourceMassPair,
+        field::AbstractMatrix
+)
+    size(field, 1) == 2 ||
+        throw(ArgumentError("ordered source-mass batch must have two rows"))
+    @inbounds for i in eachindex(out)
+        out[i] += _ordered_mass_logpdf(d, field[1, i], field[2, i])
+    end
+    return out
+end
+
+function _ordered_mass_logpdf(d::OrderedUniformSourceMassPair, m1::Real, m2::Real)
+    m1 >= m2 && m2 >= d.low && m1 <= d.high || return -Inf
+    T = typeof(d.low)
+    return log(T(2)) - T(2) * log(d.high - d.low)
 end

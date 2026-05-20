@@ -101,8 +101,8 @@ function reconstruct_proposal_log_prob(
 )::Vector{Float64}
     h = hyperparameters_from_fiducial(fid, spec)
     redshift_prior = build_redshift_prior(h, spec)
-    fixed_log_prob = fixed_intrinsic_log_prob(FullBNS(), samples)
-    return fixed_log_prob .+ redshift_log_prob_samples(redshift_prior, samples.redshift)
+    cached_log_prob = logpdf(intrinsic_prior(FullBNS()), samples)
+    return cached_log_prob .+ redshift_log_prob_samples(redshift_prior, samples.redshift)
 end
 
 function importance_sampling_problem(
@@ -110,7 +110,8 @@ function importance_sampling_problem(
         observation::ObservationConfig,
         redshift_prior_spec::RedshiftPriorSpec,
         local_merger_rate::Real,
-        fiducial_parameters::ProposalFiducialParameters
+        fiducial_parameters::ProposalFiducialParameters;
+        intrinsic_prior_factory = intrinsic_prior
 )
     ri = fiducial_redshift_integral(fiducial_parameters, redshift_prior_spec)
     return importance_sampling_problem(
@@ -119,6 +120,7 @@ function importance_sampling_problem(
         redshift_prior_spec,
         local_merger_rate,
         ri,
-        fiducial_parameters
+        fiducial_parameters;
+        intrinsic_prior_factory = intrinsic_prior_factory
     )
 end
