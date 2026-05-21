@@ -75,7 +75,8 @@ end
         cache.observation.observation_time_sec
     )
     @test isfinite(rate)
-    @test evaluation.expected_number_of_sources ≈ rate * cache.observation.observation_time_sec
+    @test evaluation.expected_number_of_sources ≈
+          rate * cache.observation.observation_time_sec
 end
 
 @testset "empty importance weights preserve AD element types" begin

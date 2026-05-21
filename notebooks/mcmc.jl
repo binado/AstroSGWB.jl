@@ -16,7 +16,7 @@
 # %% [markdown]
 # # MCMC
 #
-# Same overall flow as `scripts/run_turing.jl`, but this notebook uses **unicode-key named tuples** (`Ωm`, `Ξ₀`, …) aligned with `HyperParameters` and the Turing `product_distribution` prior. On-disk JSON for the CLI still uses ASCII keys (`Omega_m`, …). After **`load_cache`**, it plots **Ω_GW(f)** at the initial `θ0` (via `evaluate_importance_terms` and `Ωgw`) with **CairoMakie**, then runs **NUTS** in a dedicated cell with the same steps as `sample_with_turing` (`build_turing_model`, `condition_turing_model`, `InitFromParams`, `sample`).
+# Same overall flow as `scripts/run_turing.jl`, but this notebook uses **unicode-key named tuples** (`Ωm`, `Ξ₀`, …) aligned with `coerce_hyperparameters` and the Turing `product_distribution` prior. On-disk JSON for the CLI still uses ASCII keys (`Omega_m`, …). After **`load_cache`**, it plots **Ω_GW(f)** at the initial `θ0` (via `evaluate_importance_terms` and `Ωgw`) with **CairoMakie**, then runs **NUTS** in a dedicated cell with the same steps as `sample_with_turing` (`build_turing_model`, `condition_turing_model`, `InitFromParams`, `sample`).
 #
 # On-disk chains use **JLD2** with the top-level key **`chain`**, matching **`scripts/run_inference.jl`**. Set **`chain_input_jld2`** to a path (absolute or relative to the package root, like the cache HDF5 path) to skip sampling and load an existing run for diagnostics only.
 #
@@ -41,9 +41,10 @@ begin
                  load_cache,
                  evaluate_importance_terms,
                  Ωgw,
-                 HyperParameters,
-                 Detector,
-                 DEFAULT_PARAMETER_ORDER
+                 coerce_hyperparameters,
+                 hyperparameter_order,
+                 validate_sample_only!,
+                 Detector
     using Turing
     using AdvancedHMC
     using Random
@@ -107,7 +108,6 @@ begin
     )
 
     init = (H0 = 67.66, Ωm = 0.3096, Ξ₀ = 1.0, Ξₙ = 1.91, γ = 2.7, κ = 5.7, zpeak = 2.0)
-    fixed_sites = (; (k => init[k] for k in DEFAULT_PARAMETER_ORDER if k ∉ sample_only)...)
 
     sampler = (n_samples = 2000, n_adapts = 2000, target_acceptance = 0.9)
 
@@ -127,7 +127,10 @@ begin
         κ = priors.κ,
         zpeak = priors.zpeak
     ))
-    θ0 = HyperParameters(; init...)
+    validate_sample_only!(sample_only, priors_turing)
+    order = hyperparameter_order(priors_turing)
+    fixed_sites = (; (k => init[k] for k in order if k ∉ sample_only)...)
+    θ0 = coerce_hyperparameters(; init...)
 end
 
 # %%
@@ -135,27 +138,8 @@ fixed_sites
 
 # %%
 begin
-    function validate_sample_only(sample_only::Union{Nothing, Tuple{Vararg{Symbol}}})
-        sample_only === nothing && return nothing
-        isempty(sample_only) && throw(
-            ArgumentError(
-            "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
-        ),
-        )
-        for s in sample_only
-            s in DEFAULT_PARAMETER_ORDER || throw(
-                ArgumentError(
-                "sample_only contains $(repr(s)); expected symbols from $(DEFAULT_PARAMETER_ORDER)",
-            ),
-            )
-        end
-        length(unique(sample_only)) == length(sample_only) ||
-            throw(ArgumentError("sample_only must not repeat symbols"))
-        return nothing
-    end
-
     function turing_initial_params(
-            theta0::HyperParameters,
+            theta0::NamedTuple,
             sample_only::Union{Nothing, Tuple{Vararg{Symbol}}}
     )
         sample_only === nothing && return InitFromParams(theta0)

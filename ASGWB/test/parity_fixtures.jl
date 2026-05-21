@@ -2,10 +2,10 @@
 # Importance caches are materialized on demand via `parity_cache_path` (see `parity_test_cache.jl`).
 # Included from test files that need `PARITY_THETA` (not from `runtests.jl`).
 
-using ASGWB: HyperParameters
+using ASGWB: coerce_hyperparameters
 using Distributions: product_distribution, Uniform
 
-const PARITY_THETA = HyperParameters(;
+const PARITY_THETA = coerce_hyperparameters(;
     H0 = 70.0,
     Ωm = 0.3,
     Ξ₀ = 1.1,
@@ -32,5 +32,5 @@ const PARITY_PRIOR_BOUNDS = Dict(
     "chin" => (-1.0, 1.0),
     "gamma" => (0.0, 5.0),
     "kappa" => (0.0, 10.0),
-    "z_peak" => (0.0, 5.0),
+    "z_peak" => (0.0, 5.0)
 )

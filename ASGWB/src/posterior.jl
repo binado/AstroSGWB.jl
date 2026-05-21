@@ -1,6 +1,6 @@
 using Distributions: logpdf, ProductNamedTupleDistribution
 
-function target_log_prob_samples(h::HyperParametersNT, problem::ImportanceSamplingProblem)
+function target_log_prob_samples(h::NamedTuple, problem::ImportanceSamplingProblem)
     redshift_prior = build_redshift_prior(
         h,
         problem.redshift_prior_spec,
@@ -23,7 +23,7 @@ diagnostics and the AdvancedHMC likelihood (`dgw_theta_sq`, `target_log_prob`, `
 `redshift_integral`, `expected_number_of_sources`, `spectral_density`,
 `spectral_density_in_band`).
 """
-function evaluate_importance_terms(h::HyperParametersNT, problem::ImportanceSamplingProblem)
+function evaluate_importance_terms(h::NamedTuple, problem::ImportanceSamplingProblem)
     cosmology_cache,
     redshift_prior = cosmology_and_redshift_prior(
         h,
@@ -48,7 +48,7 @@ function evaluate_importance_terms(h::HyperParametersNT, problem::ImportanceSamp
 end
 
 function loglikelihood(
-        h::HyperParametersNT,
+        h::NamedTuple,
         problem::ImportanceSamplingProblem;
         observed_spectral_density::AbstractVector{<:Real} = problem.observation.fiducial_spectral_density
 )
@@ -62,7 +62,7 @@ function loglikelihood(
 end
 
 function logposterior(
-        h::HyperParametersNT,
+        h::NamedTuple,
         problem::ImportanceSamplingProblem,
         prior::ProductNamedTupleDistribution;
         observed_spectral_density::AbstractVector{<:Real} = problem.observation.fiducial_spectral_density
@@ -72,9 +72,9 @@ function logposterior(
 end
 
 """
-    fiducial_hyperparameters(problem::ImportanceSamplingProblem) -> HyperParameters
+    fiducial_hyperparameters(problem::ImportanceSamplingProblem) -> NamedTuple
 
-Build [`HyperParameters`](@ref) from the cache’s [`ProposalFiducialParameters`](@ref)
+Build coerced hyperparameters ([`coerce_hyperparameters`](@ref)) from the cache’s [`ProposalFiducialParameters`](@ref)
 and [`RedshiftPriorSpec`](@ref). Same rules as [`hyperparameters_from_fiducial`](@ref)
 (population scalars on the proposal fiducial dict when the prior family requires them).
 """

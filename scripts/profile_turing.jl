@@ -37,7 +37,7 @@ using ASGWB:
              logposterior,
              luminosity_distance,
              redshift,
-             HyperParameters,
+             coerce_hyperparameters,
              Detector
 using BenchmarkTools
 using DelimitedFiles
@@ -105,12 +105,12 @@ function _priors_from_toml(priors_tbl::Dict)
         Ξₙ = Uniform(_uniform_bounds(priors_tbl, "chin")...),
         γ = Uniform(_uniform_bounds(priors_tbl, "gamma")...),
         κ = Uniform(_uniform_bounds(priors_tbl, "kappa")...),
-        zpeak = Uniform(_uniform_bounds(priors_tbl, "z_peak")...),
+        zpeak = Uniform(_uniform_bounds(priors_tbl, "z_peak")...)
     ))
 end
 
 function _theta0_from_toml(init_tbl::Dict)
-    return HyperParameters(;
+    return coerce_hyperparameters(;
         H0 = Float64(init_tbl["H0"]),
         Ωm = Float64(init_tbl["Omega_m"]),
         Ξ₀ = Float64(init_tbl["chi0"]),
@@ -129,7 +129,7 @@ function _validate_init_in_priors(prior, init_tbl::Dict)
         "chin" => :Ξₙ,
         "gamma" => :γ,
         "kappa" => :κ,
-        "z_peak" => :zpeak,
+        "z_peak" => :zpeak
     )
         haskey(init_tbl, key) || continue
         v = Float64(init_tbl[key])
@@ -213,7 +213,7 @@ function _run(;
         cache_path::String,
         detectors::Vector{Detector},
         priors,
-        θ0::HyperParameters,
+        θ0::NamedTuple,
         seed::Union{Nothing, Int},
         observed_spectral_density_csv::Union{Nothing, String},
         seconds::Float64,

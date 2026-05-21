@@ -41,12 +41,12 @@ function constrained_parameters(ld::ASGWBLogDensity, z::AbstractVector{<:Real})
 end
 
 """
-    unconstrained_initial_point(ld::ASGWBLogDensity, theta0::HyperParameters) -> Vector{Float64}
+    unconstrained_initial_point(ld::ASGWBLogDensity, theta0::NamedTuple) -> Vector{Float64}
 
 Transform a set of physical hyperparameters `theta0` into the unconstrained
 parameter space.
 """
-function unconstrained_initial_point(ld::ASGWBLogDensity, theta0::HyperParameters)
+function unconstrained_initial_point(ld::ASGWBLogDensity, theta0::NamedTuple)
     return collect(Bijectors.link(ld.prior, theta0))
 end
 
@@ -98,7 +98,7 @@ Sample from the ASGWB posterior using `AdvancedHMC.jl` directly (without Turing)
 function sample_with_advancedhmc(
         problem::ImportanceSamplingProblem,
         prior::ProductNamedTupleDistribution,
-        theta0::HyperParameters;
+        theta0::NamedTuple;
         n_adapts::Int = 25,
         n_samples::Int = 25,
         target_acceptance::Float64 = 0.8
@@ -122,7 +122,7 @@ function sample_with_advancedhmc(
 
     samples_constrained = map(samples_unconstrained) do z
         theta_nt, _ = constrained_parameters(ld, z)
-        HyperParameters(theta_nt)
+        coerce_hyperparameters(theta_nt)
     end
 
     return samples_constrained, stats, ld

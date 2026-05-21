@@ -20,7 +20,8 @@ present, is ignored on load; [`load_cache`](@ref) always fills the observation u
 [`fiducial_spectral_density`](@ref) so the default likelihood data match the current Julia pipeline.
 Caches may omit
 `redshift_integral_fiducial`; it is then set from [`fiducial_redshift_integral`](@ref).
-Inference state is a flat [`HyperParameters`](@ref) `NamedTuple`; caches carry
+Inference state is a flat hyperparameter `NamedTuple` (see [`coerce_hyperparameters`](@ref));
+caches carry
 [`ProposalFiducialParameters`](@ref) in `fiducial_parameters` (HDF5 group `hyperparameters`).
 """
 module ASGWB
@@ -29,6 +30,7 @@ using CBCDistributions
 
 include("types.jl")
 include("inference_types.jl")
+include("hyperparameters.jl")
 include("detector/psd.jl")
 include("detector/detector.jl")
 include("detector/overlap.jl")
@@ -53,7 +55,9 @@ export ImportanceSamplingProblem,
        MadauDickinson,
        PowerLaw,
        parse_redshift_prior_family,
-       HyperParameters,
+       coerce_hyperparameters,
+       hyperparameter_order,
+       validate_sample_only!,
        ProposalFiducialParameters,
        ProposalSampleBundle,
        FullBNSSamplesSoA,
@@ -138,8 +142,5 @@ export loglikelihood,
        fiducial_hyperparameters,
        fiducial_spectral_density,
        fiducial_redshift_integral
-
-# Hyperparameter ordering (used with product priors / Bijectors in ASGWBInference)
-export DEFAULT_PARAMETER_ORDER
 
 end

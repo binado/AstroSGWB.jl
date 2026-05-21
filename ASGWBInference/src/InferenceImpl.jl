@@ -3,9 +3,10 @@ module InferenceImpl
 using ASGWB
 using ASGWB:
              ImportanceSamplingProblem,
-             HyperParameters,
+             coerce_hyperparameters,
+             hyperparameter_order,
+             validate_sample_only!,
              logposterior,
-             DEFAULT_PARAMETER_ORDER,
              cosmology_and_redshift_prior,
              compute_importance_weights,
              merger_rate_per_sec,

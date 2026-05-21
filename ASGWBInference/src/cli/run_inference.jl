@@ -1,7 +1,7 @@
 module RunInferenceCLI
 
 using ASGWB
-using ASGWB: load_cache, Detector, DEFAULT_PARAMETER_ORDER
+using ASGWB: load_cache, Detector, hyperparameter_order, validate_sample_only!
 using ..InferenceImpl: build_turing_model
 
 using Turing
@@ -190,18 +190,6 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     output_prefix = get(settings, "output_prefix", "chains")::String
     mkpath(output_dir)
 
-    # Validate sample_only
-    isempty(sample_only) && throw(ArgumentError("sample_only must not be empty"))
-    length(unique(sample_only)) == length(sample_only) ||
-        throw(ArgumentError("sample_only must not repeat symbols"))
-    for s in sample_only
-        s in DEFAULT_PARAMETER_ORDER || throw(
-            ArgumentError("sample_only contains $(repr(s)); expected symbols from $(DEFAULT_PARAMETER_ORDER)"),
-        )
-    end
-
-    fixed_sites = (; (k => init[k] for k in DEFAULT_PARAMETER_ORDER if k ∉ sample_only)...)
-
     timestamp = format(now(), "yyyymmdd-HHMMSS")
     params_suffix = join(sample_only, "-")
     base = "$(output_prefix)-$(params_suffix)-seed$(seed)-$(timestamp)"
@@ -209,6 +197,9 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
 
     validate_init_against_priors(PRIORS, init)
     priors_turing = product_distribution(PRIORS)
+    validate_sample_only!(sample_only, priors_turing)
+    order = hyperparameter_order(priors_turing)
+    fixed_sites = (; (k => init[k] for k in order if k ∉ sample_only)...)
 
     # Cluster-friendly defaults: avoid BLAS oversubscription with MCMCThreads.
     BLAS.set_num_threads(1)

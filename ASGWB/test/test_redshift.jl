@@ -2,7 +2,7 @@ using Test
 using CBCDistributions
 
 @testset "sample interpolation helpers" begin
-    theta = HyperParameters(;
+    theta = coerce_hyperparameters(;
         H0 = 67.0,
         Ωm = 0.315,
         γ = 2.7,

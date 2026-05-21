@@ -1,7 +1,7 @@
 """
-    hyperparameters_from_fiducial(fid::ProposalFiducialParameters, spec::RedshiftPriorSpec) -> HyperParameters
+    hyperparameters_from_fiducial(fid::ProposalFiducialParameters, spec::RedshiftPriorSpec) -> NamedTuple
 
-Build [`HyperParameters`](@ref) from cache `hyperparameters` scalars and the file’s
+Build coerced hyperparameters ([`coerce_hyperparameters`](@ref)) from cache `hyperparameters` scalars and the file’s
 [`RedshiftPriorSpec`](@ref). Used when reconstructing per-sample proposal log-density
 from redshift grids (e.g. caches that omit `proposal_log_prob`).
 
@@ -11,7 +11,7 @@ Power-law caches are rejected: live hyperparameter reconstruction is MadauDickin
 function hyperparameters_from_fiducial(
         fid::ProposalFiducialParameters,
         spec::RedshiftPriorSpec
-)::HyperParameters
+)
     spec.family == MadauDickinson || throw(
         ArgumentError(
         "live hyperparameter reconstruction supports MadauDickinson only; PowerLaw caches are metadata-only",
@@ -25,7 +25,7 @@ function hyperparameters_from_fiducial(
         ),
         )
     end
-    return HyperParameters(;
+    return coerce_hyperparameters(;
         H0 = fid.H0,
         Ωm = fid.Ωm,
         Ξ₀ = fid.Ξ₀,

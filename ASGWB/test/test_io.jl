@@ -25,7 +25,7 @@ const _TEST_LOAD_DETS = [Detector("H1"), Detector("L1")]
     d_gw = gravitational_wave_distance.(z, d_l, fid.Ξ₀, fid.Ξₙ)
     scale = (d_l ./ d_gw) .^ 2
     raw_flux = ref.proposal.cached_flux_over_dgw2 ./ reshape(scale, 1, :)
-    h = HyperParameters(;
+    h = coerce_hyperparameters(;
         H0 = fid.H0,
         Ωm = fid.Ωm,
         Ξ₀ = fid.Ξ₀,
@@ -185,7 +185,7 @@ end
     expected_lp = reconstruct_proposal_log_prob(
         problem.proposal.samples,
         problem.redshift_prior_spec,
-        problem.fiducial_parameters,
+        problem.fiducial_parameters
     )
     @test problem.proposal.log_prob ≈ expected_lp rtol = 1e-6
     @test problem.proposal.intrinsic_vector ≈ Float64[1.4 1.2 0.1 0.0 0.0 100.0 100.0
