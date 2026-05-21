@@ -38,6 +38,51 @@ function _check_unique_hyperparameters(model::AbstractASGWBModel)
 end
 
 """
+    validate_subset!(subset::Union{Tuple{Vararg{Symbol}}, NamedTuple}, order) -> subset
+
+Validate that `subset` (either a tuple of symbols or a NamedTuple) contains only
+unique symbols that are a subset of `order`. Allows empty subsets. Throws `ArgumentError`
+on duplicates or unknown symbols.
+"""
+function validate_subset!(
+        subset::Tuple{Vararg{Symbol}},
+        order::Union{Tuple{Vararg{Symbol}}, Base.KeySet, AbstractVector{Symbol}}
+)
+    for s in subset
+        s in order || throw(
+            ArgumentError(
+            "subset contains $(repr(s)); expected symbols from $(Tuple(order))",
+        ),
+        )
+    end
+    length(unique(subset)) == length(subset) ||
+        throw(ArgumentError("subset must not repeat symbols"))
+    return subset
+end
+
+function validate_subset!(
+        subset::NamedTuple,
+        order::Union{Tuple{Vararg{Symbol}}, Base.KeySet, AbstractVector{Symbol}}
+)
+    validate_subset!(keys(subset), order)
+    return subset
+end
+
+"""
+    validate_subset!(subset, model::AbstractASGWBModel) -> subset
+"""
+function validate_subset!(subset, model::AbstractASGWBModel)
+    validate_subset!(subset, _check_unique_hyperparameters(model))
+end
+
+"""
+    validate_subset!(subset, prior::ProductNamedTupleDistribution) -> subset
+"""
+function validate_subset!(subset, prior::ProductNamedTupleDistribution)
+    validate_subset!(subset, keys(prior.dists))
+end
+
+"""
     validate_hyperparameters(model, Λ; context="hyperparameters")
 
 Require `Λ` to contain exactly the model hyperparameters.
@@ -47,16 +92,13 @@ function validate_hyperparameters(
         Λ::NamedTuple;
         context::AbstractString = "hyperparameters"
 )
-    order = _check_unique_hyperparameters(model)
-    names = keys(Λ)
-    Set(names) == Set(order) && return nothing
-
-    missing = Tuple(s for s in order if s ∉ names)
-    extra = Tuple(s for s in names if s ∉ order)
-    parts = String[]
-    isempty(missing) || push!(parts, "missing $(missing)")
-    isempty(extra) || push!(parts, "extra $(extra)")
-    throw(ArgumentError("$(context) must match $(typeof(model)); " * join(parts, "; ")))
+    validate_subset!(Λ, model)
+    order = hyperparameters(model)
+    if length(keys(Λ)) != length(order)
+        missing = Tuple(s for s in order if s ∉ keys(Λ))
+        throw(ArgumentError("$(context) must match $(typeof(model)); missing $(missing)"))
+    end
+    return nothing
 end
 
 """
@@ -108,16 +150,7 @@ function validate_sample_only!(
         "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
     ),
     )
-    order = _check_unique_hyperparameters(model)
-    for s in sample_only
-        s in order || throw(
-            ArgumentError(
-            "sample_only contains $(repr(s)); expected symbols from $(Tuple(order))",
-        ),
-        )
-    end
-    length(unique(sample_only)) == length(sample_only) ||
-        throw(ArgumentError("sample_only must not repeat symbols"))
+    validate_subset!(sample_only, model)
     return nothing
 end
 
@@ -126,23 +159,12 @@ function validate_sample_only!(
         prior::ProductNamedTupleDistribution
 )
     sample_only === nothing && return nothing
-    order = keys(prior.dists)
-    model = MadauDickinsonModifiedPropagation()
-    order == hyperparameters(model) && return validate_sample_only!(sample_only, model)
     isempty(sample_only) && throw(
         ArgumentError(
         "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
     ),
     )
-    for s in sample_only
-        s in order || throw(
-            ArgumentError(
-            "sample_only contains $(repr(s)); expected symbols from $(Tuple(order))",
-        ),
-        )
-    end
-    length(unique(sample_only)) == length(sample_only) ||
-        throw(ArgumentError("sample_only must not repeat symbols"))
+    validate_subset!(sample_only, prior)
     return nothing
 end
 
