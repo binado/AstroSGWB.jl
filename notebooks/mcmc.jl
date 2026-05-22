@@ -39,7 +39,7 @@ begin
     using ASGWBInference: build_turing_model, condition_turing_model
     using ASGWB:
                  load_cache,
-                 evaluate_importance_terms,
+                 evaluate_model_terms,
                  Ωgw,
                  canonical_hyperparameters,
                  MadauDickinsonModifiedPropagation,
@@ -187,7 +187,7 @@ end
 
 # %%
 begin
-    ev = evaluate_importance_terms(θ0, problem)
+    ev = evaluate_model_terms(MadauDickinsonModifiedPropagation(), θ0, problem)
     f = problem.observation.frequencies
     Ωgw_plot = Ωgw(ev.spectral_density, f, θ0.H0)
     mask = Ωgw_plot .> 0.0

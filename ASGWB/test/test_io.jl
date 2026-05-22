@@ -208,7 +208,7 @@ end
           length(problem.observation.frequencies)
     @test length(problem.observation.sgwb_scale) == length(problem.observation.frequencies)
     @test problem.observation.in_band_mask == BitVector([true, true])
-    ev = evaluate_importance_terms(fiducial_hyperparameters(problem), problem)
+    ev = evaluate_model_terms(MadauDickinsonModifiedPropagation(), fiducial_hyperparameters(problem), problem)
     @test problem.observation.fiducial_spectral_density ≈ ev.spectral_density
     @test problem.observation.sgwb_scale_in_band ≈ problem.observation.sgwb_scale
     @test problem.observation.fiducial_spectral_density_in_band ≈

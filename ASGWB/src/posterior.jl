@@ -61,19 +61,6 @@ function evaluate_model_terms(
     return evaluate_model_terms(model, Λ, problem, problem.redshift_cache.redshift_grid)
 end
 
-"""
-    evaluate_importance_terms(Λ, problem) -> NamedTuple
-
-Thin composition of [`compute_importance_weights`](@ref), [`merger_rate_per_sec`](@ref),
-and [`spectral_density`](@ref) that exposes every intermediate used by inference
-diagnostics and the AdvancedHMC likelihood (`dgw_theta_sq`, `target_log_prob`, `log_ratio`, `weights`,
-`redshift_integral`, `expected_number_of_sources`, `spectral_density`,
-`spectral_density_in_band`).
-"""
-function evaluate_importance_terms(Λ::NamedTuple, problem::ImportanceSamplingProblem)
-    return evaluate_model_terms(MadauDickinsonModifiedPropagation(), Λ, problem)
-end
-
 function loglikelihood(
         Λ::NamedTuple,
         problem::ImportanceSamplingProblem;
@@ -123,7 +110,7 @@ end
     fiducial_spectral_density(problem::ImportanceSamplingProblem) -> Vector{Float64}
 
 Strain spectral density ``S_h(f)`` at [`fiducial_hyperparameters`](@ref), from
-[`evaluate_importance_terms`](@ref) (cached flux, importance weights, and merger rate). Same
+[`evaluate_model_terms`](@ref) (cached flux, importance weights, and merger rate). Same
 units as the vector returned by [`spectral_density`](@ref) on the importance-weighted fluxes.
 
 For the dimensionless energy density ``\\Omega_{\\mathrm{GW}}(f)``, use [`Ωgw`](@ref) with
@@ -131,7 +118,7 @@ this vector and the corresponding frequency bins from `problem.observation.frequ
 """
 function fiducial_spectral_density(problem::ImportanceSamplingProblem)
     Λ = fiducial_hyperparameters(problem)
-    return evaluate_importance_terms(Λ, problem).spectral_density
+    return evaluate_model_terms(MadauDickinsonModifiedPropagation(), Λ, problem).spectral_density
 end
 
 """

@@ -138,8 +138,7 @@ export importance_weights,
        spectral_snr_squared,
        spectral_snr,
        Ωgw,
-       evaluate_model_terms,
-       evaluate_importance_terms
+       evaluate_model_terms
 
 # Diagnostics
 export normalized_ess, max_normalized_weight, log_ratio_variance
