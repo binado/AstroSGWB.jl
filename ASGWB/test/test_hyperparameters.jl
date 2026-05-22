@@ -52,26 +52,4 @@ using Distributions: product_distribution, Normal, ProductNamedTupleDistribution
         extra_nt = (; (k => 1.0 for k in expected_order)..., extra_key = 1.0)
         @test_throws ArgumentError validate_hyperparameters(model, extra_nt)
     end
-
-    @testset "validate_sample_only" begin
-        # Nothing is allowed (all sampled)
-        @test validate_sample_only(nothing, model) === nothing
-        @test validate_sample_only(nothing, prior) === nothing
-
-        # Valid tuple
-        @test validate_sample_only((:H0, :Ωm), model) === nothing
-        @test validate_sample_only((:H0, :Ωm), prior) === nothing
-
-        # Empty tuple throws ArgumentError
-        @test_throws ArgumentError validate_sample_only((), model)
-        @test_throws ArgumentError validate_sample_only((), prior)
-
-        # Unknown symbols throw ArgumentError
-        @test_throws ArgumentError validate_sample_only((:invalid,), model)
-        @test_throws ArgumentError validate_sample_only((:invalid,), prior)
-
-        # Repeating/duplicate symbols throw ArgumentError
-        @test_throws ArgumentError validate_sample_only((:H0, :H0), model)
-        @test_throws ArgumentError validate_sample_only((:H0, :H0), prior)
-    end
 end

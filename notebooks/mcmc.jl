@@ -45,7 +45,7 @@ begin
                  MadauDickinsonModifiedPropagation,
                  hyperparameters,
                  validate_prior,
-                 validate_sample_only,
+                 validate_subset,
                  Detector
     using Turing
     using AdvancedHMC
@@ -131,7 +131,14 @@ begin
         zpeak = priors.zpeak
     ))
     validate_prior(inference_model, priors_turing)
-    validate_sample_only(sample_only, inference_model)
+    if sample_only !== nothing
+        isempty(sample_only) && throw(
+            ArgumentError(
+            "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
+        ),
+        )
+        validate_subset(sample_only, inference_model)
+    end
     order = hyperparameters(inference_model)
     fixed_sites = sample_only === nothing ?
                   NamedTuple() :
@@ -180,7 +187,14 @@ begin
     else
         Tuple(sample_only)
     end
-    validate_sample_only(sample_only_tup, inference_model)
+    if sample_only_tup !== nothing
+        isempty(sample_only_tup) && throw(
+            ArgumentError(
+            "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
+        ),
+        )
+        validate_subset(sample_only_tup, inference_model)
+    end
     sam = sampler
     nothing
 end

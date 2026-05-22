@@ -8,7 +8,7 @@ using ASGWB:
              canonical_hyperparameters,
              validate_hyperparameters,
              validate_prior,
-             validate_sample_only
+             validate_subset
 using ..InferenceImpl: build_turing_model, condition_turing_model
 
 using Turing
@@ -223,7 +223,14 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     priors_turing = product_distribution(PRIORS)
     validate_prior(INFERENCE_MODEL, priors_turing)
     validate_hyperparameters(INFERENCE_MODEL, init; context = "init hyperparameters")
-    validate_sample_only(sample_only, INFERENCE_MODEL)
+    if sample_only !== nothing
+        isempty(sample_only) && throw(
+            ArgumentError(
+            "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
+        ),
+        )
+        validate_subset(sample_only, INFERENCE_MODEL)
+    end
 
     # Cluster-friendly defaults: avoid BLAS oversubscription with MCMCThreads.
     BLAS.set_num_threads(1)

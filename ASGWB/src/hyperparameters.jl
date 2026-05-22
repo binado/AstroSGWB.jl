@@ -125,37 +125,3 @@ function validate_prior(
     )
     return nothing
 end
-
-"""
-    validate_sample_only(sample_only, model::AbstractASGWBModel)
-
-Validate `sample_only` against [`hyperparameters`](@ref). Pass `nothing` to sample all
-hyperparameters. Throws `ArgumentError` on empty, duplicate, or unknown symbols.
-"""
-function validate_sample_only(
-        sample_only::Union{Nothing, Tuple{Vararg{Symbol}}},
-        model::AbstractASGWBModel
-)
-    sample_only === nothing && return nothing
-    isempty(sample_only) && throw(
-        ArgumentError(
-        "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
-    ),
-    )
-    validate_subset(sample_only, model)
-    return nothing
-end
-
-function validate_sample_only(
-        sample_only::Union{Nothing, Tuple{Vararg{Symbol}}},
-        prior::ProductNamedTupleDistribution
-)
-    sample_only === nothing && return nothing
-    isempty(sample_only) && throw(
-        ArgumentError(
-        "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
-    ),
-    )
-    validate_subset(sample_only, prior)
-    return nothing
-end

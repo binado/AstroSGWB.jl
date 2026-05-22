@@ -35,7 +35,12 @@ function condition_turing_model(
     validate_prior(model, prior)
     ordered_theta0 = canonical_hyperparameters(model, theta0; context = "initial hyperparameters")
     sample_only === nothing && return turing_model
-    validate_sample_only(sample_only, model)
+    isempty(sample_only) && throw(
+        ArgumentError(
+        "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
+    ),
+    )
+    validate_subset(sample_only, model)
     order = hyperparameters(model)
     fixed = Tuple(s for s in order if s ∉ sample_only)
     isempty(fixed) && return turing_model

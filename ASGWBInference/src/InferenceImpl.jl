@@ -10,7 +10,7 @@ using ASGWB:
              hyperparameters,
              validate_hyperparameters,
              validate_prior,
-             validate_sample_only,
+             validate_subset,
              logposterior,
              normalized_ess,
              spectral_snr_squared,
