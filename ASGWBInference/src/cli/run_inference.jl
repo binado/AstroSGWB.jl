@@ -21,8 +21,8 @@ using Distributions
 using TOML
 using Pkg
 using LinearAlgebra: BLAS
-using MCMCChains: Chains
 using AbstractMCMC: bundle_samples
+using FlexiChains: VNChain
 using Dates: now, format
 
 """Check each `init` scalar has positive prior density under the matching `priors` entry."""
@@ -97,7 +97,7 @@ end
     CheckpointCallback(every, base, output_dir, model, sampler, num_chains)
 
 AbstractMCMC callback that buffers transitions separately for each chain and
-saves a single-chain `MCMCChains.Chains` snapshot to
+saves a single-chain `FlexiChains.VNChain` snapshot to
 `base.partial.chainN.jld2` every time that chain crosses a new multiple of
 `every`. With `save_state = true` on the bundled samples, the snapshot retains
 the matching sampler state for manual recovery/debugging.
@@ -155,7 +155,7 @@ function (cb::CheckpointCallback)(
     copyto!(typed_transitions, 1, chain_transitions, 1, n)
     snapshot = bundle_samples(
         typed_transitions, cb.model, cb.sampler, cb.states[chain_number],
-        Chains; save_state = cb.save_state
+        VNChain; save_state = cb.save_state
     )
 
     path = checkpoint_path(cb, chain_number)
@@ -290,12 +290,13 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     chain = if callback === nothing
         sample(
             conditioned, nuts, MCMCThreads(), n_samples, num_chains;
-            progress = progress, save_state = final_save_state
+            progress = progress, save_state = final_save_state, chain_type = VNChain
         )
     else
         sample(
             conditioned, nuts, MCMCThreads(), n_samples, num_chains;
-            progress = progress, save_state = final_save_state, callback = callback
+            progress = progress, save_state = final_save_state, callback = callback,
+            chain_type = VNChain
         )
     end
     @info "NUTS finished" chain_size=size(chain)
