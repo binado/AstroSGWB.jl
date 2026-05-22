@@ -27,6 +27,7 @@ begin
     using MCMCChains
     using MCMCDiagnosticTools
     using PairPlots
+    using Plots
     using StatsPlots
     using Statistics
     using DataFrames
@@ -36,6 +37,41 @@ end
 
 # %%
 StatsPlots.default(fmt = :svg, dpi = 300)
+
+# %%
+const output_dir = nothing  # e.g. joinpath(@__DIR__, "figures")
+const FIGURE_DPI = 300
+
+function _save_plot_object!(p::Plots.Plot, path::AbstractString; dpi::Int)
+    endswith(lowercase(path), ".png") && (p[:dpi] = dpi)
+    return savefig(p, path)
+end
+
+function _save_plot_object!(fig::Figure, path::AbstractString; dpi::Int)
+    return save(path, fig; dpi = dpi)
+end
+
+function _save_plot_object!(obj, path::AbstractString; dpi::Int)
+    return save(path, obj; dpi = dpi)
+end
+
+function save_figure(
+        fig,
+        name::AbstractString;
+        output_dir::Union{Nothing,AbstractString} = output_dir,
+        dpi::Int = FIGURE_DPI,
+    )
+    output_dir === nothing && return fig
+    mkpath(output_dir)
+    stem = joinpath(output_dir, name)
+    try
+        _save_plot_object!(fig, stem * ".pdf"; dpi)
+    catch err
+        @warn "PDF export failed; saving PNG instead" name exception = err
+        _save_plot_object!(fig, stem * ".png"; dpi)
+    end
+    return fig
+end
 
 # %% [markdown]
 # ## Loading chains
@@ -71,13 +107,25 @@ describe(chain)
 # ## Trace and autocorrelation plots
 
 # %%
-traceplot(chain)
+begin
+    fig = traceplot(chain)
+    save_figure(fig, "traceplot")
+    fig
+end
 
 # %%
-autocorplot(chain; maxlag = 100)
+begin
+    fig = autocorplot(chain; maxlag = 100)
+    save_figure(fig, "autocorplot")
+    fig
+end
 
 # %%
-meanplot(chain)
+begin
+    fig = meanplot(chain)
+    save_figure(fig, "meanplot")
+    fig
+end
 
 # %%
 function _ensure_internal_array(chain::Chains, name::Symbol)
@@ -173,20 +221,29 @@ function plot_sampler_diagnostics(
     return fig
 end
 
-plot_sampler_diagnostics(chain)
-
+begin
+    fig = plot_sampler_diagnostics(chain)
+    save_figure(fig, "sampler_diagnostics")
+    fig
+end
 
 # %%
-energyplot(chain)
+begin
+    fig = energyplot(chain)
+    save_figure(fig, "energyplot")
+    fig
+end
 
 # %% [markdown]
 # ## Posterior distributions
 
 # %%
 begin
-    if length(chain_params) >= 2
+    fig = if length(chain_params) >= 2
         pairplot(chain)
     else
         StatsPlots.density(chain)
     end
+    save_figure(fig, length(chain_params) >= 2 ? "pairplot" : "posterior_density")
+    fig
 end
