@@ -42,16 +42,6 @@ function condition_turing_model(
     return turing_model | (; (s => ordered_theta0[s] for s in fixed)...)
 end
 
-function _turing_initial_params(
-        theta0::NamedTuple,
-        sample_only::Union{Nothing, Tuple{Vararg{Symbol}}},
-        model::AbstractASGWBModel
-)
-    ordered_theta0 = canonical_hyperparameters(model, theta0; context = "initial hyperparameters")
-    sample_only === nothing && return InitFromParams(ordered_theta0)
-    return InitFromParams((; (s => ordered_theta0[s] for s in sample_only)...))
-end
-
 @model function asgwb_importance_turing_model(
         asgw_model::AbstractASGWBModel,
         track::Bool,
@@ -130,52 +120,4 @@ function build_turing_model(
         problem.redshift_cache.redshift_grid,
         observed_spectral_density[problem.observation.in_band_mask]
     )
-end
-
-"""
-    sample_with_turing(problem, prior, theta0; kwargs...) -> (chain, model)
-
-NUTS sampling for the importance likelihood model. Keyword `sample_only` lists which of
-[`hyperparameters`](@ref)(`model`) remain stochastic; all others are fixed to the
-corresponding entries of `theta0` using Turing’s `|` operator (see
-[`condition_turing_model`](@ref)).
-"""
-function sample_with_turing(
-        problem::ImportanceSamplingProblem,
-        prior::ProductNamedTupleDistribution,
-        theta0::NamedTuple;
-        n_adapts::Int = 25,
-        n_samples::Int = 25,
-        target_acceptance::Float64 = 0.8,
-        track::Bool = false,
-        observed_spectral_density::AbstractVector{<:Real} = problem.observation.fiducial_spectral_density,
-        sample_only::Union{Nothing, Tuple{Vararg{Symbol}}} = nothing,
-        model::AbstractASGWBModel = MadauDickinsonModifiedPropagation()
-)
-    _require_supported_turing_model(model)
-    validate_prior(model, prior)
-    validate_hyperparameters(model, theta0; context = "initial hyperparameters")
-    validate_sample_only(sample_only, model)
-    turing_model = build_turing_model(
-        problem,
-        prior;
-        model = model,
-        track = track,
-        observed_spectral_density = observed_spectral_density
-    )
-    conditioned = condition_turing_model(
-        turing_model,
-        theta0,
-        prior,
-        sample_only;
-        model = model
-    )
-    chain = sample(
-        conditioned,
-        Turing.NUTS(n_adapts, target_acceptance),
-        n_samples;
-        progress = false,
-        initial_params = _turing_initial_params(theta0, sample_only, model)
-    )
-    return chain, conditioned
 end

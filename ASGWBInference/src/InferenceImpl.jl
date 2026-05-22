@@ -35,7 +35,6 @@ export ASGWBLogDensity,
        finite_difference_logdensity_and_gradient,
        sample_with_advancedhmc,
        build_turing_model,
-       sample_with_turing,
        condition_turing_model
 
 end
