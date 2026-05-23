@@ -4,11 +4,9 @@ using ASGWB
 using ASGWB:
              load_cache,
              Detector,
-             AbstractCosmology,
-             LambdaCDM,
-             W0CDM,
-             W0WaCDM,
              MadauDickinsonModifiedPropagation,
+             cosmology_type,
+             propagation_model,
              canonical_hyperparameters,
              hyperparameters,
              validate_hyperparameters,
@@ -53,12 +51,6 @@ const PRIORS = (
     zpeak = Uniform(0.05, 10)
 )
 
-const COSMOLOGY_REGISTRY = Dict{String, Type{<:AbstractCosmology}}(
-    "LambdaCDM" => LambdaCDM,
-    "W0CDM" => W0CDM,
-    "W0WaCDM" => W0WaCDM
-)
-
 """Select the subset of `priors` corresponding to `names`."""
 function select_priors(priors::NamedTuple, names::Tuple{Vararg{Symbol}})
     return NamedTuple{names}(priors)
@@ -66,12 +58,7 @@ end
 
 function _resolve_inference_model(settings::Dict)
     cosmology_name = get(get(settings, "model", Dict()), "cosmology", "LambdaCDM")::String
-    C = get(COSMOLOGY_REGISTRY, cosmology_name, nothing)
-    C === nothing && throw(
-        ArgumentError(
-        "unknown cosmology \"$(cosmology_name)\"; valid choices: $(sort(collect(keys(COSMOLOGY_REGISTRY))))",
-    ),
-    )
+    C = cosmology_type(cosmology_name)
     return MadauDickinsonModifiedPropagation{C}()
 end
 
@@ -280,6 +267,14 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
 
     @info "loading importance cache" path=cache
     problem = load_cache(cache, detectors)
+    cache_cosmology = cosmology_type(problem.fiducial_parameters)
+    infer_cosmology = typeof(inference_model).parameters[1]
+    cache_cosmology === infer_cosmology || throw(
+        ArgumentError(
+            "cache cosmology $(cache_cosmology) does not match [model].cosmology " *
+            "($(infer_cosmology)); rebuild the cache or fix config",
+        ),
+    )
     @info "cache loaded" n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
 
     @info "using fiducial in-band spectrum from cache as observed data"

@@ -63,27 +63,6 @@ Base.@kwdef struct ProposalFiducialParameters
     wa::Union{Nothing, Float64} = nothing
 end
 
-"""
-    build_cosmology(fid::ProposalFiducialParameters) -> AbstractCosmology
-
-Construct the cosmology subtype implied by the fiducial parameters.
-Falls back to `LambdaCDM` when `w0` is absent (legacy caches).
-"""
-function build_cosmology(fid::ProposalFiducialParameters)
-    if fid.wa !== nothing
-        fid.w0 === nothing && throw(
-            ArgumentError(
-            "cache provides wa without w0; cannot build W0WaCDM",
-        ),
-        )
-        return W0WaCDM(fid.H0, fid.Ωm, fid.w0, fid.wa)
-    elseif fid.w0 !== nothing
-        return W0CDM(fid.H0, fid.Ωm, fid.w0)
-    else
-        return LambdaCDM(fid.H0, fid.Ωm)
-    end
-end
-
 """HDF5 `proposal_samples` group attribute naming the compact-object proposal class."""
 const PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR = "source_type"
 

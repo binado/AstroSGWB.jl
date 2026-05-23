@@ -5,11 +5,11 @@ function target_log_prob_samples(
         problem::ImportanceSamplingProblem;
         model::AbstractASGWBModel = MadauDickinsonModifiedPropagation()
 )
-    cosmology = build_cosmology(model, Λ)
+    c = cosmology(model, Λ)
     redshift_prior = build_redshift_prior(
         Λ,
         problem.redshift_prior_spec,
-        cosmology,
+        c,
         problem.redshift_cache.redshift_grid
     )
     target_log_prob = problem.redshift_cache.cached_intrinsic_log_prob .+
@@ -33,7 +33,7 @@ function evaluate_model_terms(
 )
     cosmology_cache,
     redshift_prior = cosmology_and_redshift_prior(
-        build_cosmology(model, Λ),
+        cosmology(model, Λ),
         Λ,
         problem.redshift_prior_spec,
         z_grid
@@ -124,8 +124,10 @@ For the dimensionless energy density ``\\Omega_{\\mathrm{GW}}(f)``, use [`Ωgw`]
 this vector and the corresponding frequency bins from `problem.observation.frequencies`.
 """
 function fiducial_spectral_density(problem::ImportanceSamplingProblem)
+    fid = problem.fiducial_parameters
+    model = propagation_model(fid)
     Λ = fiducial_hyperparameters(problem)
-    return evaluate_model_terms(MadauDickinsonModifiedPropagation(), Λ, problem).spectral_density
+    return evaluate_model_terms(model, Λ, problem).spectral_density
 end
 
 """

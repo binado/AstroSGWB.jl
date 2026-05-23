@@ -19,7 +19,7 @@ using ASGWB
     z_grid = redshift_grid(spec)
     cosmology_cache,
     redshift_prior = cosmology_and_redshift_prior(
-        build_cosmology(MadauDickinsonModifiedPropagation(), theta), theta, spec, z_grid
+        cosmology(MadauDickinsonModifiedPropagation(), theta), theta, spec, z_grid
     )
     samples = [0.0, 0.137, 0.9, 2.0]
     interp = SampleInterpolant(samples, z_grid)

@@ -43,6 +43,64 @@ H0(c::AbstractCosmology) = c.H0
 
 Base.broadcastable(c::AbstractCosmology) = Ref(c)
 
+"""Supported flat-FLRW cosmology subtypes (registration order)."""
+const SUPPORTED_COSMOLOGIES = (LambdaCDM, W0CDM, W0WaCDM)
+
+"""
+    cosmology_parameters(::Type{C}) -> Tuple{Vararg{Symbol}}
+
+Hyperparameter symbols for cosmology subtype `C`, in struct field order.
+"""
+cosmology_parameters(::Type{C}) where {C <: AbstractCosmology} = fieldnames(C)
+
+"""
+    cosmology(::Type{C}, h::NamedTuple) -> C
+
+Build cosmology subtype `C` from hyperparameter state `h` (fields must match [`cosmology_parameters`](@ref)(`C`)).
+"""
+function cosmology(::Type{C}, h::NamedTuple) where {C <: AbstractCosmology}
+    fn = fieldnames(C)
+    return C(ntuple(i -> h[fn[i]], Val(length(fn)))...)
+end
+
+"""
+    cosmology(h::NamedTuple) -> AbstractCosmology
+
+Infer cosmology subtype from keys in `h` (`:wa` → [`W0WaCDM`](@ref), `:w0` → [`W0CDM`](@ref), else [`LambdaCDM`](@ref)).
+"""
+function cosmology(h::NamedTuple)
+    :wa in keys(h) && return cosmology(W0WaCDM, h)
+    :w0 in keys(h) && return cosmology(W0CDM, h)
+    return cosmology(LambdaCDM, h)
+end
+
+function (::Type{C})(h::NamedTuple) where {C <: AbstractCosmology}
+    return cosmology(C, h)
+end
+
+cosmology_config_name(::Type{LambdaCDM}) = "LambdaCDM"
+cosmology_config_name(::Type{W0CDM}) = "W0CDM"
+cosmology_config_name(::Type{W0WaCDM}) = "W0WaCDM"
+
+const _COSMOLOGY_BY_CONFIG_NAME = Dict(
+    cosmology_config_name(C) => C for C in SUPPORTED_COSMOLOGIES
+)
+
+"""
+    cosmology_type(name::AbstractString) -> Type{<:AbstractCosmology}
+
+Resolve a config/TOML cosmology name to a concrete subtype.
+"""
+function cosmology_type(name::AbstractString)
+    C = get(_COSMOLOGY_BY_CONFIG_NAME, String(name), nothing)
+    C === nothing && throw(
+        ArgumentError(
+            "unknown cosmology \"$(name)\"; valid choices: $(sort(collect(keys(_COSMOLOGY_BY_CONFIG_NAME))))",
+        ),
+    )
+    return C
+end
+
 """
     dark_energy_eos(c::AbstractCosmology, z) -> Real
 

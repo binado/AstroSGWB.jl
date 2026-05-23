@@ -1,4 +1,38 @@
 """
+    cosmology_type(fid::ProposalFiducialParameters) -> Type{<:AbstractCosmology}
+
+Infer the cosmology subtype recorded on a cache fiducial (`w0` / `wa` optional fields).
+"""
+function cosmology_type(fid::ProposalFiducialParameters)
+    if fid.wa !== nothing
+        fid.w0 === nothing && throw(
+            ArgumentError("cache provides wa without w0; cannot build W0WaCDM"),
+        )
+        return W0WaCDM
+    elseif fid.w0 !== nothing
+        return W0CDM
+    else
+        return LambdaCDM
+    end
+end
+
+"""
+    propagation_model(fid::ProposalFiducialParameters) -> MadauDickinsonModifiedPropagation
+
+[`MadauDickinsonModifiedPropagation`](@ref) with cosmology type parameter matching `fid`.
+"""
+propagation_model(fid::ProposalFiducialParameters) =
+    MadauDickinsonModifiedPropagation{cosmology_type(fid)}()
+
+function _fiducial_cosmology_nt(fid::ProposalFiducialParameters)
+    C = cosmology_type(fid)
+    base = (H0 = fid.H0, Ωm = fid.Ωm)
+    C === LambdaCDM && return base
+    C === W0CDM && return (; base..., w0 = fid.w0)
+    return (; base..., w0 = fid.w0, wa = fid.wa)
+end
+
+"""
     hyperparameters_from_fiducial(fid::ProposalFiducialParameters, spec::RedshiftPriorSpec) -> NamedTuple
 
 Build model-validated fiducial hyperparameters from cache `hyperparameters` scalars and the file’s
@@ -25,11 +59,11 @@ function hyperparameters_from_fiducial(
         ),
         )
     end
+    model = propagation_model(fid)
     return canonical_hyperparameters(
-        MadauDickinsonModifiedPropagation(),
+        model,
         (;
-            H0 = fid.H0,
-            Ωm = fid.Ωm,
+            _fiducial_cosmology_nt(fid)...,
             Ξ₀ = fid.Ξ₀,
             Ξₙ = fid.Ξₙ,
             γ = g,
@@ -52,8 +86,7 @@ function fiducial_redshift_integral(
         spec::RedshiftPriorSpec
 )::Float64
     Λ = hyperparameters_from_fiducial(fid, spec)
-    cosmology = build_cosmology(fid)
-    redshift_prior = build_redshift_prior(Λ, spec, cosmology)
+    redshift_prior = build_redshift_prior(Λ, spec, cosmology(propagation_model(fid), Λ))
     return Float64(redshift_integral(redshift_prior))
 end
 
@@ -67,8 +100,8 @@ function reconstruct_dgw_fid_sq(
         z::AbstractVector{<:Real},
         fid::ProposalFiducialParameters
 )::Vector{Float64}
-    cosmology = build_cosmology(fid)
-    d_l = luminosity_distance.(z, cosmology)
+    c = cosmology(cosmology_type(fid), _fiducial_cosmology_nt(fid))
+    d_l = luminosity_distance.(z, c)
     d_gw = gravitational_wave_distance.(z, d_l, fid.Ξ₀, fid.Ξₙ)
     return Float64.(d_gw .^ 2)
 end
@@ -87,8 +120,8 @@ function reconstruct_cached_flux_over_dgw2(
 )::Matrix{Float64}
     size(cached_flux, 2) == length(z) ||
         throw(ArgumentError("cached_flux column count must match redshift sample count"))
-    cosmology = build_cosmology(fid)
-    d_l = luminosity_distance.(z, cosmology)
+    c = cosmology(cosmology_type(fid), _fiducial_cosmology_nt(fid))
+    d_l = luminosity_distance.(z, c)
     d_gw = gravitational_wave_distance.(z, d_l, fid.Ξ₀, fid.Ξₙ)
     scale_row = reshape(Float64.((d_l ./ d_gw) .^ 2), 1, :)
     return Matrix{Float64}(cached_flux) .* scale_row
@@ -107,7 +140,7 @@ function reconstruct_proposal_log_prob(
         fid::ProposalFiducialParameters
 )::Vector{Float64}
     Λ = hyperparameters_from_fiducial(fid, spec)
-    redshift_prior = build_redshift_prior(Λ, spec, build_cosmology(fid))
+    redshift_prior = build_redshift_prior(Λ, spec, cosmology(propagation_model(fid), Λ))
     cached_log_prob = logpdf(intrinsic_prior(FullBNS()), samples)
     return cached_log_prob .+ redshift_log_prob_samples(redshift_prior, samples.redshift)
 end

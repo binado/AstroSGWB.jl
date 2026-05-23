@@ -2,7 +2,8 @@ using QuadGK
 using Test
 using ForwardDiff
 using CBCDistributions: CumulativeIntegral1D, cdf, hubble_constant_si, interpolate,
-                        normalizer
+                        normalizer, cosmology_parameters, cosmology, cosmology_type,
+                        cosmology_config_name, SUPPORTED_COSMOLOGIES
 
 @testset "hubble_constant_si" begin
     H0 = 70.0
@@ -24,6 +25,30 @@ end
 
     d_gw = gravitational_wave_distance.([0.1, 0.2], [10.0, 20.0], 1.0, 0.0)
     @test d_gw ≈ [10.0, 20.0]
+end
+
+@testset "cosmology_parameters and cosmology" begin
+    @test cosmology_parameters(LambdaCDM) == (:H0, :Ωm)
+    @test cosmology_parameters(W0CDM) == (:H0, :Ωm, :w0)
+    @test cosmology_parameters(W0WaCDM) == (:H0, :Ωm, :w0, :wa)
+
+    h_lcdm = (H0 = 67.0, Ωm = 0.315)
+    @test cosmology(LambdaCDM, h_lcdm) == LambdaCDM(67.0, 0.315)
+    @test LambdaCDM(h_lcdm) == LambdaCDM(67.0, 0.315)
+    @test cosmology(h_lcdm) == LambdaCDM(67.0, 0.315)
+
+    h_w0 = (; h_lcdm..., w0 = -0.9)
+    @test cosmology(W0CDM, h_w0) == W0CDM(67.0, 0.315, -0.9)
+    @test cosmology(h_w0) == W0CDM(67.0, 0.315, -0.9)
+
+    h_cpl = (; h_w0..., wa = 0.2)
+    @test cosmology(W0WaCDM, h_cpl) == W0WaCDM(67.0, 0.315, -0.9, 0.2)
+    @test cosmology(h_cpl) == W0WaCDM(67.0, 0.315, -0.9, 0.2)
+
+    @test cosmology_config_name(LambdaCDM) == "LambdaCDM"
+    @test cosmology_type("W0CDM") === W0CDM
+    @test SUPPORTED_COSMOLOGIES == (LambdaCDM, W0CDM, W0WaCDM)
+    @test_throws ArgumentError cosmology_type("not_a_model")
 end
 
 @testset "dark_energy_eos" begin

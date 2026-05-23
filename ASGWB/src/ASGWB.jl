@@ -27,6 +27,7 @@ Inference state is a flat hyperparameter `NamedTuple` validated against an
 module ASGWB
 
 using CBCDistributions
+import CBCDistributions: cosmology, cosmology_type
 
 include("types.jl")
 include("inference_types.jl")
@@ -57,6 +58,9 @@ export ImportanceSamplingProblem,
        AbstractASGWBModel,
        MadauDickinsonModifiedPropagation,
        hyperparameters,
+       model_parameters,
+       propagation_model,
+       cosmology_type,
        canonical_hyperparameters,
        validate_hyperparameters,
        validate_prior,
@@ -102,7 +106,11 @@ export E,
        W0WaCDM,
        dark_energy_eos,
        de_density_ratio,
-       build_cosmology,
+       cosmology_parameters,
+       cosmology,
+       cosmology_config_name,
+       cosmology_type,
+       SUPPORTED_COSMOLOGIES,
        CosmologyCache,
        comoving_distance,
        luminosity_distance,

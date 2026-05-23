@@ -1,3 +1,5 @@
+using CBCDistributions: AbstractCosmology, cosmology_parameters
+import CBCDistributions: cosmology
 using Distributions: ProductNamedTupleDistribution
 
 """Abstract supertype for ASGWB forward models with explicit hyperparameter contracts."""
@@ -20,30 +22,30 @@ Symbols and order used by a model's flat hyperparameter state.
 """
 function hyperparameters end
 
-function hyperparameters(::MadauDickinsonModifiedPropagation{LambdaCDM})
-    (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-end
-function hyperparameters(::MadauDickinsonModifiedPropagation{W0CDM})
-    (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-end
-function hyperparameters(::MadauDickinsonModifiedPropagation{W0WaCDM})
-    (:H0, :Ωm, :w0, :wa, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+"""
+    model_parameters(::Type{<:MadauDickinsonModifiedPropagation}) -> Tuple{Vararg{Symbol}}
+
+Hyperparameter symbols owned by the Madau–Dickinson modified-propagation forward model
+(excluding cosmology parameters).
+"""
+model_parameters(::Type{<:MadauDickinsonModifiedPropagation}) = (:Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+
+function hyperparameters(::Type{MadauDickinsonModifiedPropagation{C}}) where {C <: AbstractCosmology}
+    return (
+        cosmology_parameters(C)...,
+        model_parameters(MadauDickinsonModifiedPropagation{C})...
+    )
 end
 
-"""
-    build_cosmology(model::AbstractASGWBModel, h::NamedTuple) -> AbstractCosmology
+hyperparameters(m::MadauDickinsonModifiedPropagation) = hyperparameters(typeof(m))
 
-Construct the cosmology subtype for `model` from the live hyperparameter state `h`.
 """
-function build_cosmology(::MadauDickinsonModifiedPropagation{LambdaCDM}, h::NamedTuple)
-    LambdaCDM(h.H0, h.Ωm)
-end
-function build_cosmology(::MadauDickinsonModifiedPropagation{W0CDM}, h::NamedTuple)
-    W0CDM(h.H0, h.Ωm, h.w0)
-end
-function build_cosmology(::MadauDickinsonModifiedPropagation{W0WaCDM}, h::NamedTuple)
-    W0WaCDM(h.H0, h.Ωm, h.w0, h.wa)
-end
+    cosmology(model::MadauDickinsonModifiedPropagation{C}, h::NamedTuple) -> AbstractCosmology
+
+Construct the cosmology for `model` from live hyperparameter state `h` (delegates to [`CBCDistributions.cosmology`](@ref)).
+"""
+cosmology(m::MadauDickinsonModifiedPropagation{C}, h::NamedTuple) where {C <: AbstractCosmology} =
+    cosmology(C, h)
 
 function _check_unique_hyperparameters(model::AbstractASGWBModel)
     order = hyperparameters(model)
