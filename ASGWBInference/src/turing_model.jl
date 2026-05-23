@@ -21,7 +21,7 @@ If `sample_only === nothing`, return `model` unchanged (all hyperparameters are 
 
 Otherwise `sample_only` lists the subset of [`hyperparameters`](@ref)(`model`) that remain
 stochastic; all other hyperparameters are **fixed** to the corresponding entries of `theta0`
-using Turing’s conditioning operator `|` (see
+using Turing's conditioning operator `|` (see
 [Turing docs: conditioning on data](https://turinglang.org/docs/core-functionality/#conditioning-on-data)).
 """
 function condition_turing_model(
@@ -47,12 +47,45 @@ function condition_turing_model(
     return turing_model | (; (s => ordered_theta0[s] for s in fixed)...)
 end
 
-@model function asgwb_importance_turing_model(
+function _log_density_given_Λ(
+        Λ::NamedTuple,
         asgw_model::AbstractASGWBModel,
         track::Bool,
         problem::ImportanceSamplingProblem,
+        observed_in_band::AbstractVector{<:Real}
+)
+    terms = evaluate_model_terms(asgw_model, Λ, problem, problem.redshift_cache.redshift_grid)
+    residual = observed_in_band .- terms.spectral_density_in_band
+    log_likelihood = -0.5 * sum(
+        (residual ./ problem.observation.sgwb_scale_in_band) .^ 2 .+
+        log.(2π .* (problem.observation.sgwb_scale_in_band .^ 2)),
+    )
+    if track
+        m = problem.observation.in_band_mask
+        obs = problem.observation
+        df = frequency_bin_width(obs.frequencies)
+        snr_sq = spectral_snr_squared(
+            terms.spectral_density[m],
+            obs.effective_psd[m],
+            obs.observation_time_sec,
+            df
+        )
+        return log_likelihood,
+        (;
+            number_of_sources = terms.expected_number_of_sources,
+            effective_sample_size = normalized_ess(terms.weights),
+            spectral_snr_squared = snr_sq,
+            spectral_snr = sqrt(snr_sq)
+        )
+    end
+    return log_likelihood, nothing
+end
+
+@model function asgwb_importance_turing_model(
+        asgw_model::MadauDickinsonModifiedPropagation{LambdaCDM},
+        track::Bool,
+        problem::ImportanceSamplingProblem,
         prior::ProductNamedTupleDistribution,
-        z_grid::AbstractVector{<:Real},
         observed_in_band::AbstractVector{<:Real}
 )
     d = prior.dists
@@ -65,34 +98,56 @@ end
     zpeak ~ d.zpeak
 
     Λ = (; H0, Ωm, Ξ₀, Ξₙ, γ, κ, zpeak)
-    terms = evaluate_model_terms(asgw_model, Λ, problem, z_grid)
+    ll, tracked = _log_density_given_Λ(Λ, asgw_model, track, problem, observed_in_band)
+    Turing.@addlogprob!(ll)
+    return tracked
+end
 
-    observed_in_band ~
-    MvNormal(
-        terms.spectral_density_in_band,
-        Diagonal(problem.observation.sgwb_scale_in_band .^ 2)
-    )
+@model function asgwb_importance_turing_model(
+        asgw_model::MadauDickinsonModifiedPropagation{W0CDM},
+        track::Bool,
+        problem::ImportanceSamplingProblem,
+        prior::ProductNamedTupleDistribution,
+        observed_in_band::AbstractVector{<:Real}
+)
+    d = prior.dists
+    H0 ~ d.H0
+    Ωm ~ d.Ωm
+    w0 ~ d.w0
+    Ξ₀ ~ d.Ξ₀
+    Ξₙ ~ d.Ξₙ
+    γ ~ d.γ
+    κ ~ d.κ
+    zpeak ~ d.zpeak
 
-    if track
-        m = problem.observation.in_band_mask
-        obs = problem.observation
-        df = frequency_bin_width(obs.frequencies)
-        snr_sq = spectral_snr_squared(
-            terms.spectral_density[m],
-            obs.effective_psd[m],
-            obs.observation_time_sec,
-            df
-        )
+    Λ = (; H0, Ωm, w0, Ξ₀, Ξₙ, γ, κ, zpeak)
+    ll, tracked = _log_density_given_Λ(Λ, asgw_model, track, problem, observed_in_band)
+    Turing.@addlogprob!(ll)
+    return tracked
+end
 
-        return (;
-            number_of_sources = terms.expected_number_of_sources,
-            effective_sample_size = normalized_ess(terms.weights),
-            spectral_snr_squared = snr_sq,
-            spectral_snr = sqrt(snr_sq)
-        )
-    end
+@model function asgwb_importance_turing_model(
+        asgw_model::MadauDickinsonModifiedPropagation{W0WaCDM},
+        track::Bool,
+        problem::ImportanceSamplingProblem,
+        prior::ProductNamedTupleDistribution,
+        observed_in_band::AbstractVector{<:Real}
+)
+    d = prior.dists
+    H0 ~ d.H0
+    Ωm ~ d.Ωm
+    w0 ~ d.w0
+    wa ~ d.wa
+    Ξ₀ ~ d.Ξ₀
+    Ξₙ ~ d.Ξₙ
+    γ ~ d.γ
+    κ ~ d.κ
+    zpeak ~ d.zpeak
 
-    return nothing
+    Λ = (; H0, Ωm, w0, wa, Ξ₀, Ξₙ, γ, κ, zpeak)
+    ll, tracked = _log_density_given_Λ(Λ, asgw_model, track, problem, observed_in_band)
+    Turing.@addlogprob!(ll)
+    return tracked
 end
 
 """
@@ -122,7 +177,6 @@ function build_turing_model(
         track,
         problem,
         prior,
-        problem.redshift_cache.redshift_grid,
         observed_spectral_density[problem.observation.in_band_mask]
     )
 end

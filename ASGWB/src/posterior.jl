@@ -20,13 +20,14 @@ end
 Evaluate the deterministic likelihood terms for a model hyperparameter state.
 """
 function evaluate_model_terms(
-        ::MadauDickinsonModifiedPropagation,
+        model::MadauDickinsonModifiedPropagation,
         Λ::NamedTuple,
         problem::ImportanceSamplingProblem,
         z_grid::AbstractVector{<:Real}
 )
     cosmology_cache,
     redshift_prior = cosmology_and_redshift_prior(
+        build_cosmology(model, Λ),
         Λ,
         problem.redshift_prior_spec,
         z_grid

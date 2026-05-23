@@ -3,8 +3,15 @@ using Distributions: ProductNamedTupleDistribution
 """Abstract supertype for ASGWB forward models with explicit hyperparameter contracts."""
 abstract type AbstractASGWBModel end
 
-"""Madau-Dickinson population with modified gravitational-wave propagation."""
-struct MadauDickinsonModifiedPropagation <: AbstractASGWBModel end
+"""
+Madau-Dickinson population with modified gravitational-wave propagation.
+
+Type parameter `C <: AbstractCosmology` selects the cosmology model.
+`MadauDickinsonModifiedPropagation()` defaults to `LambdaCDM`.
+"""
+struct MadauDickinsonModifiedPropagation{C <: AbstractCosmology} <: AbstractASGWBModel end
+
+MadauDickinsonModifiedPropagation() = MadauDickinsonModifiedPropagation{LambdaCDM}()
 
 """
     hyperparameters(model::AbstractASGWBModel) -> Tuple{Vararg{Symbol}}
@@ -13,7 +20,30 @@ Symbols and order used by a model's flat hyperparameter state.
 """
 function hyperparameters end
 
-hyperparameters(::MadauDickinsonModifiedPropagation) = (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+function hyperparameters(::MadauDickinsonModifiedPropagation{LambdaCDM})
+    (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+end
+function hyperparameters(::MadauDickinsonModifiedPropagation{W0CDM})
+    (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+end
+function hyperparameters(::MadauDickinsonModifiedPropagation{W0WaCDM})
+    (:H0, :Ωm, :w0, :wa, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+end
+
+"""
+    build_cosmology(model::AbstractASGWBModel, h::NamedTuple) -> AbstractCosmology
+
+Construct the cosmology subtype for `model` from the live hyperparameter state `h`.
+"""
+function build_cosmology(::MadauDickinsonModifiedPropagation{LambdaCDM}, h::NamedTuple)
+    LambdaCDM(h.H0, h.Ωm)
+end
+function build_cosmology(::MadauDickinsonModifiedPropagation{W0CDM}, h::NamedTuple)
+    W0CDM(h.H0, h.Ωm, h.w0)
+end
+function build_cosmology(::MadauDickinsonModifiedPropagation{W0WaCDM}, h::NamedTuple)
+    W0WaCDM(h.H0, h.Ωm, h.w0, h.wa)
+end
 
 function _check_unique_hyperparameters(model::AbstractASGWBModel)
     order = hyperparameters(model)

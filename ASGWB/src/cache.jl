@@ -52,7 +52,8 @@ function fiducial_redshift_integral(
         spec::RedshiftPriorSpec
 )::Float64
     Λ = hyperparameters_from_fiducial(fid, spec)
-    redshift_prior = build_redshift_prior(Λ, spec)
+    cosmology = build_cosmology(fid)
+    redshift_prior = build_redshift_prior(Λ, spec, cosmology)
     return Float64(redshift_integral(redshift_prior))
 end
 
@@ -66,7 +67,8 @@ function reconstruct_dgw_fid_sq(
         z::AbstractVector{<:Real},
         fid::ProposalFiducialParameters
 )::Vector{Float64}
-    d_l = luminosity_distance.(z, fid.H0, fid.Ωm)
+    cosmology = build_cosmology(fid)
+    d_l = luminosity_distance.(z, cosmology)
     d_gw = gravitational_wave_distance.(z, d_l, fid.Ξ₀, fid.Ξₙ)
     return Float64.(d_gw .^ 2)
 end
@@ -85,7 +87,8 @@ function reconstruct_cached_flux_over_dgw2(
 )::Matrix{Float64}
     size(cached_flux, 2) == length(z) ||
         throw(ArgumentError("cached_flux column count must match redshift sample count"))
-    d_l = luminosity_distance.(z, fid.H0, fid.Ωm)
+    cosmology = build_cosmology(fid)
+    d_l = luminosity_distance.(z, cosmology)
     d_gw = gravitational_wave_distance.(z, d_l, fid.Ξ₀, fid.Ξₙ)
     scale_row = reshape(Float64.((d_l ./ d_gw) .^ 2), 1, :)
     return Matrix{Float64}(cached_flux) .* scale_row
@@ -104,7 +107,7 @@ function reconstruct_proposal_log_prob(
         fid::ProposalFiducialParameters
 )::Vector{Float64}
     Λ = hyperparameters_from_fiducial(fid, spec)
-    redshift_prior = build_redshift_prior(Λ, spec)
+    redshift_prior = build_redshift_prior(Λ, spec, build_cosmology(fid))
     cached_log_prob = logpdf(intrinsic_prior(FullBNS()), samples)
     return cached_log_prob .+ redshift_log_prob_samples(redshift_prior, samples.redshift)
 end

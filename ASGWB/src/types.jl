@@ -57,6 +57,26 @@ Base.@kwdef struct ProposalFiducialParameters
     zpeak::Union{Nothing, Float64} = nothing
     """Power-law redshift index when `redshift_prior_spec.family` is `PowerLaw` (HDF5 key `lamb`)."""
     Λ::Union{Nothing, Float64} = nothing
+    """Dark-energy equation-of-state parameter (absent means this cache assumed ΛCDM, w0=-1)."""
+    w0::Union{Nothing, Float64} = nothing
+    """CPL dark-energy running (absent means this cache assumed w0CDM or ΛCDM with wa=0)."""
+    wa::Union{Nothing, Float64} = nothing
+end
+
+"""
+    build_cosmology(fid::ProposalFiducialParameters) -> AbstractCosmology
+
+Construct the cosmology subtype implied by the fiducial parameters.
+Falls back to `LambdaCDM` when `w0` is absent (legacy caches).
+"""
+function build_cosmology(fid::ProposalFiducialParameters)
+    if fid.wa !== nothing
+        return W0WaCDM(fid.H0, fid.Ωm, fid.w0, fid.wa)
+    elseif fid.w0 !== nothing
+        return W0CDM(fid.H0, fid.Ωm, fid.w0)
+    else
+        return LambdaCDM(fid.H0, fid.Ωm)
+    end
 end
 
 """HDF5 `proposal_samples` group attribute naming the compact-object proposal class."""

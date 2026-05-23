@@ -26,7 +26,7 @@ const _TEST_LOAD_DETS = [Detector("H1"), Detector("L1")]
         κ = κ,
         zpeak = zp
     )
-    d_l = luminosity_distance.(z, fid.H0, fid.Ωm)
+    d_l = luminosity_distance.(z, build_cosmology(fid))
     d_gw = gravitational_wave_distance.(z, d_l, fid.Ξ₀, fid.Ξₙ)
     scale = (d_l ./ d_gw) .^ 2
     raw_flux = ref.proposal.cached_flux_over_dgw2 ./ reshape(scale, 1, :)
@@ -42,7 +42,7 @@ const _TEST_LOAD_DETS = [Detector("H1"), Detector("L1")]
             zpeak = zp
         )
     )
-    redshift_prior = build_redshift_prior(h, spec)
+    redshift_prior = build_redshift_prior(h, spec, build_cosmology(fid))
     expected_lp = reconstruct_proposal_log_prob(ref.proposal.samples, spec, fid)
     expected_ri = Float64(ASGWB.redshift_integral(redshift_prior))
 
