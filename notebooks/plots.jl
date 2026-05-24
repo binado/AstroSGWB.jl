@@ -252,9 +252,9 @@ end
 # %%
 begin
     fig = if length(chain_params) >= 2
-        pairplot(chain)
+        pairplot(chain; pool_chains = true)
     else
-        Makie.density(chain)
+        Makie.density(chain; pool_chains = true, legend_position = :none, color = (:grey, 0.5), strokecolor = :grey, strokewidth = 2)
     end
     save_figure(fig, length(chain_params) >= 2 ? "pairplot" : "posterior_density")
     fig
