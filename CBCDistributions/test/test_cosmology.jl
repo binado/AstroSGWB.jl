@@ -3,7 +3,8 @@ using Test
 using ForwardDiff
 using CBCDistributions: CumulativeIntegral1D, cdf, hubble_constant_si, interpolate,
                         normalizer, cosmology_parameters, cosmology, cosmology_type,
-                        cosmology_config_name, SUPPORTED_COSMOLOGIES
+                        cosmology_config_name, SUPPORTED_COSMOLOGIES, comoving_distance,
+                        W0CDM, W0WaCDM
 
 @testset "hubble_constant_si" begin
     H0 = 70.0
@@ -80,6 +81,20 @@ end
         )
         @test de_density_ratio(w0wacdm, z) ≈ exp(expected_cpl) rtol = 1e-8
     end
+end
+
+@testset "comoving_distance preserves AD tags at z=0" begin
+    c_w0 = W0CDM(67.0, ForwardDiff.Dual(0.315), -0.9)
+    @test comoving_distance(0.0, c_w0) ≈ 0.0
+    @test comoving_distance(0.0, c_w0) isa ForwardDiff.Dual
+
+    zs = [0.0, 0.1]
+    r = comoving_distance.(zs, Ref(c_w0))
+    @test all(x -> x isa ForwardDiff.Dual, r)
+
+    c_wa = W0WaCDM(67.0, 0.315, -0.9, ForwardDiff.Dual(0.2))
+    @test comoving_distance(0.0, c_wa) ≈ 0.0
+    @test comoving_distance(0.0, c_wa) isa ForwardDiff.Dual
 end
 
 @testset "dark_energy_eos preserves ForwardDiff derivatives" begin

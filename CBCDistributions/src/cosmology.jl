@@ -143,9 +143,11 @@ function CosmologyCache(cosmology::AbstractCosmology, z_grid::AbstractVector{<:R
 end
 
 function comoving_distance(z::Real, c::AbstractCosmology)
-    z == zero(z) && return zero(float(promote_type(typeof(z), typeof(H0(c)))))
+    Ez = E(z, c)
+    pref = SPEED_OF_LIGHT_KM_S / (H0(c) * Ez)
+    z == zero(z) && return zero(pref)
     integral, _ = quadgk(x -> inv(E(x, c)), zero(z), z)
-    return (SPEED_OF_LIGHT_KM_S / H0(c)) * integral
+    return pref * integral * Ez
 end
 
 function luminosity_distance(z::Real, c::AbstractCosmology)
