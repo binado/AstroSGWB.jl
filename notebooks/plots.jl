@@ -67,6 +67,23 @@ function save_figure(
     return fig
 end
 
+# %%
+Base.@kwdef struct PlotConfig
+    palette::Vector{Makie.RGBAf} = Makie.wong_colors()
+    primary_color::Makie.RGBAf = Makie.wong_colors()[1]
+    alpha::Float64 = 0.5
+    linewidth::Float64 = 1.2
+    strokewidth::Float64 = 2.0
+    smooth_window::Int = 25
+    draw_stride::Int = 5
+end
+
+const PLOT_CONFIG = PlotConfig()
+
+function chain_colors(cfg::PlotConfig, n::Integer; alpha::Real = cfg.alpha)
+    return [(cfg.palette[mod1(i, length(cfg.palette))], alpha) for i in 1:n]
+end
+
 # %% [markdown]
 # ## Loading chains
 
@@ -113,7 +130,7 @@ summarystats(chain)
 
 # %%
 begin
-    fig = FlexiChains.mtraceplot(chain)
+    fig = FlexiChains.mtraceplot(chain; color = chain_colors(PLOT_CONFIG, size(chain, 2)))
     save_figure(fig, "traceplot")
     fig
 end
@@ -122,14 +139,15 @@ end
 begin
     n_draws = size(chain, 1)
     autocor_maxlag = min(100, max(1, n_draws - 1))
-    fig = FlexiChains.mautocorplot(chain; lags = 1:autocor_maxlag)
+    fig = FlexiChains.mautocorplot(
+        chain; lags = 1:autocor_maxlag, color = chain_colors(PLOT_CONFIG, size(chain, 2)))
     save_figure(fig, "autocorplot")
     fig
 end
 
 # %%
 begin
-    fig = FlexiChains.mmeanplot(chain)
+    fig = FlexiChains.mmeanplot(chain; color = chain_colors(PLOT_CONFIG, size(chain, 2)))
     save_figure(fig, "meanplot")
     fig
 end
@@ -206,11 +224,12 @@ end
 
 function plot_sampler_diagnostics(
         chain::FlexiChain;
+        cfg::PlotConfig = PLOT_CONFIG,
         stats_syms = [:step_size, :acceptance_rate, :tree_depth, :numerical_error],
-        figsize = (1000, 800), smooth_window::Int = 25, draw_stride::Int = 5)
+        figsize = (1000, 800))
     cols = 2
     fig = Figure(; size = figsize)
-    colors = Makie.to_colormap(:Set1_9)
+    colors = cfg.palette
 
     for (i, sym) in enumerate(stats_syms)
         ax = Axis(fig[cld(i, cols), mod1(i, cols)]; title = string(sym), xlabel = "draw")
@@ -220,7 +239,8 @@ function plot_sampler_diagnostics(
         elseif sym in (:diverging, :numerical_error)
             _plot_divergences!(ax, A)
         else
-            _plot_traces!(ax, A, sym; colors, smooth_window, draw_stride)
+            _plot_traces!(ax, A, sym;
+                colors, smooth_window = cfg.smooth_window, draw_stride = cfg.draw_stride)
         end
     end
 
@@ -237,7 +257,8 @@ end
 begin
     energy_key = Extra(:hamiltonian_energy)
     if energy_key in keys(chain)
-        fig = FlexiChains.mtraceplot(chain, energy_key)
+        fig = FlexiChains.mtraceplot(
+            chain, energy_key; color = chain_colors(PLOT_CONFIG, size(chain, 2)))
         save_figure(fig, "energyplot")
         fig
     else
@@ -252,9 +273,27 @@ end
 # %%
 begin
     fig = if length(chain_params) >= 2
-        pairplot(chain; pool_chains = true)
+        pairplot(
+            PairPlots.Series(chain; label = "posterior",
+                color = PLOT_CONFIG.primary_color) => (
+                PairPlots.Contour(color = PLOT_CONFIG.primary_color),
+                PairPlots.Contourf(color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha)),
+                PairPlots.MarginDensity(
+                    color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha),
+                    strokecolor = PLOT_CONFIG.primary_color,
+                    strokewidth = PLOT_CONFIG.strokewidth
+                )
+            );
+            pool_chains = true
+        )
     else
-        Makie.density(chain; pool_chains = true, legend_position = :none, color = (:grey, 0.5), strokecolor = :grey, strokewidth = 2)
+        Makie.density(chain;
+            pool_chains = true,
+            legend_position = :none,
+            color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha),
+            strokecolor = PLOT_CONFIG.primary_color,
+            strokewidth = PLOT_CONFIG.strokewidth
+        )
     end
     save_figure(fig, length(chain_params) >= 2 ? "pairplot" : "posterior_density")
     fig
