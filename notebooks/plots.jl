@@ -110,6 +110,58 @@ function relabel_axes!(fap, lookup::Dict{Symbol, LaTeXString})
     return fap
 end
 
+function chain_diagnostics_grid(chain; cfg::PlotConfig = PLOT_CONFIG)
+    params = collect(FlexiChains.parameters(chain))
+    n_params = length(params)
+    n_params >= 1 || throw(ArgumentError("chain has no parameters to plot"))
+
+    n_chains = size(chain, 2)
+    n_draws = size(chain, 1)
+    colors = chain_colors(cfg, n_chains)
+    maxlag = min(100, max(1, n_draws - 1))
+
+    panel_w, panel_h = 360, 180
+    fig = Makie.Figure(size = (3 * panel_w + 80, n_params * panel_h + 80))
+
+    Makie.Label(fig[0, 1], "Trace"; font = :bold, tellwidth = false)
+    Makie.Label(fig[0, 2], "Running mean"; font = :bold, tellwidth = false)
+    Makie.Label(fig[0, 3], "Autocorrelation"; font = :bold, tellwidth = false)
+
+    trace_axes = Makie.Axis[]
+    mean_axes = Makie.Axis[]
+    autocor_axes = Makie.Axis[]
+
+    for (i, p) in enumerate(params)
+        Makie.Label(fig[i, 0], param_label(p); rotation = π / 2, tellheight = false)
+
+        ax_trace = Makie.Axis(fig[i, 1])
+        FlexiChains.mtraceplot!(ax_trace, chain, p; color = colors)
+        push!(trace_axes, ax_trace)
+
+        ax_mean = Makie.Axis(fig[i, 2])
+        FlexiChains.mmeanplot!(ax_mean, chain, p; color = colors)
+        push!(mean_axes, ax_mean)
+
+        ax_ac = Makie.Axis(fig[i, 3])
+        FlexiChains.mautocorplot!(ax_ac, chain, p; lags = 1:maxlag, color = colors)
+        push!(autocor_axes, ax_ac)
+    end
+
+    Makie.linkxaxes!(trace_axes...)
+    Makie.linkxaxes!(mean_axes...)
+
+    for axes_col in (trace_axes, mean_axes, autocor_axes)
+        for ax in axes_col[1:(end - 1)]
+            Makie.hidexdecorations!(ax; grid = false)
+        end
+    end
+    trace_axes[end].xlabel = "iteration"
+    mean_axes[end].xlabel = "iteration"
+    autocor_axes[end].xlabel = "lag"
+
+    return fig
+end
+
 # %% [markdown]
 # ## Loading chains
 
@@ -152,38 +204,12 @@ chain_params
 summarystats(chain)
 
 # %% [markdown]
-# ## Trace and autocorrelation plots
+# ## Chain diagnostics
 
 # %%
 begin
-    fig = FlexiChains.mtraceplot(
-        chain; color = chain_colors(PLOT_CONFIG, size(chain, 2)), legend_position = :right)
-    relabel_axes!(fig, PARAM_LABELS)
-    save_figure(fig, "traceplot")
-    fig
-end
-
-# %%
-begin
-    n_draws = size(chain, 1)
-    autocor_maxlag = min(100, max(1, n_draws - 1))
-    fig = FlexiChains.mautocorplot(
-        chain;
-        lags = 1:autocor_maxlag,
-        color = chain_colors(PLOT_CONFIG, size(chain, 2)),
-        legend_position = :right
-    )
-    relabel_axes!(fig, PARAM_LABELS)
-    save_figure(fig, "autocorplot")
-    fig
-end
-
-# %%
-begin
-    fig = FlexiChains.mmeanplot(
-        chain; color = chain_colors(PLOT_CONFIG, size(chain, 2)), legend_position = :right)
-    relabel_axes!(fig, PARAM_LABELS)
-    save_figure(fig, "meanplot")
+    fig = chain_diagnostics_grid(chain)
+    save_figure(fig, "chain_diagnostics")
     fig
 end
 
