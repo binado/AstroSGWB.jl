@@ -40,6 +40,17 @@ const FIGURE_DPI = 300
 # Makie figure sizes are CSS pixels; 1 in = 96 CSS px (see Makie docs).
 const MAKIE_CSS_PX_PER_INCH = 96
 const MAKIE_DEFAULT_PT_PER_UNIT = 0.75
+const FIDUCIALS = (;
+    H0 = 67.66,
+    Ωm = 0.3096,
+    w0 = -1.0,
+    wa = 0.0,
+    Ξ₀ = 1.0,
+    Ξₙ = 1.91,
+    γ = 2.7,
+    κ = 5.7,
+    zpeak = 2.0
+)
 
 function _makie_save_kwargs(dpi::Int)
     scale = dpi / MAKIE_CSS_PX_PER_INCH
@@ -220,19 +231,22 @@ end
 begin
     chn = FlexiChains.subset_parameters(chain)
     fig = if length(chain_params) >= 2
-        pairplot(
-            PairPlots.Series(chn; label = "posterior",
-                color = PLOT_CONFIG.primary_color) => (
-                PairPlots.Contour(color = PLOT_CONFIG.primary_color),
-                PairPlots.Contourf(color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha)),
-                PairPlots.MarginDensity(
-                    color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha),
-                    strokecolor = PLOT_CONFIG.primary_color,
-                    strokewidth = PLOT_CONFIG.strokewidth
-                )
-            );
-            labels = PARAM_LABELS
+        truths = PairPlots.Truth(
+            (; (k => FIDUCIALS[k] for k in chain_params)...);
+            color = :black
         )
+        viz = (
+            PairPlots.Scatter(filtersigma = 2, color = PLOT_CONFIG.primary_color),
+            PairPlots.Contour(color = PLOT_CONFIG.primary_color),
+            PairPlots.Contourf(color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha)),
+            PairPlots.MarginDensity(;
+                color = (PLOT_CONFIG.primary_color, 1),
+                strokecolor = PLOT_CONFIG.primary_color,
+                strokewidth = PLOT_CONFIG.strokewidth
+            ),
+            PairPlots.MarginQuantileText(color = :black)
+        )
+        pairplot(chn => viz, truths; labels = PARAM_LABELS)
     else
         fap = Makie.density(chn;
             pool_chains = true,
