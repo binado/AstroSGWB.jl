@@ -218,9 +218,10 @@ end
 
 # %%
 begin
+    chn = FlexiChains.subset_parameters(chain)
     fig = if length(chain_params) >= 2
         pairplot(
-            PairPlots.Series(chain; label = "posterior",
+            PairPlots.Series(chn; label = "posterior",
                 color = PLOT_CONFIG.primary_color) => (
                 PairPlots.Contour(color = PLOT_CONFIG.primary_color),
                 PairPlots.Contourf(color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha)),
@@ -230,11 +231,10 @@ begin
                     strokewidth = PLOT_CONFIG.strokewidth
                 )
             );
-            pool_chains = true,
             labels = PARAM_LABELS
         )
     else
-        fap = Makie.density(chain;
+        fap = Makie.density(chn;
             pool_chains = true,
             legend_position = :none,
             color = (PLOT_CONFIG.primary_color, PLOT_CONFIG.alpha),
