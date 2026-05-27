@@ -40,29 +40,6 @@ function ObservationConfig(
     )
 end
 
-"""
-    ProposalFiducialParameters
-
-Fiducial cosmology, propagation, and population scalars read from the HDF5 cache
-(`hyperparameters` and optionally matching keys under `redshift_prior_spec`), not the live MCMC state.
-"""
-Base.@kwdef struct ProposalFiducialParameters
-    H0::Float64
-    Ωm::Float64
-    Ξ₀::Float64
-    Ξₙ::Float64
-    """Madau–Dickinson population scalars for reconstructing proposal redshift density (format v3)."""
-    γ::Union{Nothing, Float64} = nothing
-    κ::Union{Nothing, Float64} = nothing
-    zpeak::Union{Nothing, Float64} = nothing
-    """Power-law redshift index when `redshift_prior_spec.family` is `PowerLaw` (HDF5 key `lamb`)."""
-    Λ::Union{Nothing, Float64} = nothing
-    """Dark-energy equation-of-state parameter (absent means this cache assumed ΛCDM, w0=-1)."""
-    w0::Union{Nothing, Float64} = nothing
-    """CPL dark-energy running (absent means this cache assumed w0CDM or ΛCDM with wa=0)."""
-    wa::Union{Nothing, Float64} = nothing
-end
-
 """HDF5 `proposal_samples` group attribute naming the compact-object proposal class."""
 const PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR = "source_type"
 

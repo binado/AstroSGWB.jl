@@ -38,12 +38,10 @@ end
     ImportanceSamplingProblem
 
 In-memory importance-sampling context. See [`importance_sampling_problem`](@ref) and
-[`load_cache`](@ref). `fiducial_parameters` merges population scalars from HDF5
-`hyperparameters` and `redshift_prior_spec` ([`ProposalFiducialParameters`](@ref)), not the live
-live hyperparameter `NamedTuple` state. `redshift_integral_fiducial` is carried for cache
-round-trip and may differ from [`fiducial_redshift_integral`](@ref) when the file’s optional
-`redshift_integral_fiducial` attribute overrides the recomputed value; likelihood evaluation uses
-the integral implied by the live hyperparameters, not this field.
+[`load_problem`](@ref). `fiducial_parameters` is a [`FiducialParameters`](@ref) loaded
+from `cosmology.toml`; it is not the live MCMC hyperparameter `NamedTuple`.
+`redshift_integral_fiducial` is carried for diagnostics; likelihood evaluation uses the
+integral implied by the live hyperparameters, not this field.
 
 `redshift_cache` groups the fixed grid, per-sample interpolation metadata, and cached
 hyperparameter-independent full-BNS intrinsic terms (mass, spins, tidal deformability);
@@ -56,7 +54,7 @@ struct ImportanceSamplingProblem
     redshift_cache::RedshiftGridCache
     local_merger_rate::Float64
     redshift_integral_fiducial::Float64
-    fiducial_parameters::ProposalFiducialParameters
+    fiducial_parameters::FiducialParameters
     strategy::FullBNS
 end
 
@@ -94,7 +92,7 @@ function importance_sampling_problem(
         redshift_prior_spec::RedshiftPriorSpec,
         local_merger_rate::Real,
         redshift_integral_fiducial::Real,
-        fiducial_parameters::ProposalFiducialParameters;
+        fiducial_parameters::FiducialParameters;
         intrinsic_prior_factory = intrinsic_prior
 )
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)

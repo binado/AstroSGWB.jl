@@ -1,5 +1,5 @@
 # Shared hyperparameters and priors for inference smoke tests.
-# Importance caches are materialized on demand via `parity_cache_path` (see `parity_test_cache.jl`).
+# Bundle fixtures (cosmology.toml + bundle.h5) are materialized on demand via `parity_bundle_dir` (see `parity_test_cache.jl`).
 # Included from test files that need `PARITY_THETA` (not from `runtests.jl`).
 
 using ASGWB: canonical_hyperparameters, MadauDickinsonModifiedPropagation

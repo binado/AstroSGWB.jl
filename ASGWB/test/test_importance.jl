@@ -2,7 +2,7 @@ using ASGWB
 using ForwardDiff
 using Test
 
-if !@isdefined parity_cache_path
+if !@isdefined parity_bundle_dir
     include(joinpath(@__DIR__, "parity_test_cache.jl"))
 end
 include(joinpath(@__DIR__, "parity_fixtures.jl"))
@@ -34,20 +34,21 @@ function _importance_type_test_problem(n::Integer)
         1.0
     )
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 1.0, 32, nothing)
-    fid = ProposalFiducialParameters(;
-        H0 = 67.0,
-        Ωm = 0.315,
-        Ξ₀ = 1.0,
-        Ξₙ = 0.0,
-        γ = 2.7,
-        κ = 3.0,
-        zpeak = 2.5
+    fid = FiducialParameters(
+        LambdaCDM(67.0, 0.315),
+        ModifiedGravity(1.0, 0.0),
+        PopulationParams(MadauDickinson, 2.7, 3.0, 2.5, nothing, 0.001, 1.0, 32, nothing),
+        ObservationParams(1.0, 1.0)
     )
     return importance_sampling_problem(proposal, observation, spec, 1.0, fid)
 end
 
 @testset "importance smoke" begin
-    cache = load_cache(parity_cache_path(:posterior), [Detector("H1"), Detector("L1")])
+    dir = parity_bundle_dir(:posterior)
+    cache = load_problem(
+        joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
+        [Detector("H1"), Detector("L1")]
+    )
     theta = PARITY_THETA
 
     model_evaluation = evaluate_model_terms(

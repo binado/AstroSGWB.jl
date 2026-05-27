@@ -9,14 +9,18 @@ using Distributions: product_distribution, Uniform
 
 _varinfo_symbols(vi) = Set(getsym(vn) for vn in keys(vi))
 
-if !@isdefined parity_cache_path
+if !@isdefined parity_bundle_dir
     include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_test_cache.jl"))
 end
 include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
 
 @testset "Turing model smoke test" begin
     for variant in (:posterior, :full_intrinsic)
-        cache = load_cache(parity_cache_path(variant), [Detector("H1"), Detector("L1")])
+        dir = parity_bundle_dir(variant)
+        cache = load_problem(
+            joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
+            [Detector("H1"), Detector("L1")]
+        )
         theta0 = PARITY_THETA
         priors = PARITY_PRIORS
         prior_bounds = PARITY_PRIOR_BOUNDS
@@ -113,7 +117,11 @@ function _prior_for(model)
 end
 
 @testset "submodel boundary lifts VarNames to parent (flat)" begin
-    cache = load_cache(parity_cache_path(:posterior), [Detector("H1"), Detector("L1")])
+    dir = parity_bundle_dir(:posterior)
+    cache = load_problem(
+        joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
+        [Detector("H1"), Detector("L1")]
+    )
 
     cases = (
         (MadauDickinsonModifiedPropagation{LambdaCDM}(),
@@ -139,7 +147,11 @@ end
 end
 
 @testset "condition_turing_model across submodel boundary" begin
-    cache = load_cache(parity_cache_path(:posterior), [Detector("H1"), Detector("L1")])
+    dir = parity_bundle_dir(:posterior)
+    cache = load_problem(
+        joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
+        [Detector("H1"), Detector("L1")]
+    )
     m = MadauDickinsonModifiedPropagation{W0CDM}()
     priors = _prior_for(m)
     theta0 = canonical_hyperparameters(

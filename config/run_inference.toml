@@ -1,14 +1,15 @@
-cache_path = "../data.h5"
-detectors = ["S1", "R1"]
-sample_only = ["Ξ₀",]
+bundle_path = "../bundle.h5"
+cosmology_path = "../cosmology.toml"
+detectors = ["E1", "E2", "E3"]
+sample_only = ["H0", "w0"]
 seed = 1
 
 [model]
 # Cosmology model: "LambdaCDM" (default), "W0CDM", or "W0WaCDM".
-cosmology = "LambdaCDM"
+cosmology = "W0CDM"
 
 # Optional. Relative paths are resolved against this TOML file's directory.
-output_dir = "../output"
+output_dir = "../chains"
 output_prefix = "chains"
 
 [init]

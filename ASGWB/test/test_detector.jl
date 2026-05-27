@@ -79,22 +79,28 @@ end
     @test all(isfinite, scale) && all(scale .> 0)
 end
 
-@testset "load_cache reconstructs effective_psd from detectors" begin
-    path = parity_cache_path(:posterior_v2_minimal)
-    isfile(path) || error("missing fixture $path")
+@testset "load_problem reconstructs effective_psd from detectors" begin
+    if !@isdefined parity_bundle_dir
+        include(joinpath(@__DIR__, "parity_test_cache.jl"))
+    end
+    dir = parity_bundle_dir(:posterior_v2_minimal)
     d1 = Detector("H1")
     d2 = Detector("L1")
-    p = load_cache(path, [d1, d2])
+    p = load_problem(joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"), [d1, d2])
     @test length(p.observation.effective_psd) == length(p.observation.frequencies)
-    @test all(isfinite, p.observation.effective_psd)
+    # In-band bins have finite PSD; f=0 Hz (DC) is excluded by in_band_mask and may be Inf.
+    @test all(isfinite, p.observation.effective_psd[p.observation.in_band_mask])
     @test length(p.observation.sgwb_scale) == length(p.observation.frequencies)
 end
 
-@testset "load_cache is deterministic for the same path and detectors" begin
-    path = parity_cache_path(:posterior)
+@testset "load_problem is deterministic for the same paths and detectors" begin
+    if !@isdefined parity_bundle_dir
+        include(joinpath(@__DIR__, "parity_test_cache.jl"))
+    end
+    dir = parity_bundle_dir(:posterior)
     dets = [Detector("H1"), Detector("L1")]
-    p1 = load_cache(path, dets)
-    p2 = load_cache(path, dets)
+    p1 = load_problem(joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"), dets)
+    p2 = load_problem(joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"), dets)
     @test p1.observation.effective_psd == p2.observation.effective_psd
     @test p1.observation.sgwb_scale == p2.observation.sgwb_scale
 end

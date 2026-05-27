@@ -102,9 +102,8 @@ end
 """
     fiducial_hyperparameters(problem::ImportanceSamplingProblem) -> NamedTuple
 
-Build model-validated hyperparameters from the cache’s [`ProposalFiducialParameters`](@ref)
-and [`RedshiftPriorSpec`](@ref). Same rules as [`hyperparameters_from_fiducial`](@ref)
-(population scalars on the proposal fiducial dict when the prior family requires them).
+Build model-validated hyperparameters from `problem.fiducial_parameters` and
+[`RedshiftPriorSpec`](@ref) via [`hyperparameters_from_fiducial`](@ref).
 """
 function fiducial_hyperparameters(problem::ImportanceSamplingProblem)
     return hyperparameters_from_fiducial(

@@ -2,7 +2,7 @@ module RunInferenceCLI
 
 using ASGWB
 using ASGWB:
-             load_cache,
+             load_problem,
              Detector,
              MadauDickinsonModifiedPropagation,
              cosmology_type,
@@ -205,7 +205,8 @@ function parse_sample_only(settings::Dict)
 end
 
 function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = false)
-    cache = resolve_path(settings["cache_path"]::String, settings_dir)
+    bundle_path = resolve_path(settings["bundle_path"]::String, settings_dir)
+    cosmology_path = resolve_path(settings["cosmology_path"]::String, settings_dir)
     detectors = [Detector(n) for n in settings["detectors"]]
     sample_only = parse_sample_only(settings)
     seed = settings["seed"]::Int
@@ -261,22 +262,22 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
         @warn "num_chains differs from Base.Threads.nthreads()" num_chains num_threads
     end
 
-    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() cache detectors=join(
+    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() bundle_path cosmology_path detectors=join(
         (d.name for d in detectors), ",") sample_only output_dir
     @info "package versions"
     Pkg.status()
 
-    @info "loading importance cache" path=cache
-    problem = load_cache(cache, detectors)
-    cache_cosmology = cosmology_type(problem.fiducial_parameters)
+    @info "loading bundle" bundle_path cosmology_path
+    problem = load_problem(bundle_path, cosmology_path, detectors)
+    bundle_cosmology = cosmology_type(problem.fiducial_parameters)
     infer_cosmology = cosmology_type(inference_model)
-    cache_cosmology === infer_cosmology || throw(
+    bundle_cosmology === infer_cosmology || throw(
         ArgumentError(
-        "cache cosmology $(cache_cosmology) does not match [model].cosmology " *
-        "($(infer_cosmology)); rebuild the cache or fix config",
+        "bundle cosmology $(bundle_cosmology) does not match [model].cosmology " *
+        "($(infer_cosmology)); rebuild the bundle or fix config",
     ),
     )
-    @info "cache loaded" n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
+    @info "bundle loaded" n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
 
     @info "using fiducial in-band spectrum from cache as observed data"
     observed = problem.observation.fiducial_spectral_density
