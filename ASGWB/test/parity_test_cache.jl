@@ -2,6 +2,7 @@
 
 const _PARITY_COMMAND = "ASGWB/test/parity_test_cache.jl (generated test bundle)"
 const _PARITY_GIT_REVISION = "parity-snapshots"
+const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
 
 function _parity_cosmology_toml_content(; H0 = 67.0, Omega_m = 0.315, Xi_0 = 1.0, Xi_n = 0.0,
         gamma = 2.7, kappa = 3.0, z_peak = 2.5,
@@ -124,9 +125,8 @@ function _write_posterior_bundle(dir)
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
         luminosity_distances = [430.0, 880.0]
     )
-    # FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0) → n_freq=3, freqs=[0,20,40], in_band=[F,T,T]
-    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
-    cached_flux = Float64[0.0 0.0; 1.0 4.0; 2.0 5.0]   # (n_freq=3) × (n_samples=2)
+    grid = _PARITY_FREQUENCY_GRID
+    cached_flux = Float64[0.0 0.0; 1.0 4.0; 2.0 5.0]
     metadata = WaveformMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
@@ -151,11 +151,10 @@ function _write_full_intrinsic_bundle(dir)
         lambda2 = [300.0, 600.0, 700.0, 1500.0],
         luminosity_distances = [430.0, 880.0, 1350.0, 2300.0]
     )
-    # FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0) → n_freq=3, freqs=[0,20,40], in_band=[F,T,T]
-    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
+    grid = _PARITY_FREQUENCY_GRID
     cached_flux = Float64[0.0 0.0 0.0 0.0
                           1.0 1.5 2.0 2.5
-                          2.0 2.5 3.0 3.5]   # (n_freq=3) × (n_samples=4)
+                          2.0 2.5 3.0 3.5]
     metadata = WaveformMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
@@ -176,9 +175,8 @@ function _write_importance_context_bundle(dir)
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
         luminosity_distances = [430.0, 880.0]
     )
-    # FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0) → n_freq=3, freqs=[0,20,40], in_band=[F,T,T]
-    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
-    cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]   # (n_freq=3) × (n_samples=2)
+    grid = _PARITY_FREQUENCY_GRID
+    cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
     metadata = WaveformMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
@@ -199,9 +197,8 @@ function _write_w0cdm_bundle(dir)
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
         luminosity_distances = [430.0, 880.0]
     )
-    # FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0) → n_freq=3, freqs=[0,20,40], in_band=[F,T,T]
-    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
-    cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]   # (n_freq=3) × (n_samples=2)
+    grid = _PARITY_FREQUENCY_GRID
+    cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
     metadata = WaveformMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
@@ -240,6 +237,8 @@ function resolve_parity_bundle_dir(path::AbstractString)
         return parity_bundle_dir(:importance_context)
     elseif path == "parity:posterior_v2_minimal"
         return parity_bundle_dir(:posterior_v2_minimal)
+    elseif path == "parity:w0cdm"
+        return parity_bundle_dir(:w0cdm)
     end
     return nothing
 end

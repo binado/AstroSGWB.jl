@@ -22,7 +22,6 @@ function load_problem(
         cosmology_path::AbstractString,
         detectors::AbstractVector{D}
 )::ImportanceSamplingProblem where {D <: Detector}
-    isempty(detectors) && throw(ArgumentError("load_problem: detectors must be non-empty"))
     length(detectors) < 2 && throw(
         ArgumentError(
             "load_problem: at least two detectors are required to build effective_psd and sgwb_scale",
@@ -76,11 +75,10 @@ function load_problem(
         ),
     )
 
+    intrinsic_site_order = _bns_intrinsic_site_order(catalog.samples)
     samples = _catalog_samples_to_bns_soa(catalog.samples)
     cached_flux_over_dgw2 = reconstruct_cached_flux_over_dgw2(catalog.fluxes, z, fid)
     dgw_fid_sq = reconstruct_dgw_fid_sq(z, fid)
-
-    intrinsic_site_order = _bns_intrinsic_site_order(catalog.samples)
     lp = reconstruct_proposal_log_prob(samples, redshift_prior_spec(fid), fid)
     intrinsic_vector = _build_intrinsic_vector(catalog.samples, intrinsic_site_order)
 
@@ -95,18 +93,23 @@ function load_problem(
 
     spec = redshift_prior_spec(fid)
     ri = fiducial_redshift_integral(fid, spec)
+    local_rate = fid.observation.local_merger_rate
 
-    p = importance_sampling_problem(
+    redshift_cache = build_redshift_grid_cache(proposal, spec)
+    strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
+    p_shell = ImportanceSamplingProblem(
         proposal,
         observation,
         spec,
-        fid.observation.local_merger_rate,
-        ri,
-        fid
+        redshift_cache,
+        Float64(local_rate),
+        Float64(ri),
+        fid,
+        strategy
     )
 
     fs = try
-        fiducial_spectral_density(p)
+        fiducial_spectral_density(p_shell)
     catch err
         throw(
             ArgumentError(
@@ -116,21 +119,23 @@ function load_problem(
         )
     end
     observation2 = ObservationConfig(
-        p.observation.frequencies,
-        p.observation.effective_psd,
-        p.observation.sgwb_scale,
-        p.observation.in_band_mask,
+        p_shell.observation.frequencies,
+        p_shell.observation.effective_psd,
+        p_shell.observation.sgwb_scale,
+        p_shell.observation.in_band_mask,
         fs,
-        p.observation.observation_time_sec,
-        p.observation.observation_time_yr
+        p_shell.observation.observation_time_sec,
+        p_shell.observation.observation_time_yr
     )
-    return importance_sampling_problem(
-        p.proposal,
+    return ImportanceSamplingProblem(
+        proposal,
         observation2,
-        p.redshift_prior_spec,
-        p.local_merger_rate,
-        p.redshift_integral_fiducial,
-        p.fiducial_parameters
+        spec,
+        redshift_cache,
+        Float64(local_rate),
+        Float64(ri),
+        fid,
+        strategy
     )
 end
 
@@ -149,11 +154,6 @@ function _bns_intrinsic_site_order(samples::NamedTuple)
 end
 
 function _catalog_samples_to_bns_soa(samples::NamedTuple)::FullBNSSamplesSoA
-    for k in _BNS_INTRINSIC_KEYS
-        haskey(samples, k) || throw(
-            ArgumentError("bundle samples missing required BNS column $(repr(k))"),
-        )
-    end
     return (
         mass = stack_source_masses(samples.mass_1_source, samples.mass_2_source),
         redshift = copy(samples.redshift),

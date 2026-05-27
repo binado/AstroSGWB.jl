@@ -68,6 +68,21 @@ function _validate_strategy_bundle(strategy::FullBNS, proposal::ProposalData)
     return nothing
 end
 
+function build_redshift_grid_cache(
+        proposal::ProposalData,
+        redshift_prior_spec::RedshiftPriorSpec;
+        intrinsic_prior_factory = intrinsic_prior
+)
+    strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
+    _validate_strategy_bundle(strategy, proposal)
+    prior = intrinsic_prior_factory(strategy)
+    validate_batch(prior, proposal.samples)
+    cached_log_prob = logpdf(prior, proposal.samples)
+    z_grid = redshift_grid(redshift_prior_spec)
+    interp = SampleInterpolant(proposal.samples.redshift, z_grid)
+    return RedshiftGridCache(z_grid, interp, cached_log_prob)
+end
+
 """
     importance_sampling_problem(
         proposal, observation, redshift_prior_spec,
@@ -96,13 +111,11 @@ function importance_sampling_problem(
         intrinsic_prior_factory = intrinsic_prior
 )
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
-    _validate_strategy_bundle(strategy, proposal)
-    prior = intrinsic_prior_factory(strategy)
-    validate_batch(prior, proposal.samples)
-    cached_log_prob = logpdf(prior, proposal.samples)
-    z_grid = redshift_grid(redshift_prior_spec)
-    interp = SampleInterpolant(proposal.samples.redshift, z_grid)
-    redshift_cache = RedshiftGridCache(z_grid, interp, cached_log_prob)
+    redshift_cache = build_redshift_grid_cache(
+        proposal,
+        redshift_prior_spec;
+        intrinsic_prior_factory = intrinsic_prior_factory
+    )
     return ImportanceSamplingProblem(
         proposal,
         observation,

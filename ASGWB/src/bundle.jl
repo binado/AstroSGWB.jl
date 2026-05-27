@@ -60,8 +60,6 @@ per-frequency fluxes `|h_+|² + |h_×|²` (before the fiducial `(D_L/D_gw)²` sc
 `:mass_1_source`, `:redshift`, `:luminosity_distance`, …). `fluxes` has shape
 `(n_freq, n_samples)` — column-major friendly for the importance-sampling hot loop.
 
-Use [`load_bundle`](@ref) / [`save_bundle`](@ref) for HDF5 serialization and
-[`verify_cosmology_fingerprint`](@ref) to check cosmology consistency before inference.
 """
 struct WaveformCatalog{S <: NamedTuple}
     samples::S
@@ -76,8 +74,6 @@ n_freq(c::WaveformCatalog) = size(c.fluxes, 1)
     verify_cosmology_fingerprint(catalog, cosmology_path)
 
 Assert that the SHA-256 of `cosmology_path` matches `catalog.metadata.cosmology_sha256`.
-Throws `ArgumentError` on mismatch so inference fails fast when the wrong
-cosmology is paired with a bundle.
 """
 function verify_cosmology_fingerprint(
         catalog::WaveformCatalog,

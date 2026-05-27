@@ -121,8 +121,6 @@ end
     intrinsic_mat = Float64[1.4 1.2 0.1 0.0 0.0 100.0 100.0
                             1.4 1.2 0.2 0.0 0.0 100.0 100.0]
     dgw_sq = reconstruct_dgw_fid_sq(samples.redshift, from_file.fiducial_parameters)
-    # Full-band (3×2) flux: first row is f=0Hz (OOB), rows 2-3 are in-band.
-    # With Ξ₀=1, Ξₙ=0, scale=(d_L/d_gw)²=1, so cached_flux_over_dgw2 == raw fluxes.
     cached_flux_over_dgw2 = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
     proposal = ProposalData(
         FULL_BNS_INTRINSIC_ORDER,
@@ -205,8 +203,6 @@ end
     @test problem.proposal.intrinsic_vector ≈ Float64[1.4 1.2 0.1 0.0 0.0 100.0 100.0
                   1.4 1.2 0.2 0.0 0.0 100.0 100.0]
 
-    # FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0) → freqs=[0,20,40], in_band=[F,T,T]
-    # Ξ₀=1, Ξₙ=0 → scale=1 → cached_flux_over_dgw2 = raw fluxes
     @test problem.proposal.cached_flux_over_dgw2 ≈ Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
     @test problem.proposal.dgw_fid_sq ≈ reconstruct_dgw_fid_sq(
         problem.proposal.samples.redshift,

@@ -77,11 +77,6 @@ cosmology_type(fid::FiducialParameters) = Base.typename(typeof(fid.cosmology)).w
 """
 propagation_model(fid::FiducialParameters) = MadauDickinsonModifiedPropagation{cosmology_type(fid)}()
 
-"""
-    fiducial_cosmology(fid::FiducialParameters) -> AbstractCosmology
-
-Return the cosmology instance stored in `fid`.
-"""
 fiducial_cosmology(fid::FiducialParameters) = fid.cosmology
 
 """
@@ -102,8 +97,7 @@ end
 """
     cosmology_sha256_of_file(path) -> String
 
-SHA-256 hex digest of the raw bytes of `path`. Used to fingerprint `cosmology.toml`
-inside `bundle.h5` so the reader can fail-fast on cosmology/bundle mismatches.
+SHA-256 hex digest of the raw bytes of `path`.
 """
 function cosmology_sha256_of_file(path::AbstractString)::String
     return bytes2hex(sha256(read(path)))
@@ -211,36 +205,8 @@ end
 """
     load_cosmology_toml(path) -> FiducialParameters
 
-Parse a sectioned `cosmology.toml` file into a [`FiducialParameters`](@ref).
-
-Expected TOML sections:
-
-```toml
-[cosmology]
-type = "LambdaCDM"    # or "W0CDM" or "W0WaCDM"
-H0 = 67.4
-Omega_m = 0.315
-# w0 = -1.0           # required for W0CDM and W0WaCDM
-# wa = 0.0            # required for W0WaCDM
-
-[modified_gravity]
-Xi_0 = 1.0
-Xi_n = 0.0
-
-[population]
-family = "madau_dickinson"
-gamma = 2.7
-kappa = 3.0
-z_peak = 1.9
-z_min = 0.0
-z_max = 10.0
-num_interp = 256
-time_delay_model = "none"
-
-[observation]
-local_merger_rate = 320.0
-observation_time_yr = 1.0
-```
+Parse a sectioned `cosmology.toml` file into a [`FiducialParameters`](@ref)
+(`cosmology`, `modified_gravity`, `population`, `observation` sections).
 """
 function load_cosmology_toml(path::AbstractString)::FiducialParameters
     dict = TOML.parsefile(path)
