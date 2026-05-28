@@ -2,9 +2,9 @@ using Distributions: logpdf, ProductNamedTupleDistribution
 
 function target_log_prob_samples(
         Λ::NamedTuple,
-        problem::ImportanceSamplingProblem;
-        model::AbstractASGWBModel
+        problem::ImportanceSamplingProblem
 )
+    model = problem.model
     c = cosmology(model, Λ)
     redshift_prior = build_redshift_prior(
         Λ,
@@ -68,13 +68,19 @@ function evaluate_model_terms(
     return evaluate_model_terms(model, Λ, problem, problem.redshift_cache.redshift_grid)
 end
 
+function evaluate_model_terms(
+        Λ::NamedTuple,
+        problem::ImportanceSamplingProblem
+)
+    return evaluate_model_terms(problem.model, Λ, problem)
+end
+
 function loglikelihood(
         Λ::NamedTuple,
         problem::ImportanceSamplingProblem;
-        model::AbstractASGWBModel,
         observed_spectral_density::AbstractVector{<:Real} = problem.observation.fiducial_spectral_density
 )
-    evaluation = evaluate_model_terms(model, Λ, problem)
+    evaluation = evaluate_model_terms(Λ, problem)
     observed_in_band = observed_spectral_density[problem.observation.in_band_mask]
     residual = observed_in_band .- evaluation.spectral_density_in_band
     return -0.5 * sum(
@@ -87,14 +93,12 @@ function logposterior(
         Λ::NamedTuple,
         problem::ImportanceSamplingProblem,
         prior::ProductNamedTupleDistribution;
-        model::AbstractASGWBModel,
         observed_spectral_density::AbstractVector{<:Real} = problem.observation.fiducial_spectral_density
 )
     return logpdf(prior, Λ) +
            loglikelihood(
         Λ,
         problem;
-        model = model,
         observed_spectral_density = observed_spectral_density
     )
 end
@@ -102,14 +106,10 @@ end
 """
     fiducial_hyperparameters(problem::ImportanceSamplingProblem) -> NamedTuple
 
-Build model-validated hyperparameters from `problem.fiducial_parameters` and
-[`RedshiftPriorSpec`](@ref) via [`hyperparameters_from_fiducial`](@ref).
+Return the canonical fiducial hyperparameter state stored on `problem`.
 """
 function fiducial_hyperparameters(problem::ImportanceSamplingProblem)
-    return hyperparameters_from_fiducial(
-        problem.fiducial_parameters,
-        problem.redshift_prior_spec
-    )
+    problem.fiducial_hyperparameters
 end
 
 """
@@ -123,21 +123,19 @@ For the dimensionless energy density ``\\Omega_{\\mathrm{GW}}(f)``, use [`Ωgw`]
 this vector and the corresponding frequency bins from `problem.observation.frequencies`.
 """
 function fiducial_spectral_density(problem::ImportanceSamplingProblem)
-    fid = problem.fiducial_parameters
-    model = propagation_model(fid)
     Λ = fiducial_hyperparameters(problem)
-    return evaluate_model_terms(model, Λ, problem).spectral_density
+    return evaluate_model_terms(Λ, problem).spectral_density
 end
 
 """
     fiducial_redshift_integral(problem::ImportanceSamplingProblem) -> Float64
 
-[`cosmology_and_redshift_prior`](@ref) norm at [`fiducial_hyperparameters`](@ref) (matches
-`problem.redshift_integral_fiducial` when that field was set from the fiducial population).
+[`cosmology_and_redshift_prior`](@ref) norm at [`fiducial_hyperparameters`](@ref).
 """
 function fiducial_redshift_integral(problem::ImportanceSamplingProblem)
     return fiducial_redshift_integral(
-        problem.fiducial_parameters,
+        problem.model,
+        problem.fiducial_hyperparameters,
         problem.redshift_prior_spec
     )
 end

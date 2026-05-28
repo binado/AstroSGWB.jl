@@ -1,5 +1,5 @@
 # Shared hyperparameters and priors for inference smoke tests.
-# Bundle fixtures (cosmology.toml + bundle.h5) are materialized on demand via `parity_bundle_dir` (see `parity_test_cache.jl`).
+# Bundle fixtures (model.toml + bundle.h5) are materialized on demand via `parity_bundle_dir` (see `parity_test_cache.jl`).
 # Included from test files that need `PARITY_THETA` (not from `runtests.jl`).
 
 using ASGWB: canonical_hyperparameters, MadauDickinsonModifiedPropagation
@@ -33,8 +33,8 @@ const PARITY_PRIORS = product_distribution((
 const PARITY_PRIOR_BOUNDS = Dict(
     "H0" => (20.0, 140.0),
     "Omega_m" => (0.0, 1.0),
-    "chi0" => (0.0, 2.0),
-    "chin" => (-1.0, 1.0),
+    "Xi_0" => (0.0, 2.0),
+    "Xi_n" => (-1.0, 1.0),
     "gamma" => (0.0, 5.0),
     "kappa" => (0.0, 10.0),
     "z_peak" => (0.0, 5.0)

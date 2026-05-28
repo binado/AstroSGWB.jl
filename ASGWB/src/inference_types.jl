@@ -38,23 +38,22 @@ end
     ImportanceSamplingProblem
 
 In-memory importance-sampling context. See [`importance_sampling_problem`](@ref) and
-[`load_problem`](@ref). `fiducial_parameters` is a [`FiducialParameters`](@ref) loaded
-from `cosmology.toml`; it is not the live MCMC hyperparameter `NamedTuple`.
-`redshift_integral_fiducial` is carried for diagnostics; likelihood evaluation uses the
-integral implied by the live hyperparameters, not this field.
+[`load_problem`](@ref). The structural forward `model` and canonical
+`fiducial_hyperparameters` come from [`ModelConfig`](@ref) or direct in-memory
+construction.
 
 `redshift_cache` groups the fixed grid, per-sample interpolation metadata, and cached
 hyperparameter-independent full-BNS intrinsic terms (mass, spins, tidal deformability);
 redshift terms are evaluated from the live prior each step.
 """
-struct ImportanceSamplingProblem
+struct ImportanceSamplingProblem{M <: AbstractASGWBModel}
     proposal::ProposalData
     observation::ObservationConfig
+    model::M
+    fiducial_hyperparameters::NamedTuple
     redshift_prior_spec::RedshiftPriorSpec
     redshift_cache::RedshiftGridCache
     local_merger_rate::Float64
-    redshift_integral_fiducial::Float64
-    fiducial_parameters::FiducialParameters
     strategy::FullBNS
 end
 
@@ -85,31 +84,21 @@ end
 
 """
     importance_sampling_problem(
-        proposal, observation, redshift_prior_spec,
-        local_merger_rate, fiducial_parameters,
+        proposal, observation, model, fiducial_hyperparameters,
+        redshift_prior_spec, local_merger_rate,
     ) -> ImportanceSamplingProblem
 
-Five-argument form: the stored fiducial integral is
-[`fiducial_redshift_integral`](@ref) applied to `fiducial_parameters` and `redshift_prior_spec`.
-
-    importance_sampling_problem(
-        proposal, observation, redshift_prior_spec,
-        local_merger_rate, redshift_integral_fiducial, fiducial_parameters,
-    ) -> ImportanceSamplingProblem
-
-Six-argument form: supply a precomputed fiducial redshift integral (e.g. read from a cache file).
-
-Both forms validate [`IntrinsicPriorStrategy`](@ref) against the proposal sample bundle type.
+Validates [`IntrinsicPriorStrategy`](@ref) against the proposal sample bundle type.
 """
 function importance_sampling_problem(
         proposal::ProposalData,
         observation::ObservationConfig,
+        model::M,
+        fiducial_hyperparameters::NamedTuple,
         redshift_prior_spec::RedshiftPriorSpec,
-        local_merger_rate::Real,
-        redshift_integral_fiducial::Real,
-        fiducial_parameters::FiducialParameters;
+        local_merger_rate::Real;
         intrinsic_prior_factory = intrinsic_prior
-)
+) where {M <: AbstractASGWBModel}
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
     redshift_cache = build_redshift_grid_cache(
         proposal,
@@ -119,11 +108,11 @@ function importance_sampling_problem(
     return ImportanceSamplingProblem(
         proposal,
         observation,
+        model,
+        fiducial_hyperparameters,
         redshift_prior_spec,
         redshift_cache,
         Float64(local_merger_rate),
-        Float64(redshift_integral_fiducial),
-        fiducial_parameters,
         strategy
     )
 end

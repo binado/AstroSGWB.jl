@@ -1,4 +1,5 @@
 using Test
+using ASGWB
 using ASGWBInference: RunInferenceCLI
 using ASGWBInference
 
@@ -47,18 +48,19 @@ using ASGWBInference
 end
 
 @testset "sample_only config parsing" begin
-    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}()) === nothing
-    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => nothing)) ===
+    model = MadauDickinsonModifiedPropagation()
+    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}(), model) === nothing
+    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => nothing), model) ===
           nothing
-    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => ["H0"])) ==
+    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => ["H0"]), model) ==
           (:H0,)
     @test RunInferenceCLI.parse_sample_only(
-        Dict{String, Any}("sample_only" => ["H0", "Omega_m"])) == (:H0, :Omega_m)
+        Dict{String, Any}("sample_only" => ["H0", "Omega_m"]), model) == (:H0, :Ωm)
 
     @test_throws ArgumentError RunInferenceCLI.parse_sample_only(
-        Dict{String, Any}("sample_only" => "H0"))
+        Dict{String, Any}("sample_only" => "H0"), model)
     @test_throws ArgumentError RunInferenceCLI.parse_sample_only(
-        Dict{String, Any}("sample_only" => [1]))
+        Dict{String, Any}("sample_only" => [1]), model)
 end
 
 @testset "julia_main rejects ARGS" begin

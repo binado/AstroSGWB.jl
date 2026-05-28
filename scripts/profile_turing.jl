@@ -80,8 +80,8 @@ end
 
 function _resolve_problem_paths(
         bundle_path::String,
-        cosmology_path::String,
-        base::AbstractString,
+        model_path::String,
+        base::AbstractString
 )
     if startswith(bundle_path, "parity:")
         isdefined(@__MODULE__, :resolve_parity_bundle_dir) ||
@@ -90,13 +90,14 @@ function _resolve_problem_paths(
         dir === nothing && throw(
             ArgumentError("unknown parity bundle alias $(repr(bundle_path))"),
         )
-        return joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml")
+        return joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml")
     end
-    resolved_bundle = isabspath(bundle_path) ? bundle_path : normpath(joinpath(base, bundle_path))
-    resolved_cosmo = isabspath(cosmology_path) ?
-                     cosmology_path :
-                     normpath(joinpath(base, cosmology_path))
-    return resolved_bundle, resolved_cosmo
+    resolved_bundle = isabspath(bundle_path) ? bundle_path :
+                      normpath(joinpath(base, bundle_path))
+    resolved_model = isabspath(model_path) ?
+                     model_path :
+                     normpath(joinpath(base, model_path))
+    return resolved_bundle, resolved_model
 end
 
 function _load_observed_spectral_density(path::AbstractString, expected_len::Int)
@@ -126,8 +127,8 @@ function _priors_from_toml(priors_tbl::Dict)
     return product_distribution((
         H0 = Uniform(_uniform_bounds(priors_tbl, "H0")...),
         Ωm = Uniform(_uniform_bounds(priors_tbl, "Omega_m")...),
-        Ξ₀ = Uniform(_uniform_bounds(priors_tbl, "chi0")...),
-        Ξₙ = Uniform(_uniform_bounds(priors_tbl, "chin")...),
+        Ξ₀ = Uniform(_uniform_bounds(priors_tbl, "Xi_0")...),
+        Ξₙ = Uniform(_uniform_bounds(priors_tbl, "Xi_n")...),
         γ = Uniform(_uniform_bounds(priors_tbl, "gamma")...),
         κ = Uniform(_uniform_bounds(priors_tbl, "kappa")...),
         zpeak = Uniform(_uniform_bounds(priors_tbl, "z_peak")...)
@@ -140,8 +141,8 @@ function _theta0_from_toml(init_tbl::Dict)
         (;
             H0 = init_tbl["H0"],
             Ωm = init_tbl["Omega_m"],
-            Ξ₀ = init_tbl["chi0"],
-            Ξₙ = init_tbl["chin"],
+            Ξ₀ = init_tbl["Xi_0"],
+            Ξₙ = init_tbl["Xi_n"],
             γ = init_tbl["gamma"],
             κ = init_tbl["kappa"],
             zpeak = init_tbl["z_peak"]
@@ -154,8 +155,8 @@ function _validate_init_in_priors(prior, init_tbl::Dict)
     for (key, sym) in (
         "H0" => :H0,
         "Omega_m" => :Ωm,
-        "chi0" => :Ξ₀,
-        "chin" => :Ξₙ,
+        "Xi_0" => :Ξ₀,
+        "Xi_n" => :Ξₙ,
         "gamma" => :γ,
         "kappa" => :κ,
         "z_peak" => :zpeak
@@ -240,12 +241,14 @@ end
 
 function _run(;
         bundle_path::String,
-        cosmology_path::String,
+        model_path::String,
         detectors::Vector{Detector},
         priors,
         θ0::NamedTuple,
         seed::Union{Nothing, Int},
         observed_spectral_density_csv::Union{Nothing, String},
+        local_merger_rate::Float64,
+        observation_time_yr::Float64,
         seconds::Float64,
         profile_samples::Int,
         do_alloc::Bool,
@@ -253,10 +256,16 @@ function _run(;
 )
     t0 = time()
 
-    @info "loading bundle" bundle_path cosmology_path detectors=join(
+    @info "loading bundle" bundle_path model_path detectors=join(
         (d.name
         for d in detectors), ",")
-    problem = load_problem(bundle_path, cosmology_path, detectors)
+    problem = load_problem(
+        bundle_path,
+        model_path,
+        detectors;
+        local_merger_rate = local_merger_rate,
+        observation_time_yr = observation_time_yr
+    )
     @info "bundle loaded" n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
 
     observed = if observed_spectral_density_csv === nothing
@@ -559,14 +568,16 @@ function profile_turing(;
     settings_dir = dirname(abspath(config_file))
 
     raw_bundle = _require(cfg, "bundle_path")::String
-    raw_cosmo = _require(cfg, "cosmology_path")::String
-    bundle_path, cosmology_path = _resolve_problem_paths(raw_bundle, raw_cosmo, settings_dir)
+    raw_model = _require(cfg, "model_path")::String
+    bundle_path, model_path = _resolve_problem_paths(raw_bundle, raw_model, settings_dir)
     detectors = [Detector(n) for n in _require_string_array(cfg, "detectors")]
     seed = get(cfg, "seed", nothing)
     observed_csv = get(cfg, "observed_spectral_density_csv", nothing)
     if observed_csv !== nothing
         observed_csv = String(observed_csv)
     end
+    local_merger_rate = Float64(_require(cfg, "local_merger_rate"))
+    observation_time_yr = Float64(_require(cfg, "observation_time_yr"))
 
     priors_tbl = _require_table(cfg, "priors")
     init_tbl = _require_table(cfg, "init")
@@ -574,17 +585,19 @@ function profile_turing(;
     _validate_init_in_priors(priors, init_tbl)
     θ0 = _theta0_from_toml(init_tbl)
 
-    @info "effective settings" bundle_path cosmology_path detectors=join(
+    @info "effective settings" bundle_path model_path detectors=join(
         (d.name for d in detectors), ",") seed=seed
 
     return _run(;
         bundle_path,
-        cosmology_path,
+        model_path,
         detectors,
         priors,
         θ0,
         seed,
         observed_spectral_density_csv = observed_csv,
+        local_merger_rate,
+        observation_time_yr,
         seconds,
         profile_samples,
         do_alloc = alloc,

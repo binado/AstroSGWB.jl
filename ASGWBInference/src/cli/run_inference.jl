@@ -3,11 +3,10 @@ module RunInferenceCLI
 using ASGWB
 using ASGWB:
              load_problem,
+             load_model_config,
              Detector,
-             MadauDickinsonModifiedPropagation,
-             cosmology_type,
-             propagation_model,
              canonical_hyperparameters,
+             external_parameter_names,
              hyperparameters,
              validate_hyperparameters,
              validate_prior,
@@ -54,12 +53,6 @@ const PRIORS = (
 """Select the subset of `priors` corresponding to `names`."""
 function select_priors(priors::NamedTuple, names::Tuple{Vararg{Symbol}})
     return NamedTuple{names}(priors)
-end
-
-function _resolve_inference_model(settings::Dict)
-    cosmology_name = get(get(settings, "model", Dict()), "cosmology", "LambdaCDM")::String
-    C = cosmology_type(cosmology_name)
-    return MadauDickinsonModifiedPropagation{C}()
 end
 
 """Resolve `path` relative to `base` if it is not absolute."""
@@ -193,7 +186,20 @@ function resolve_adtype(name::AbstractString)
     end
 end
 
-function parse_sample_only(settings::Dict)
+function _external_to_parameter(model)
+    return Dict(external => k for (k, external) in pairs(external_parameter_names(model)))
+end
+
+function _config_parameter_overrides(raw::AbstractDict, model)
+    mapping = _external_to_parameter(model)
+    for k in keys(raw)
+        haskey(mapping, String(k)) ||
+            throw(ArgumentError("init contains unknown parameter $(repr(String(k)))"))
+    end
+    return (; (mapping[String(k)] => v for (k, v) in raw)...)
+end
+
+function parse_sample_only(settings::Dict, model)
     raw = get(settings, "sample_only", nothing)
     raw === nothing && return nothing
     raw isa Vector || throw(
@@ -201,23 +207,35 @@ function parse_sample_only(settings::Dict)
     )
     all(x -> x isa AbstractString, raw) ||
         throw(ArgumentError("sample_only must be an array of strings"))
-    return Tuple(Symbol(s) for s in raw)
+    mapping = _external_to_parameter(model)
+    return Tuple(
+        get(mapping, s) do
+            throw(ArgumentError("sample_only contains unknown parameter $(repr(s))"))
+        end
+    for s in raw
+    )
 end
 
 function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = false)
     bundle_path = resolve_path(settings["bundle_path"]::String, settings_dir)
-    cosmology_path = resolve_path(settings["cosmology_path"]::String, settings_dir)
+    model_path = resolve_path(settings["model_path"]::String, settings_dir)
     detectors = [Detector(n) for n in settings["detectors"]]
-    sample_only = parse_sample_only(settings)
     seed = settings["seed"]::Int
-    inference_model = _resolve_inference_model(settings)
+    model_config = load_model_config(model_path)
+    inference_model = model_config.model
     model_params = hyperparameters(inference_model)
-    all_init = (; (Symbol(k) => v for (k, v) in settings["init"])...)
+    raw_init = get(settings, "init", Dict{String, Any}())
+    raw_init isa AbstractDict ||
+        throw(ArgumentError("init must be omitted or a TOML table"))
+    init_overrides = _config_parameter_overrides(raw_init, inference_model)
     init = canonical_hyperparameters(
         inference_model,
-        NamedTuple{model_params}(all_init);
+        merge(model_config.fiducial_hyperparameters, init_overrides);
         context = "init hyperparameters"
     )
+    sample_only = parse_sample_only(settings, inference_model)
+    local_merger_rate = Float64(settings["local_merger_rate"])
+    observation_time_yr = Float64(settings["observation_time_yr"])
 
     sampler = settings["sampler"]
     n_samples = sampler["n_samples"]::Int
@@ -262,20 +280,18 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
         @warn "num_chains differs from Base.Threads.nthreads()" num_chains num_threads
     end
 
-    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() bundle_path cosmology_path detectors=join(
+    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() bundle_path model_path detectors=join(
         (d.name for d in detectors), ",") sample_only output_dir
     @info "package versions"
     Pkg.status()
 
-    @info "loading bundle" bundle_path cosmology_path
-    problem = load_problem(bundle_path, cosmology_path, detectors)
-    bundle_cosmology = cosmology_type(problem.fiducial_parameters)
-    infer_cosmology = cosmology_type(inference_model)
-    bundle_cosmology === infer_cosmology || throw(
-        ArgumentError(
-        "bundle cosmology $(bundle_cosmology) does not match [model].cosmology " *
-        "($(infer_cosmology)); rebuild the bundle or fix config",
-    ),
+    @info "loading bundle" bundle_path model_path
+    problem = load_problem(
+        bundle_path,
+        model_path,
+        detectors;
+        local_merger_rate = local_merger_rate,
+        observation_time_yr = observation_time_yr
     )
     @info "bundle loaded" n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
 

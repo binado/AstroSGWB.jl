@@ -45,7 +45,7 @@ struct WaveformMetadata
     approximant::String
     source_type::Symbol
     grid::FrequencyGrid
-    cosmology_sha256::String
+    model_sha256::String
     git_revision::String
     command::String
 end
@@ -71,22 +71,22 @@ n_samples(c::WaveformCatalog) = size(c.fluxes, 2)
 n_freq(c::WaveformCatalog) = size(c.fluxes, 1)
 
 """
-    verify_cosmology_fingerprint(catalog, cosmology_path)
+    verify_model_fingerprint(catalog, model_path)
 
-Assert that the SHA-256 of `cosmology_path` matches `catalog.metadata.cosmology_sha256`.
+Assert that the SHA-256 of `model_path` matches `catalog.metadata.model_sha256`.
 """
-function verify_cosmology_fingerprint(
+function verify_model_fingerprint(
         catalog::WaveformCatalog,
-        cosmology_path::AbstractString
+        model_path::AbstractString
 )
-    expected = catalog.metadata.cosmology_sha256
-    actual = bytes2hex(sha256(read(cosmology_path)))
+    expected = catalog.metadata.model_sha256
+    actual = bytes2hex(sha256(read(model_path)))
     expected == actual || throw(
         ArgumentError(
-            "cosmology fingerprint mismatch: bundle expects sha256=$(expected) " *
-            "but $(basename(cosmology_path)) has sha256=$(actual); " *
-            "rebuild the bundle or use the matching cosmology.toml",
-        ),
+        "model fingerprint mismatch: bundle expects sha256=$(expected) " *
+        "but $(basename(model_path)) has sha256=$(actual); " *
+        "rebuild the bundle or use the matching model.toml",
+    ),
     )
     return nothing
 end
@@ -99,7 +99,7 @@ Write `catalog` to an HDF5 bundle file at `path`.
 HDF5 layout:
 - `/samples/<column_name>` — one float64 dataset per sample column
 - `/fluxes` — float64 matrix of shape `(n_freq, n_samples)`
-- root attributes: `approximant`, `source_type`, `grid_*`, `cosmology_sha256`,
+- root attributes: `approximant`, `source_type`, `grid_*`, `model_sha256`,
   `git_revision`, `command`
 """
 function save_bundle(path::AbstractString, catalog::WaveformCatalog)
@@ -119,7 +119,7 @@ function save_bundle(path::AbstractString, catalog::WaveformCatalog)
         a["grid_reference_frequency"] = g.reference_frequency
         a["grid_minimum_frequency"] = g.minimum_frequency
         a["grid_maximum_frequency"] = g.maximum_frequency
-        a["cosmology_sha256"] = m.cosmology_sha256
+        a["model_sha256"] = m.model_sha256
         a["git_revision"] = m.git_revision
         a["command"] = m.command
     end
@@ -127,7 +127,8 @@ function save_bundle(path::AbstractString, catalog::WaveformCatalog)
 end
 
 function _read_bundle_attr(attrs, name::AbstractString)
-    haskey(attrs, name) || throw(ArgumentError("bundle.h5 missing required attribute: $(name)"))
+    haskey(attrs, name) ||
+        throw(ArgumentError("bundle.h5 missing required attribute: $(name)"))
     return read(attrs[name])
 end
 
@@ -149,10 +150,10 @@ function load_bundle(path::AbstractString)::WaveformCatalog
             Float64(_read_bundle_attr(a, "grid_minimum_frequency")),
             Float64(_read_bundle_attr(a, "grid_maximum_frequency"))
         )
-        cosmo_sha = String(_read_bundle_attr(a, "cosmology_sha256"))
+        model_sha = String(_read_bundle_attr(a, "model_sha256"))
         git_rev = String(_read_bundle_attr(a, "git_revision"))
         cmd = String(_read_bundle_attr(a, "command"))
-        metadata = WaveformMetadata(approx, src_type, grid, cosmo_sha, git_rev, cmd)
+        metadata = WaveformMetadata(approx, src_type, grid, model_sha, git_rev, cmd)
 
         haskey(f, "samples") || throw(ArgumentError("bundle.h5 missing /samples group"))
         sg = f["samples"]

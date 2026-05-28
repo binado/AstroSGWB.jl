@@ -18,8 +18,9 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
     for variant in (:posterior, :full_intrinsic)
         dir = parity_bundle_dir(variant)
         cache = load_problem(
-            joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
-            [Detector("H1"), Detector("L1")]
+            joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
+            [Detector("H1"), Detector("L1")];
+            parity_observation_kwargs(variant)...
         )
         theta0 = PARITY_THETA
         priors = PARITY_PRIORS
@@ -27,7 +28,7 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
 
         model = build_turing_model(cache, priors; model = PARITY_MODEL, track = false)
         @test Turing.logjoint(model, theta0) ≈
-              logposterior(theta0, cache, priors; model = PARITY_MODEL) rtol = 1e-6
+              logposterior(theta0, cache, priors) rtol = 1e-6
         @test condition_turing_model(
             model, theta0, priors, nothing; model = PARITY_MODEL) ===
               model
@@ -83,8 +84,8 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
         _chain_sym = Dict(
             "H0" => :H0,
             "Omega_m" => :Ωm,
-            "chi0" => :Ξ₀,
-            "chin" => :Ξₙ,
+            "Xi_0" => :Ξ₀,
+            "Xi_n" => :Ξₙ,
             "gamma" => :γ,
             "kappa" => :κ,
             "z_peak" => :zpeak
@@ -119,8 +120,9 @@ end
 @testset "submodel boundary lifts VarNames to parent (flat)" begin
     dir = parity_bundle_dir(:posterior)
     cache = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
-        [Detector("H1"), Detector("L1")]
+        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
+        [Detector("H1"), Detector("L1")];
+        parity_observation_kwargs(:posterior)...
     )
 
     cases = (
@@ -149,8 +151,9 @@ end
 @testset "condition_turing_model across submodel boundary" begin
     dir = parity_bundle_dir(:posterior)
     cache = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
-        [Detector("H1"), Detector("L1")]
+        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
+        [Detector("H1"), Detector("L1")];
+        parity_observation_kwargs(:posterior)...
     )
     m = MadauDickinsonModifiedPropagation{W0CDM}()
     priors = _prior_for(m)

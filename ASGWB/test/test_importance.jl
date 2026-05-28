@@ -34,20 +34,20 @@ function _importance_type_test_problem(n::Integer)
         1.0
     )
     spec = RedshiftPriorSpec(MadauDickinson, 0.001, 1.0, 32, nothing)
-    fid = FiducialParameters(
-        LambdaCDM(67.0, 0.315),
-        ModifiedGravity(1.0, 0.0),
-        PopulationParams(MadauDickinson, 2.7, 3.0, 2.5, nothing, 0.001, 1.0, 32, nothing),
-        ObservationParams(1.0, 1.0)
+    model = MadauDickinsonModifiedPropagation()
+    Λ = canonical_hyperparameters(
+        model,
+        (H0 = 67.0, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5)
     )
-    return importance_sampling_problem(proposal, observation, spec, 1.0, fid)
+    return importance_sampling_problem(proposal, observation, model, Λ, spec, 1.0)
 end
 
 @testset "importance smoke" begin
     dir = parity_bundle_dir(:posterior)
     cache = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "cosmology.toml"),
-        [Detector("H1"), Detector("L1")]
+        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
+        [Detector("H1"), Detector("L1")];
+        parity_observation_kwargs(:posterior)...
     )
     theta = PARITY_THETA
 

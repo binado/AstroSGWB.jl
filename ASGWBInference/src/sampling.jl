@@ -63,7 +63,7 @@ end
 
 function LogDensityProblems.logdensity(ld::ASGWBLogDensity, z::AbstractVector{<:Real})
     Λ, logabsdet = constrained_parameters(ld, z)
-    return logposterior(Λ, ld.problem, ld.prior; model = ld.model) + logabsdet
+    return logposterior(Λ, ld.problem, ld.prior) + logabsdet
 end
 
 """

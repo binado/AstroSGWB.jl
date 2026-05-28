@@ -16,7 +16,7 @@
 # %% [markdown]
 # # MCMC
 #
-# Same overall flow as `scripts/run_turing.jl`, but this notebook uses **unicode-key named tuples** (`Ωm`, `Ξ₀`, …) aligned with the Turing `product_distribution` prior. On-disk TOML for the CLI still uses ASCII keys (`Omega_m`, …). After **`load_problem`** (`bundle.h5` + `cosmology.toml`), it plots **Ω_GW(f)** at the initial `θ0` (via `evaluate_model_terms` and `Ωgw`) with **CairoMakie**, then runs **NUTS** in a dedicated cell with the same steps as `sample_with_turing` (`build_turing_model`, `condition_turing_model`, `InitFromParams`, `sample`).
+# Same overall flow as `scripts/run_turing.jl`, but this notebook uses **unicode-key named tuples** (`Ωm`, `Ξ₀`, …) aligned with the Turing `product_distribution` prior. On-disk TOML for the CLI still uses ASCII keys (`Omega_m`, …). After **`load_problem`** (`bundle.h5` + `model.toml`), it plots **Ω_GW(f)** at the initial `θ0` (via `evaluate_model_terms` and `Ωgw`) with **CairoMakie**, then runs **NUTS** in a dedicated cell with the same steps as `sample_with_turing` (`build_turing_model`, `condition_turing_model`, `InitFromParams`, `sample`).
 #
 # On-disk chains use **JLD2** with the top-level key **`chain`**, matching **`scripts/run_inference.jl`**. Set **`chain_input_jld2`** to a path (absolute or relative to the package root, like the cache HDF5 path) to skip sampling and load an existing run for diagnostics only.
 #
@@ -96,12 +96,14 @@ begin
 
     inference_model = MadauDickinsonModifiedPropagation()
     # Default: parity test bundle (see ASGWB/test/parity_test_cache.jl). For production,
-    # set bundle_path and cosmology_path to your on-disk artifacts (same keys as config/run_inference.toml).
+    # set bundle_path and model_path to your on-disk artifacts (same keys as config/run_inference.toml).
     const _REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
     include(joinpath(_REPO_ROOT, "ASGWB", "test", "parity_test_cache.jl"))
     const _PARITY_DIR = parity_bundle_dir(:posterior)
     const bundle_path = joinpath(_PARITY_DIR, "bundle.h5")
-    const cosmology_path = joinpath(_PARITY_DIR, "cosmology.toml")
+    const model_path = joinpath(_PARITY_DIR, "model.toml")
+    const local_merger_rate = 1e-7
+    const observation_time_yr = 1e-6
     detectors = [Detector("S1"), Detector("R1")]
     sample_only = (:H0,)
 
@@ -164,9 +166,17 @@ begin
         return InitFromParams((; (s => theta0[s] for s in sample_only)...))
     end
 
-    @info "loading bundle" bundle_path cosmology_path detectors=join((d.name for d in detectors), ",")
+    @info "loading bundle" bundle_path model_path detectors=join(
+        (d.name
+        for d in detectors), ",")
     t_load = time()
-    problem = load_problem(bundle_path, cosmology_path, detectors)
+    problem = load_problem(
+        bundle_path,
+        model_path,
+        detectors;
+        local_merger_rate = local_merger_rate,
+        observation_time_yr = observation_time_yr
+    )
     @info "bundle loaded" seconds=round(time()-t_load; digits = 2) n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
 
     observed = if observed_spectral_density_csv === nothing

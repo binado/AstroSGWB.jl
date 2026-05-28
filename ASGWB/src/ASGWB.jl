@@ -6,9 +6,8 @@ sampling, redshift grids, and likelihoods. MCMC via Turing/AdvancedHMC lives in 
 `ASGWBInference` package (see the `ASGWBInference/` directory in the repository).
 
 The inference input artifacts are two files:
-- **`cosmology.toml`** — fiducial physics snapshot ([`FiducialParameters`](@ref)):
-  cosmology type + parameters, modified-gravity Ξ₀/Ξₙ, merger-rate population, and
-  observation metadata.
+- **`model.toml`** — structural model name, cosmology type + parameters,
+  modified-gravity Ξ₀/Ξₙ, merger-rate population, and redshift grid settings.
 - **`bundle.h5`** ([`WaveformCatalog`](@ref)) — per-sample intrinsic parameters with
   precomputed luminosity distances, and a `(n_freq, n_samples)` per-sample flux matrix
   `|h_+|² + |h_×|²` (before the fiducial `(D_L/D_gw)²` factor).
@@ -18,8 +17,8 @@ Use [`load_problem`](@ref) to load both files and build an in-memory
 problems directly from in-memory objects (primarily for tests).
 
 Inference state is a flat hyperparameter `NamedTuple` validated against an
-[`AbstractASGWBModel`](@ref) contract; the problem carries a [`FiducialParameters`](@ref)
-in `fiducial_parameters` for provenance and reconstruction.
+[`AbstractASGWBModel`](@ref) contract; the problem carries the structural model and
+canonical fiducial hyperparameters directly.
 """
 module ASGWB
 
@@ -58,8 +57,6 @@ export ImportanceSamplingProblem,
        MadauDickinsonModifiedPropagation,
        hyperparameters,
        model_parameters,
-       propagation_model,
-       fiducial_cosmology,
        cosmology_type,
        canonical_hyperparameters,
        validate_hyperparameters,
@@ -78,16 +75,15 @@ export ImportanceSamplingProblem,
        FullBNS,
        redshift
 
-# Fiducial parameters
-export FiducialParameters,
-       ModifiedGravity,
-       PopulationParams,
-       ObservationParams,
-       load_cosmology_toml,
-       save_cosmology_toml,
-       cosmology_sha256_of_file,
+# Model config
+export ModelConfig,
+       load_model_config,
+       save_model_config,
+       model_sha256_of_file,
+       model_hyperparameters,
+       external_parameter_names,
+       external_model_parameter_names,
        redshift_prior_spec,
-       hyperparameters_from_fiducial,
        reconstruct_proposal_log_prob,
        reconstruct_dgw_fid_sq
 
@@ -99,7 +95,7 @@ export FrequencyGrid,
        WaveformCatalog,
        load_bundle,
        save_bundle,
-       verify_cosmology_fingerprint,
+       verify_model_fingerprint,
        load_problem,
        BUNDLE_COMMAND_ATTR,
        BUNDLE_GIT_REVISION_ATTR

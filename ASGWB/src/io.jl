@@ -4,10 +4,10 @@ const BUNDLE_COMMAND_ATTR = "command"
 const BUNDLE_GIT_REVISION_ATTR = "git_revision"
 
 """
-    load_problem(bundle_path, cosmology_path, detectors) -> ImportanceSamplingProblem
+    load_problem(bundle_path, model_path, detectors; local_merger_rate, observation_time_yr) -> ImportanceSamplingProblem
 
-Load a [`WaveformCatalog`](@ref) bundle and a `cosmology.toml` fiducial file, verify
-their cosmology fingerprint matches, and build an in-memory
+Load a [`WaveformCatalog`](@ref) bundle and a `model.toml` file, verify
+their model fingerprint matches, and build an in-memory
 [`ImportanceSamplingProblem`](@ref) ready for MCMC.
 
 `detectors` must contain at least two [`Detector`](@ref) values; the network effective
@@ -19,25 +19,45 @@ reflects the current Julia forward model rather than any stale on-disk value.
 """
 function load_problem(
         bundle_path::AbstractString,
-        cosmology_path::AbstractString,
-        detectors::AbstractVector{D}
+        model_path::AbstractString,
+        detectors::AbstractVector{D};
+        local_merger_rate::Real,
+        observation_time_yr::Real
+)::ImportanceSamplingProblem where {D <: Detector}
+    catalog = load_bundle(bundle_path)
+    verify_model_fingerprint(catalog, model_path)
+    config = load_model_config(model_path)
+    return load_problem(
+        catalog,
+        config,
+        detectors;
+        local_merger_rate = local_merger_rate,
+        observation_time_yr = observation_time_yr
+    )
+end
+
+function load_problem(
+        catalog::WaveformCatalog,
+        config::ModelConfig,
+        detectors::AbstractVector{D};
+        local_merger_rate::Real,
+        observation_time_yr::Real
 )::ImportanceSamplingProblem where {D <: Detector}
     length(detectors) < 2 && throw(
         ArgumentError(
-            "load_problem: at least two detectors are required to build effective_psd and sgwb_scale",
-        ),
+        "load_problem: at least two detectors are required to build effective_psd and sgwb_scale",
+    ),
     )
 
-    catalog = load_bundle(bundle_path)
-    fid = load_cosmology_toml(cosmology_path)
-    verify_cosmology_fingerprint(catalog, cosmology_path)
-
-    cache_C = cosmology_type(fid)
+    model = config.model
+    Λ = config.fiducial_hyperparameters
+    spec = config.redshift_prior_spec
+    cache_C = cosmology_type(model)
     cache_C ∈ SUPPORTED_COSMOLOGIES || throw(
         ArgumentError(
-            "cosmology.toml specifies unsupported cosmology type $(cache_C); " *
-            "supported: $(join(SUPPORTED_COSMOLOGIES, ", "))",
-        ),
+        "model.toml specifies unsupported cosmology type $(cache_C); " *
+        "supported: $(join(SUPPORTED_COSMOLOGIES, ", "))",
+    ),
     )
 
     meta = catalog.metadata
@@ -46,7 +66,7 @@ function load_problem(
     mask = in_band_mask(grid)
     n_freq_full = length(all_freq)
 
-    obs_yr = fid.observation.observation_time_yr
+    obs_yr = Float64(observation_time_yr)
     obs_sec = obs_yr * 365.25 * 24 * 3600.0
 
     det_vec = Vector{Detector}(collect(detectors))
@@ -64,22 +84,22 @@ function load_problem(
     n_samp = length(z)
     size(catalog.fluxes, 2) == n_samp || throw(
         ArgumentError(
-            "bundle fluxes column count ($(size(catalog.fluxes, 2))) " *
-            "does not match sample count ($n_samp)",
-        ),
+        "bundle fluxes column count ($(size(catalog.fluxes, 2))) " *
+        "does not match sample count ($n_samp)",
+    ),
     )
     size(catalog.fluxes, 1) == n_freq_full || throw(
         ArgumentError(
-            "bundle fluxes row count ($(size(catalog.fluxes, 1))) " *
-            "does not match frequency grid length ($n_freq_full)",
-        ),
+        "bundle fluxes row count ($(size(catalog.fluxes, 1))) " *
+        "does not match frequency grid length ($n_freq_full)",
+    ),
     )
 
     intrinsic_site_order = _bns_intrinsic_site_order(catalog.samples)
     samples = _catalog_samples_to_bns_soa(catalog.samples)
-    cached_flux_over_dgw2 = reconstruct_cached_flux_over_dgw2(catalog.fluxes, z, fid)
-    dgw_fid_sq = reconstruct_dgw_fid_sq(z, fid)
-    lp = reconstruct_proposal_log_prob(samples, redshift_prior_spec(fid), fid)
+    cached_flux_over_dgw2 = reconstruct_cached_flux_over_dgw2(catalog.fluxes, z, model, Λ)
+    dgw_fid_sq = reconstruct_dgw_fid_sq(z, model, Λ)
+    lp = reconstruct_proposal_log_prob(samples, spec, model, Λ)
     intrinsic_vector = _build_intrinsic_vector(catalog.samples, intrinsic_site_order)
 
     proposal = ProposalData(
@@ -91,20 +111,18 @@ function load_problem(
         dgw_fid_sq
     )
 
-    spec = redshift_prior_spec(fid)
-    ri = fiducial_redshift_integral(fid, spec)
-    local_rate = fid.observation.local_merger_rate
+    local_rate = Float64(local_merger_rate)
 
     redshift_cache = build_redshift_grid_cache(proposal, spec)
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
     p_shell = ImportanceSamplingProblem(
         proposal,
         observation,
+        model,
+        Λ,
         spec,
         redshift_cache,
-        Float64(local_rate),
-        Float64(ri),
-        fid,
+        local_rate,
         strategy
     )
 
@@ -113,9 +131,9 @@ function load_problem(
     catch err
         throw(
             ArgumentError(
-                "fiducial_spectral_density recomputation failed after loading bundle; " *
-                "Underlying error: " * sprint(showerror, err),
-            ),
+            "fiducial_spectral_density recomputation failed after loading bundle; " *
+            "Underlying error: " * sprint(showerror, err),
+        ),
         )
     end
     observation2 = ObservationConfig(
@@ -130,11 +148,11 @@ function load_problem(
     return ImportanceSamplingProblem(
         proposal,
         observation2,
+        model,
+        Λ,
         spec,
         redshift_cache,
-        Float64(local_rate),
-        Float64(ri),
-        fid,
+        local_rate,
         strategy
     )
 end

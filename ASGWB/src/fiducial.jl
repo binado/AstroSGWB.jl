@@ -1,288 +1,235 @@
 using SHA: sha256
 using TOML
 
-"""
-    ModifiedGravity
+const MADAU_DICKINSON_MODIFIED_PROPAGATION_CONFIG_NAME = "madau_dickinson_modified_propagation"
 
-Fiducial modified-gravity propagation parameters: `Ξ₀` (overall amplitude) and
-`Ξₙ` (running). These scale gravitational-wave luminosity distance relative to
-electromagnetic luminosity distance via `d_gw = d_L × (Ξ₀ + (1 - Ξ₀)(1+z)^(-Ξₙ))`.
 """
-struct ModifiedGravity
-    Ξ₀::Float64
-    Ξₙ::Float64
+    ModelConfig
+
+Model-side configuration loaded from `model.toml`: the structural forward model,
+its canonical fiducial hyperparameter `NamedTuple`, and the redshift prior grid/spec.
+Observation settings are supplied by the caller when assembling an
+[`ImportanceSamplingProblem`](@ref).
+"""
+struct ModelConfig{M <: AbstractASGWBModel}
+    model::M
+    fiducial_hyperparameters::NamedTuple
+    redshift_prior_spec::RedshiftPriorSpec
 end
 
 """
-    PopulationParams
-
-Fiducial merger-rate population scalars. `family` selects the redshift-prior
-functional form. For `MadauDickinson`: `γ`, `κ`, `zpeak` characterize the
-star-formation–like rate. For `PowerLaw`: `Λ` is the power-law index.
-`z_min`, `z_max`, `num_interp`, `time_delay_model` are grid/integration settings
-shared with [`RedshiftPriorSpec`](@ref).
-"""
-struct PopulationParams
-    family::RedshiftPriorFamily
-    γ::Float64
-    κ::Float64
-    zpeak::Float64
-    Λ::Union{Nothing, Float64}
-    z_min::Float64
-    z_max::Float64
-    num_interp::Int
-    time_delay_model::Union{Nothing, String}
-end
-
-"""
-    ObservationParams
-
-Fiducial observation metadata: local BNS merger rate (Gpc⁻³ yr⁻¹) and
-analysis observation time (years). These are part of `cosmology.toml` so the bundle
-records which observation scenario the samples were drawn for.
-"""
-struct ObservationParams
-    local_merger_rate::Float64
-    observation_time_yr::Float64
-end
-
-"""
-    FiducialParameters
-
-Fiducial physics snapshot loaded from `cosmology.toml`. Groups four orthogonal
-concerns into one typed struct:
-- `cosmology::AbstractCosmology` — the background expansion model (`LambdaCDM`, `W0CDM`, or `W0WaCDM`)
-- `modified_gravity::ModifiedGravity` — GW-propagation Ξ₀/Ξₙ scalars
-- `population::PopulationParams` — the merger-rate redshift prior family and scalars
-- `observation::ObservationParams` — local merger rate and observation time
-"""
-struct FiducialParameters
-    cosmology::AbstractCosmology
-    modified_gravity::ModifiedGravity
-    population::PopulationParams
-    observation::ObservationParams
-end
-
-"""
-    cosmology_type(fid::FiducialParameters) -> Type{<:AbstractCosmology}
-
-Concrete cosmology subtype encoded in the fiducial.
-"""
-cosmology_type(fid::FiducialParameters) = Base.typename(typeof(fid.cosmology)).wrapper
-
-"""
-    propagation_model(fid::FiducialParameters) -> MadauDickinsonModifiedPropagation
-
-[`MadauDickinsonModifiedPropagation`](@ref) with cosmology type parameter matching `fid`.
-"""
-propagation_model(fid::FiducialParameters) = MadauDickinsonModifiedPropagation{cosmology_type(fid)}()
-
-fiducial_cosmology(fid::FiducialParameters) = fid.cosmology
-
-"""
-    redshift_prior_spec(fid::FiducialParameters) -> RedshiftPriorSpec
-
-Build a [`RedshiftPriorSpec`](@ref) from the population parameters of `fid`.
-"""
-function redshift_prior_spec(fid::FiducialParameters)
-    return RedshiftPriorSpec(
-        fid.population.family,
-        fid.population.z_min,
-        fid.population.z_max,
-        fid.population.num_interp,
-        fid.population.time_delay_model
-    )
-end
-
-"""
-    cosmology_sha256_of_file(path) -> String
+    model_sha256_of_file(path) -> String
 
 SHA-256 hex digest of the raw bytes of `path`.
 """
-function cosmology_sha256_of_file(path::AbstractString)::String
+function model_sha256_of_file(path::AbstractString)::String
     return bytes2hex(sha256(read(path)))
 end
 
-function _cosmology_nt(c::AbstractCosmology)
-    fn = fieldnames(typeof(c))
-    return NamedTuple{fn}(Tuple(getfield(c, f) for f in fn))
+external_parameter_names(::Type{LambdaCDM}) = (
+    H0 = "H0",
+    Ωm = "Omega_m"
+)
+
+external_parameter_names(::Type{W0CDM}) = (
+    H0 = "H0",
+    Ωm = "Omega_m",
+    w0 = "w0"
+)
+
+function external_parameter_names(::Type{W0WaCDM})
+    (
+        H0 = "H0",
+        Ωm = "Omega_m",
+        w0 = "w0",
+        wa = "wa"
+    )
 end
 
-"""
-    hyperparameters_from_fiducial(fid::FiducialParameters, spec::RedshiftPriorSpec) -> NamedTuple
+function external_model_parameter_names(::MadauDickinsonModifiedPropagation)
+    (
+        Ξ₀ = "Xi_0",
+        Ξₙ = "Xi_n",
+        γ = "gamma",
+        κ = "kappa",
+        zpeak = "z_peak"
+    )
+end
 
-Build model-validated fiducial hyperparameters from `fid`. Used when reconstructing
-per-sample proposal log-density or redshift integrals from the fiducial population.
-Requires a `MadauDickinson` population family.
-"""
-function hyperparameters_from_fiducial(fid::FiducialParameters, spec::RedshiftPriorSpec)
-    spec.family == MadauDickinson || throw(
+function external_parameter_names(
+        model::MadauDickinsonModifiedPropagation{C}
+) where {C <: AbstractCosmology}
+    return (;
+        external_parameter_names(C)...,
+        external_model_parameter_names(model)...
+    )
+end
+
+function _require_table(data::AbstractDict, key::AbstractString)
+    value = get(data, key, nothing)
+    value isa AbstractDict || throw(ArgumentError("model.toml requires [$key] table"))
+    return value
+end
+
+function _require_string(table::AbstractDict, key::AbstractString, table_name::AbstractString)
+    haskey(table, key) ||
+        throw(ArgumentError("model.toml [$table_name] requires $(repr(key))"))
+    value = table[key]
+    value isa AbstractString ||
+        throw(ArgumentError("model.toml [$table_name].$key must be a string"))
+    return value
+end
+
+function _require_real(table::AbstractDict, key::AbstractString, table_name::AbstractString)
+    haskey(table, key) ||
+        throw(ArgumentError("model.toml [$table_name] requires $(repr(key))"))
+    return Float64(table[key])
+end
+
+function _parse_model(table::AbstractDict)
+    name = _require_string(table, "name", "model")
+    name == MADAU_DICKINSON_MODIFIED_PROPAGATION_CONFIG_NAME || throw(
         ArgumentError(
-            "live hyperparameter reconstruction supports MadauDickinson only; " *
-            "PowerLaw caches are metadata-only",
+        "unknown model $(repr(name)); expected $(repr(MADAU_DICKINSON_MODIFIED_PROPAGATION_CONFIG_NAME))",
+    ),
+    )
+    C = cosmology_type(_require_string(table, "cosmology", "model"))
+    return MadauDickinsonModifiedPropagation{C}()
+end
+
+function _parse_time_delay_model(value)
+    value === nothing && return nothing
+    value isa AbstractString ||
+        throw(ArgumentError("model.toml [redshift].time_delay_model must be a string"))
+    stripped = strip(value)
+    (isempty(stripped) || stripped == "none") && return nothing
+    throw(ArgumentError("time_delay_model=$(repr(value)) is not implemented"))
+end
+
+function _external_values(table::AbstractDict, mapping::NamedTuple, table_name::AbstractString)
+    return (;
+        (k => _require_real(table, external, table_name)
+    for (k, external) in pairs(mapping))...)
+end
+
+"""
+    model_hyperparameters(data, model::MadauDickinsonModifiedPropagation) -> NamedTuple
+
+Build the canonical fiducial hyperparameter state for `model` from parsed
+`model.toml` data.
+"""
+function model_hyperparameters(
+        data::AbstractDict,
+        model::MadauDickinsonModifiedPropagation{C}
+) where {C <: AbstractCosmology}
+    cosmology_table = _require_table(data, "cosmology")
+    mg_table = _require_table(data, "modified_gravity")
+    population_table = _require_table(data, "population")
+
+    raw = (;
+        _external_values(cosmology_table, external_parameter_names(C), "cosmology")...,
+        _external_values(mg_table, external_model_parameter_names(model)[(:Ξ₀, :Ξₙ)],
+            "modified_gravity")...,
+        _external_values(
+            population_table, external_model_parameter_names(model)[(:γ, :κ, :zpeak)],
+            "population")...
+    )
+    return canonical_hyperparameters(model, raw; context = "fiducial hyperparameters")
+end
+
+"""
+    redshift_prior_spec(data, model::MadauDickinsonModifiedPropagation) -> RedshiftPriorSpec
+
+Build the redshift prior spec for the model from parsed `model.toml` data.
+"""
+function redshift_prior_spec(
+        data::AbstractDict,
+        ::MadauDickinsonModifiedPropagation
+)
+    redshift_table = _require_table(data, "redshift")
+    tdm = _parse_time_delay_model(get(redshift_table, "time_delay_model", "none"))
+    return RedshiftPriorSpec(
+        MadauDickinson,
+        _require_real(redshift_table, "z_min", "redshift"),
+        _require_real(redshift_table, "z_max", "redshift"),
+        Int(redshift_table["num_interp"]),
+        tdm
+    )
+end
+
+"""
+    load_model_config(path) -> ModelConfig
+
+Parse a sectioned `model.toml` file into a [`ModelConfig`](@ref).
+"""
+function load_model_config(path::AbstractString)
+    data = TOML.parsefile(path)
+    model = _parse_model(_require_table(data, "model"))
+    Λ = model_hyperparameters(data, model)
+    spec = redshift_prior_spec(data, model)
+    return ModelConfig(model, Λ, spec)
+end
+
+function _cosmology_config_dict(model::MadauDickinsonModifiedPropagation{C},
+        Λ::NamedTuple) where {
+        C <: AbstractCosmology}
+    mapping = external_parameter_names(C)
+    dict = Dict{String, Any}()
+    for (k, external) in pairs(mapping)
+        dict[external] = Λ[k]
+    end
+    return dict
+end
+
+function _model_parameter_config_dict(mapping::NamedTuple, Λ::NamedTuple)
+    dict = Dict{String, Any}()
+    for (k, external) in pairs(mapping)
+        dict[external] = Λ[k]
+    end
+    return dict
+end
+
+function model_config_dict(config::ModelConfig{<:MadauDickinsonModifiedPropagation})
+    model = config.model
+    Λ = config.fiducial_hyperparameters
+    model_mapping = external_model_parameter_names(model)
+    spec = config.redshift_prior_spec
+    return Dict{String, Any}(
+        "model" => Dict{String, Any}(
+            "name" => MADAU_DICKINSON_MODIFIED_PROPAGATION_CONFIG_NAME,
+            "cosmology" => cosmology_config_name(cosmology_type(model))
         ),
-    )
-    model = propagation_model(fid)
-    return canonical_hyperparameters(
-        model,
-        (;
-            _cosmology_nt(fid.cosmology)...,
-            Ξ₀ = fid.modified_gravity.Ξ₀,
-            Ξₙ = fid.modified_gravity.Ξₙ,
-            γ = fid.population.γ,
-            κ = fid.population.κ,
-            zpeak = fid.population.zpeak
-        );
-        context = "fiducial hyperparameters"
-    )
-end
-
-"""
-    fiducial_redshift_integral(fid::FiducialParameters, spec::RedshiftPriorSpec) -> Float64
-
-Trapezoid integral ``\\int p(z)\\,dz`` of the detector-frame merger-rate density on the
-redshift grid defined by `spec` and the population in `hyperparameters_from_fiducial(fid, spec)`.
-"""
-function fiducial_redshift_integral(fid::FiducialParameters, spec::RedshiftPriorSpec)::Float64
-    Λ = hyperparameters_from_fiducial(fid, spec)
-    redshift_prior = build_redshift_prior(Λ, spec, cosmology(propagation_model(fid), Λ))
-    return Float64(redshift_integral(redshift_prior))
-end
-
-function _parse_cosmology(dict::Dict)::AbstractCosmology
-    ctype_str = get(dict, "type", "LambdaCDM")::String
-    H0 = Float64(dict["H0"])
-    Omega_m = Float64(dict["Omega_m"])
-    if ctype_str == "LambdaCDM"
-        return LambdaCDM(H0, Omega_m)
-    elseif ctype_str == "W0CDM"
-        haskey(dict, "w0") || throw(
-            ArgumentError("cosmology.toml [cosmology] type=W0CDM requires w0"),
+        "cosmology" => _cosmology_config_dict(model, Λ),
+        "modified_gravity" => _model_parameter_config_dict(model_mapping[(:Ξ₀, :Ξₙ)], Λ),
+        "population" => _model_parameter_config_dict(model_mapping[(:γ, :κ, :zpeak)], Λ),
+        "redshift" => Dict{String, Any}(
+            "z_min" => spec.z_min,
+            "z_max" => spec.z_max,
+            "num_interp" => spec.num_interp,
+            "time_delay_model" => spec.time_delay_model === nothing ? "none" :
+                                  spec.time_delay_model
         )
-        return W0CDM(H0, Omega_m, Float64(dict["w0"]))
-    elseif ctype_str == "W0WaCDM"
-        haskey(dict, "w0") && haskey(dict, "wa") || throw(
-            ArgumentError("cosmology.toml [cosmology] type=W0WaCDM requires w0 and wa"),
-        )
-        return W0WaCDM(H0, Omega_m, Float64(dict["w0"]), Float64(dict["wa"]))
-    else
-        throw(ArgumentError("unknown cosmology type $(repr(ctype_str)); expected LambdaCDM, W0CDM, or W0WaCDM"))
-    end
-end
-
-function _parse_population(dict::Dict)::PopulationParams
-    family_str = get(dict, "family", "madau_dickinson")::String
-    family = parse_redshift_prior_family(family_str)
-    tdm = get(dict, "time_delay_model", "none")::String
-    tdm_val = (tdm == "none" || isempty(strip(tdm))) ? nothing : tdm
-    if family == MadauDickinson
-        return PopulationParams(
-            family,
-            Float64(dict["gamma"]),
-            Float64(dict["kappa"]),
-            Float64(dict["z_peak"]),
-            nothing,
-            Float64(dict["z_min"]),
-            Float64(dict["z_max"]),
-            Int(dict["num_interp"]),
-            tdm_val
-        )
-    else
-        return PopulationParams(
-            family,
-            0.0,
-            0.0,
-            0.0,
-            Float64(dict["lamb"]),
-            Float64(dict["z_min"]),
-            Float64(dict["z_max"]),
-            Int(dict["num_interp"]),
-            tdm_val
-        )
-    end
+    )
 end
 
 """
-    load_cosmology_toml(path) -> FiducialParameters
+    save_model_config(path, config::ModelConfig)
 
-Parse a sectioned `cosmology.toml` file into a [`FiducialParameters`](@ref)
-(`cosmology`, `modified_gravity`, `population`, `observation` sections).
+Write `config` to the canonical `model.toml` schema readable by
+[`load_model_config`](@ref).
 """
-function load_cosmology_toml(path::AbstractString)::FiducialParameters
-    dict = TOML.parsefile(path)
-
-    cosmo = _parse_cosmology(get(dict, "cosmology", Dict{String, Any}()))
-
-    mg_dict = get(dict, "modified_gravity", Dict{String, Any}())
-    mg = ModifiedGravity(
-        Float64(mg_dict["Xi_0"]),
-        Float64(mg_dict["Xi_n"])
-    )
-
-    pop = _parse_population(get(dict, "population", Dict{String, Any}()))
-
-    obs_dict = get(dict, "observation", Dict{String, Any}())
-    obs = ObservationParams(
-        Float64(obs_dict["local_merger_rate"]),
-        Float64(obs_dict["observation_time_yr"])
-    )
-
-    return FiducialParameters(cosmo, mg, pop, obs)
-end
-
-"""
-    save_cosmology_toml(path, fid::FiducialParameters)
-
-Write `fid` to a sectioned `cosmology.toml` file readable by [`load_cosmology_toml`](@ref).
-"""
-function save_cosmology_toml(path::AbstractString, fid::FiducialParameters)
-    cosmo = fid.cosmology
-    C = cosmology_type(fid)
-    cosmo_dict = Dict{String, Any}(
-        "type" => string(nameof(C)),
-        "H0" => cosmo.H0,
-        "Omega_m" => cosmo.Ωm,
-    )
-    if C <: Union{W0CDM, W0WaCDM}
-        cosmo_dict["w0"] = cosmo.w0
-    end
-    if C <: W0WaCDM
-        cosmo_dict["wa"] = cosmo.wa
-    end
-
-    mg = fid.modified_gravity
-    mg_dict = Dict{String, Any}("Xi_0" => mg.Ξ₀, "Xi_n" => mg.Ξₙ)
-
-    pop = fid.population
-    pop_dict = Dict{String, Any}(
-        "family" => string(pop.family == MadauDickinson ? "madau_dickinson" : "power_law"),
-        "z_min" => pop.z_min,
-        "z_max" => pop.z_max,
-        "num_interp" => pop.num_interp,
-        "time_delay_model" => pop.time_delay_model === nothing ? "none" : pop.time_delay_model,
-    )
-    if pop.family == MadauDickinson
-        pop_dict["gamma"] = pop.γ
-        pop_dict["kappa"] = pop.κ
-        pop_dict["z_peak"] = pop.zpeak
-    else
-        pop_dict["lamb"] = pop.Λ
-    end
-
-    obs = fid.observation
-    obs_dict = Dict{String, Any}(
-        "local_merger_rate" => obs.local_merger_rate,
-        "observation_time_yr" => obs.observation_time_yr,
-    )
-
-    doc = Dict{String, Any}(
-        "cosmology" => cosmo_dict,
-        "modified_gravity" => mg_dict,
-        "population" => pop_dict,
-        "observation" => obs_dict,
-    )
+function save_model_config(path::AbstractString, config::ModelConfig)
     open(path, "w") do io
-        TOML.print(io, doc)
+        TOML.print(io, model_config_dict(config))
     end
     return nothing
+end
+
+function fiducial_redshift_integral(
+        model::MadauDickinsonModifiedPropagation,
+        Λ::NamedTuple,
+        spec::RedshiftPriorSpec
+)::Float64
+    redshift_prior = build_redshift_prior(Λ, spec, cosmology(model, Λ))
+    return Float64(redshift_integral(redshift_prior))
 end
