@@ -3,7 +3,8 @@ module InferenceImpl
 using ASGWB
 using ASGWB:
              ImportanceSamplingProblem,
-             AbstractASGWBModel,
+             PopulationModel,
+             BNSPopulationModel,
              AbstractCosmology,
              LambdaCDM,
              W0CDM,
@@ -13,8 +14,10 @@ using ASGWB:
              loglikelihood,
              evaluate_model_terms,
              canonical_hyperparameters,
-             hyperparameters,
              validate_hyperparameters,
+             full_hyperparameters,
+             full_hyperprior,
+             hyperparameters,
              validate_subset,
              normalized_ess,
              spectral_snr_squared,

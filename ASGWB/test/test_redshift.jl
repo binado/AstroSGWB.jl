@@ -3,8 +3,11 @@ using CBCDistributions
 using ASGWB
 
 @testset "sample interpolation helpers" begin
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    order = full_hyperparameters(C, pop)
     theta = canonical_hyperparameters(
-        madau_dickinson_physical_model(),
+        order,
         (;
             H0 = 67.0,
             Ωm = 0.315,
@@ -15,19 +18,21 @@ using ASGWB
             zpeak = 2.5
         )
     )
-    spec = RedshiftPriorSpec(MadauDickinson, 0.0, 2.0, 101, nothing)
-    z_grid = redshift_grid(spec)
-    cosmology_cache,
-    redshift_prior = cosmology_and_redshift_prior(
-        cosmology(madau_dickinson_physical_model(), theta), theta, spec, z_grid
+    z_grid = collect(LinRange(0.0, 2.0, 101))
+    cosmo = cosmology(C, theta)
+    cosmology_cache = CosmologyCache(cosmo, z_grid)
+    redshift_prior_dist = build_redshift_prior(
+        z -> madau_dickinson_source_frame_distribution(z; γ = theta.γ, κ = theta.κ,
+            zpeak = theta.zpeak),
+        cosmology_cache
     )
     samples = [0.0, 0.137, 0.9, 2.0]
     interp = SampleInterpolant(samples, z_grid)
 
-    @test [_interpolate_at_sample(redshift_prior.dN_dz.y, interp, i)
+    @test [_interpolate_at_sample(redshift_prior_dist.dN_dz.y, interp, i)
            for
            i in eachindex(samples)] ≈
-          [interpolate(redshift_prior.dN_dz, z) for z in samples]
+          [interpolate(redshift_prior_dist.dN_dz, z) for z in samples]
     @test [_cdf_at_sample(
                cosmology_cache.inv_E_integral.cumulative,
                cosmology_cache.inv_E_integral.y,

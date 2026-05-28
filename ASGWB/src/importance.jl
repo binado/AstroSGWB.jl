@@ -98,8 +98,8 @@ function compute_importance_weights(
 end
 
 function compute_importance_weights(problem::ImportanceSamplingProblem, Λ::NamedTuple)
-    c = cosmology(problem.model, Λ)
+    c = cosmology(problem.cosmology_type, Λ)
     cache = CosmologyCache(c, problem.redshift_grid)
-    prior = population_prior(problem.model, Λ; z_grid = problem.redshift_grid)
+    prior = single_event_prior(problem.population, c, Λ)
     return compute_importance_weights(problem, Λ, cache, prior)
 end

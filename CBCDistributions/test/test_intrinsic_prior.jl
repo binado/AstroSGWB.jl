@@ -15,6 +15,13 @@ const _theta_default = (
     zpeak = 2.5
 )
 
+const _Z_GRID_TEST = collect(LinRange(0.001, 20.0, 256))
+
+function _make_test_redshift_prior(theta = _theta_default; z_grid = _Z_GRID_TEST)
+    cosmo = LambdaCDM(theta.H0, theta.Ωm)
+    return redshift_prior(MadauDickinsonSourceFrame(), cosmo, theta; z_grid = z_grid)
+end
+
 @testset "intrinsic prior distributions" begin
     mass_dist = OrderedUniformSourceMassPair()
     expected_mass_logpdf = log(2.0) - 2.0 * log(mass_dist.high - mass_dist.low)
@@ -61,15 +68,15 @@ const _theta_default = (
     spin_f32_sample = rand(MersenneTwister(5), spin_f32)
     @test minimum(spin_f32) <= spin_f32_sample <= maximum(spin_f32)
 
-    theta = _theta_default
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
-    redshift_prior = build_redshift_prior(theta, spec, LambdaCDM(theta.H0, theta.Ωm))
-    redshift_dist = RedshiftInterpolatedDistribution(redshift_prior)
-    @test logpdf(redshift_dist, 0.5) ≈ redshift_log_prob(redshift_prior, 0.5)
-    @test !insupport(redshift_dist, spec.z_min - 0.01)
-    @test logpdf(redshift_dist, spec.z_min - 0.01) == -Inf
-    @test !insupport(redshift_dist, spec.z_max + 0.5)
-    @test logpdf(redshift_dist, spec.z_max + 0.5) == -Inf
+    redshift_dist = _make_test_redshift_prior()
+    redshift_prior_val = redshift_dist.prior
+    z_min = minimum(redshift_dist)
+    z_max = maximum(redshift_dist)
+    @test logpdf(redshift_dist, 0.5) ≈ redshift_log_prob(redshift_prior_val, 0.5)
+    @test !insupport(redshift_dist, z_min - 0.01)
+    @test logpdf(redshift_dist, z_min - 0.01) == -Inf
+    @test !insupport(redshift_dist, z_max + 0.5)
+    @test logpdf(redshift_dist, z_max + 0.5) == -Inf
 
     redshift_sample = rand(MersenneTwister(3), redshift_dist)
     @test minimum(redshift_dist) <= redshift_sample <= maximum(redshift_dist)
@@ -114,9 +121,7 @@ end
 end
 
 @testset "IntrinsicPrior batch logpdf matches manual component sum" begin
-    theta = _theta_default
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
-    redshift_prior = build_redshift_prior(theta, spec, LambdaCDM(theta.H0, theta.Ωm))
+    redshift_prior_val = _make_test_redshift_prior().prior
     prior = intrinsic_prior(FullBNS())
     samples = (
         mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),
@@ -140,8 +145,8 @@ end
     CBCDistributions.logpdf!(out, prior, samples)
     @test out ≈ expected
     @test logpdf(prior, samples) .+
-          redshift_log_prob_samples(redshift_prior, samples.redshift) ≈
-          expected .+ redshift_log_prob.(Ref(redshift_prior), samples.redshift)
+          redshift_log_prob_samples(redshift_prior_val, samples.redshift) ≈
+          expected .+ redshift_log_prob.(Ref(redshift_prior_val), samples.redshift)
 end
 
 @testset "IntrinsicPrior output eltype and first-key sizing" begin
@@ -205,9 +210,7 @@ end
 end
 
 @testset "cached intrinsic logpdf matches redshift composition" begin
-    theta = _theta_default
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
-    redshift_prior = build_redshift_prior(theta, spec, LambdaCDM(theta.H0, theta.Ωm))
+    redshift_prior_val = _make_test_redshift_prior().prior
     prior = intrinsic_prior(FullBNS())
     samples = (
         mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),
@@ -222,17 +225,16 @@ end
     @test length(cached_log_prob) == length(samples.redshift)
     expected = logpdf(prior, samples)
     expected_with_redshift = expected .+
-                             redshift_log_prob.(Ref(redshift_prior), samples.redshift)
-    redshift_log_prob_vec = redshift_log_prob_samples(redshift_prior, samples.redshift)
+                             redshift_log_prob.(Ref(redshift_prior_val), samples.redshift)
+    redshift_log_prob_vec = redshift_log_prob_samples(redshift_prior_val, samples.redshift)
     @test cached_log_prob .+ redshift_log_prob_vec ≈ expected_with_redshift
     out = similar(redshift_log_prob_vec)
-    redshift_log_prob_samples!(out, redshift_prior, samples.redshift)
+    redshift_log_prob_samples!(out, redshift_prior_val, samples.redshift)
     @test cached_log_prob .+ out ≈ expected_with_redshift
 end
 
 @testset "cached intrinsic logpdf with ForwardDiff.Dual population parameter" begin
     theta = _theta_default
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     samples = (
         mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),
         redshift = [0.1, 0.2],
@@ -243,7 +245,10 @@ end
     )
     cached_log_prob = logpdf(intrinsic_prior(FullBNS()), samples)
     h_dual = (; theta..., γ = ForwardDiff.Dual(2.7, 1.0))
-    redshift_prior_dual = build_redshift_prior(h_dual, spec, LambdaCDM(theta.H0, theta.Ωm))
+    cosmo_dual = LambdaCDM(theta.H0, theta.Ωm)
+    redshift_dist_dual = redshift_prior(
+        MadauDickinsonSourceFrame(), cosmo_dual, h_dual; z_grid = _Z_GRID_TEST)
+    redshift_prior_dual = redshift_dist_dual.prior
     prior_dual = intrinsic_prior(FullBNS())
     expected = logpdf(prior_dual, samples) .+
                redshift_log_prob.(Ref(redshift_prior_dual), samples.redshift)

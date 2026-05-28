@@ -1,29 +1,33 @@
-using Distributions: Uniform
+using Distributions: Uniform, product_distribution
 
-function madau_dickinson_physical_model(
-        ::Type{C} = ModifiedPropagation{LambdaCDM}
-) where {C <: AbstractCosmology}
-    return PhysicalModel(C, _full_bns_population(MadauDickinsonSourceFrameModel()))
+"""
+    BNSPopulationModel <: PopulationModel
+
+Full binary-neutron-star population model: Madau–Dickinson source-frame
+redshift distribution plus uniform mass, spin, and tidal-deformability priors.
+Implements the three-method [`PopulationModel`](@ref) contract.
+"""
+struct BNSPopulationModel <: PopulationModel end
+
+hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
+
+function hyperprior(::BNSPopulationModel)
+    return product_distribution((
+        γ = Uniform(0.5, 10.0),
+        κ = Uniform(0.05, 10.0),
+        zpeak = Uniform(0.05, 10.0)
+    ))
 end
 
-function _full_bns_population(redshift_component)
+function single_event_prior(::BNSPopulationModel, cosmo::AbstractCosmology, Λ::NamedTuple)
+    z_d = redshift_prior(MadauDickinsonSourceFrame(), cosmo, Λ)
     spin = AlignedSpinChiSimple()
-    return PopulationModel((
+    return product_distribution((
         mass = OrderedUniformSourceMassPair(),
-        redshift = redshift_component,
+        redshift = z_d,
         χ₁ = spin,
         χ₂ = spin,
         Λ₁ = Uniform(0.0, BNS_LAMBDA_HIGH),
         Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
     ))
-end
-
-function model_section_dict(model::PhysicalModel)
-    Dict{String, Any}("cosmology" => cosmology_config_name(model.cosmology_type))
-end
-
-function redshift_prior_spec_from_population(model::PhysicalModel, redshift_component)
-    redshift_component isa MadauDickinsonSourceFrameModel ||
-        throw(ArgumentError("unsupported redshift population component $(typeof(redshift_component))"))
-    return MadauDickinson
 end

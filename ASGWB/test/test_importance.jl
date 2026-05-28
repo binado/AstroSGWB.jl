@@ -7,6 +7,10 @@ if !@isdefined parity_bundle_dir
 end
 include(joinpath(@__DIR__, "parity_fixtures.jl"))
 
+const _IMP_C = ModifiedPropagation{LambdaCDM}
+const _IMP_POP = BNSPopulationModel()
+const _IMP_ORDER = full_hyperparameters(_IMP_C, _IMP_POP)
+
 function _importance_type_test_problem(n::Integer)
     samples = (
         mass = stack_source_masses(fill(1.4, n), fill(1.2, n)),
@@ -33,13 +37,11 @@ function _importance_type_test_problem(n::Integer)
         1.0,
         1.0
     )
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 1.0, 32, nothing)
-    model = madau_dickinson_physical_model()
     Λ = canonical_hyperparameters(
-        model,
+        _IMP_ORDER,
         (H0 = 67.0, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5)
     )
-    return importance_sampling_problem(proposal, observation, model, Λ, spec, 1.0)
+    return importance_sampling_problem(proposal, observation, _IMP_C, _IMP_POP, Λ, 1.0)
 end
 
 @testset "importance smoke" begin
@@ -59,8 +61,10 @@ end
     @test all(isfinite, model_evaluation.spectral_density)
     @test isfinite(model_evaluation.redshift_integral)
     @test isfinite(model_evaluation.expected_number_of_sources)
-    cosmology_cache = CosmologyCache(cosmology(cache.model, theta), cache.redshift_grid)
-    prior = population_prior(cache.model, theta; z_grid = cache.redshift_grid)
+
+    c = cosmology(cache.cosmology_type, theta)
+    cosmology_cache = CosmologyCache(c, cache.redshift_grid)
+    prior = single_event_prior(cache.population, c, theta)
     iw = compute_importance_weights(cache, theta, cosmology_cache, prior)
     @test iw.weights ≈ model_evaluation.weights
     @test iw.log_ratio ≈ model_evaluation.log_ratio
@@ -92,17 +96,16 @@ end
 
     empty_problem = _importance_type_test_problem(0)
     populated_problem = _importance_type_test_problem(1)
-    cosmology_dual = cosmology(madau_dickinson_physical_model(), theta)
-    empty_cosmology_cache = CosmologyCache(cosmology_dual, empty_problem.redshift_grid)
-    empty_redshift_prior = population_prior(empty_problem.model, theta; z_grid = empty_problem.redshift_grid)
-    populated_cosmology_cache = CosmologyCache(cosmology_dual, populated_problem.redshift_grid)
-    populated_redshift_prior = population_prior(
-        populated_problem.model, theta; z_grid = populated_problem.redshift_grid)
+    c_dual = cosmology(_IMP_C, theta)
+    empty_cosmology_cache = CosmologyCache(c_dual, empty_problem.redshift_grid)
+    empty_prior = single_event_prior(_IMP_POP, c_dual, theta)
+    populated_cosmology_cache = CosmologyCache(c_dual, populated_problem.redshift_grid)
+    populated_prior = single_event_prior(_IMP_POP, c_dual, theta)
 
     empty_iw = compute_importance_weights(
-        empty_problem, theta, empty_cosmology_cache, empty_redshift_prior)
+        empty_problem, theta, empty_cosmology_cache, empty_prior)
     populated_iw = compute_importance_weights(
-        populated_problem, theta, populated_cosmology_cache, populated_redshift_prior)
+        populated_problem, theta, populated_cosmology_cache, populated_prior)
 
     @test isempty(empty_iw.weights)
     @test all(isfinite, populated_iw.weights)

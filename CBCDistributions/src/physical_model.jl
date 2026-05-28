@@ -1,86 +1,105 @@
 using Distributions
 using Distributions: ProductNamedTupleDistribution
 
-abstract type ParametrizedModel end
+"""
+    PopulationModel
 
-Base.broadcastable(m::ParametrizedModel) = Ref(m)
+Abstract supertype for caller-defined population models.  Concrete subtypes
+must implement the three-method contract:
 
-struct PhysicalModel{C <: AbstractCosmology, P <: ParametrizedModel} <: ParametrizedModel
-    cosmology_type::Type{C}
-    population::P
+- `hyperparameters(pop) -> NTuple{N, Symbol}` — ordered population parameter names.
+- `hyperprior(pop) -> ProductNamedTupleDistribution` — prior over those parameters.
+- `single_event_prior(pop, cosmo, Λ) -> ProductNamedTupleDistribution` — per-event
+  distribution conditioned on cosmology `cosmo` and hyperparameters `Λ`.
+"""
+abstract type PopulationModel end
+
+Base.broadcastable(m::PopulationModel) = Ref(m)
+
+"""
+    hyperparameters(pop::PopulationModel) -> NTuple{N,Symbol}
+
+Ordered tuple of hyperparameter symbols owned by `pop`.  Implement on concrete
+subtypes; do not overlap with the cosmology symbols.
+"""
+function hyperparameters end
+
+"""
+    hyperprior(pop::PopulationModel) -> ProductNamedTupleDistribution
+    hyperprior(::Type{C}) -> ProductNamedTupleDistribution
+
+Prior distribution over hyperparameters.  The population variant covers
+`hyperparameters(pop)`; the cosmology-type variant covers `hyperparameters(C)`.
+"""
+function hyperprior end
+
+"""
+    single_event_prior(pop, cosmo, Λ) -> ProductNamedTupleDistribution
+
+Per-event distribution over intrinsic parameters for a given cosmology and
+hyperparameter state `Λ`.  Implement on concrete `PopulationModel` subtypes.
+"""
+function single_event_prior end
+
+"""
+    full_hyperparameters(C, pop) -> NTuple{N,Symbol}
+
+Concatenation of cosmology and population hyperparameter symbols, in the order
+used for the flat HMC/Turing parameter vector.
+"""
+function full_hyperparameters(::Type{C}, pop::PopulationModel) where {C <: AbstractCosmology}
+    return (hyperparameters(C)..., hyperparameters(pop)...)
 end
 
-function hyperparameters(model::PhysicalModel)
-    return (hyperparameters(model.cosmology_type)..., hyperparameters(model.population)...)
+"""
+    full_hyperprior(C, pop) -> ProductNamedTupleDistribution
+
+Combined prior over all hyperparameters: cosmology first, then population.
+"""
+function full_hyperprior(::Type{C}, pop::PopulationModel) where {C <: AbstractCosmology}
+    return product_distribution(merge(hyperprior(C).dists, hyperprior(pop).dists))
 end
 
-function cosmology(model::PhysicalModel, Λ::NamedTuple)
-    return cosmology(model.cosmology_type, Λ)
-end
+"""
+    validate_hyperparameters(order, Λ; context) -> nothing
 
-function population_prior(model::PhysicalModel, Λ::NamedTuple; kwargs...)
-    return population_prior(model.population, cosmology(model, Λ), Λ; kwargs...)
-end
-
-struct PureModel{D <: Distribution} <: ParametrizedModel
-    distribution::D
-end
-
-hyperparameters(::PureModel) = ()
-function population_prior(model::PureModel, cosmology::AbstractCosmology, Λ::NamedTuple; kwargs...)
-    model.distribution
-end
-
-struct PopulationModel{Names, Components} <: ParametrizedModel
-    components::NamedTuple{Names, Components}
-
-    function PopulationModel(components::NamedTuple{
-            Names, Components}) where {Names, Components}
-        wrapped = map(_as_population_component, components)
-        flat = Symbol[]
-        for component in values(wrapped)
-            append!(flat, hyperparameters(component))
-        end
-        length(unique(flat)) == length(flat) ||
-            throw(ArgumentError("population components define duplicate hyperparameters: $(Tuple(flat))"))
-        WrappedComponents = typeof(wrapped).parameters[2]
-        return new{Names, WrappedComponents}(wrapped)
-    end
-end
-
-_as_population_component(component::ParametrizedModel) = component
-_as_population_component(component::Distribution) = PureModel(component)
-
-function hyperparameters(model::PopulationModel)
-    return Tuple(Iterators.flatten(hyperparameters(c) for c in values(model.components)))
-end
-
-function population_prior(
-        model::PopulationModel,
-        cosmology::AbstractCosmology,
+Assert that `keys(Λ) == order` exactly (same symbols, same order).
+"""
+function validate_hyperparameters(
+        order::Tuple{Vararg{Symbol}},
         Λ::NamedTuple;
-        kwargs...
+        context::AbstractString = "hyperparameters"
 )
-    return product_distribution((;
-        (name => population_prior(component, cosmology, Λ; kwargs...)
-    for (name, component) in pairs(model.components))...))
+    keys(Λ) == order || throw(
+        ArgumentError("$(context) must match order $(order), got $(keys(Λ))"),
+    )
+    return nothing
 end
 
-struct MadauDickinsonSourceFrameModel <: ParametrizedModel end
+"""
+    canonical_hyperparameters(order, Λ; context, eltype) -> NamedTuple
 
-hyperparameters(::MadauDickinsonSourceFrameModel) = (:γ, :κ, :zpeak)
-
-function population_prior(
-        ::MadauDickinsonSourceFrameModel,
-        cosmology::AbstractCosmology,
+Re-key `Λ` into the order given by `order`, converting values to `eltype`.
+`Λ` may have its keys in any order as long as the set matches `order` exactly.
+Pass `eltype = nothing` to preserve original value types.
+"""
+function canonical_hyperparameters(
+        order::Tuple{Vararg{Symbol}},
         Λ::NamedTuple;
-        z_grid
+        context::AbstractString = "hyperparameters",
+        eltype = Float64
 )
-    cache = CosmologyCache(cosmology, z_grid)
-    γ, κ, zpeak = Λ.γ, Λ.κ, Λ.zpeak
-    source_frame = z -> madau_dickinson_source_frame_distribution(z; γ, κ, zpeak)
-    return RedshiftInterpolatedDistribution(build_redshift_prior(source_frame, cache))
+    Set(keys(Λ)) == Set(order) || throw(
+        ArgumentError(
+        "$(context) must exactly match $(order), got $(keys(Λ))"),
+    )
+    eltype === nothing && return (; (k => Λ[k] for k in order)...)
+    return (; (k => eltype(Λ[k]) for k in order)...)
 end
+
+# ---------------------------------------------------------------------------
+# Batched log-pdf helpers (consumed by likelihood and importance-sampling paths)
+# ---------------------------------------------------------------------------
 
 function _component_batch_length(d::Distribution, samples::NamedTuple, key)
     haskey(samples, key) ||
@@ -93,6 +112,12 @@ function _batched_output_eltype(dists)
     return promote_type(map(eltype, values(dists))...)
 end
 
+"""
+    batched_logpdf(d::ProductNamedTupleDistribution, samples::NamedTuple) -> Vector
+
+Per-sample log-density of `d` evaluated against a struct-of-arrays `samples`.
+Each field of `d.dists` is matched to the same field in `samples`.
+"""
 function batched_logpdf(d::ProductNamedTupleDistribution, samples::NamedTuple)
     first_key = first(keys(d.dists))
     n = _component_batch_length(d.dists[first_key], samples, first_key)
@@ -107,6 +132,11 @@ function batched_logpdf(d::ProductNamedTupleDistribution, samples::NamedTuple)
     return out
 end
 
+"""
+    batched_logpdf(d::Distribution, samples) -> logpdf(d, samples)
+
+Scalar fallback for non-batched distributions.
+"""
 function batched_logpdf(d::Distribution, samples)
     return logpdf(d, samples)
 end

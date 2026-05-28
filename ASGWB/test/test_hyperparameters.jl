@@ -3,85 +3,75 @@ using ASGWB
 using Distributions: product_distribution, Normal, ProductNamedTupleDistribution
 
 @testset "Hyperparameter Validation" begin
-    model = madau_dickinson_physical_model()
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    order = full_hyperparameters(C, pop)
     expected_order = (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+    @test order == expected_order
 
-    # 1. ProductNamedTupleDistribution setup
+    # ProductNamedTupleDistribution setup
     dists = (; (k => Normal(0.0, 1.0) for k in expected_order)...)
     prior = product_distribution(dists)
 
     @testset "validate_subset" begin
-        # Valid subsets (tuple)
-        @test validate_subset((:H0, :Ωm), model) === (:H0, :Ωm)
+        @test validate_subset((:H0, :Ωm), order) === (:H0, :Ωm)
         @test validate_subset((:H0, :Ωm), prior) === (:H0, :Ωm)
         @test validate_subset((:H0, :Ωm), expected_order) === (:H0, :Ωm)
 
-        # Empty subset is allowed in validate_subset
-        @test validate_subset((), model) === ()
+        @test validate_subset((), order) === ()
         @test validate_subset((), prior) === ()
         @test validate_subset((), expected_order) === ()
 
-        # Valid subsets (NamedTuple)
         nt = (H0 = 70.0, Ωm = 0.3)
-        @test validate_subset(nt, model) === nt
+        @test validate_subset(nt, order) === nt
         @test validate_subset(nt, prior) === nt
         @test validate_subset(nt, expected_order) === nt
 
-        # Unknown symbols throw ArgumentError
-        @test_throws ArgumentError validate_subset((:invalid_key,), model)
+        @test_throws ArgumentError validate_subset((:invalid_key,), order)
         @test_throws ArgumentError validate_subset((:invalid_key,), prior)
         @test_throws ArgumentError validate_subset((:invalid_key,), expected_order)
-        @test_throws ArgumentError validate_subset((invalid_key = 1.0,), model)
+        @test_throws ArgumentError validate_subset((invalid_key = 1.0,), order)
 
-        # Repeating/Duplicate symbols throw ArgumentError
-        @test_throws ArgumentError validate_subset((:H0, :H0), model)
+        @test_throws ArgumentError validate_subset((:H0, :H0), order)
         @test_throws ArgumentError validate_subset((:H0, :H0), prior)
         @test_throws ArgumentError validate_subset((:H0, :H0), expected_order)
     end
 
     @testset "validate_hyperparameters" begin
-        # Exact match
         ok_nt = (; (k => 1.0 for k in expected_order)...)
-        @test validate_hyperparameters(model, ok_nt) === nothing
+        @test validate_hyperparameters(order, ok_nt) === nothing
 
-        # Missing keys
         missing_nt = (H0 = 70.0, Ωm = 0.3)
-        @test_throws ArgumentError validate_hyperparameters(model, missing_nt)
+        @test_throws ArgumentError validate_hyperparameters(order, missing_nt)
 
-        # Extra keys
         extra_nt = (; (k => 1.0 for k in expected_order)..., extra_key = 1.0)
-        @test_throws ArgumentError validate_hyperparameters(model, extra_nt)
+        @test_throws ArgumentError validate_hyperparameters(order, extra_nt)
     end
 
     @testset "hyperparameters W0CDM / W0WaCDM" begin
-        @test hyperparameters(madau_dickinson_physical_model(ModifiedPropagation{W0CDM})) ==
+        @test full_hyperparameters(ModifiedPropagation{W0CDM}, BNSPopulationModel()) ==
               (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-        @test hyperparameters(madau_dickinson_physical_model(ModifiedPropagation{W0WaCDM})) ==
+        @test full_hyperparameters(ModifiedPropagation{W0WaCDM}, BNSPopulationModel()) ==
               (:H0, :Ωm, :w0, :wa, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
     end
 end
 
-@testset "model cosmology and external parameter mappings" begin
+@testset "model cosmology from hyperparameters" begin
     base = (H0 = 67.0, Ωm = 0.3, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 5.7, zpeak = 2.0)
 
-    model_lcdm = madau_dickinson_physical_model()
-    Λ_lcdm = (; H0 = base.H0, Ωm = base.Ωm, Ξ₀ = base.Ξ₀, Ξₙ = base.Ξₙ,
-        γ = base.γ, κ = base.κ, zpeak = base.zpeak)
-    @test cosmology(model_lcdm, Λ_lcdm) isa ModifiedPropagation{<:LambdaCDM}
+    C_lcdm = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    order_lcdm = full_hyperparameters(C_lcdm, pop)
+    Λ_lcdm = canonical_hyperparameters(order_lcdm, base)
+    @test cosmology(C_lcdm, Λ_lcdm) isa ModifiedPropagation{<:LambdaCDM}
 
-    model_w0 = madau_dickinson_physical_model(ModifiedPropagation{W0CDM})
-    Λ_w0 = (; H0 = base.H0, Ωm = base.Ωm, w0 = -0.9, Ξ₀ = base.Ξ₀, Ξₙ = base.Ξₙ,
-        γ = base.γ, κ = base.κ, zpeak = base.zpeak)
-    @test cosmology(model_w0, Λ_w0) isa ModifiedPropagation{<:W0CDM}
+    C_w0 = ModifiedPropagation{W0CDM}
+    order_w0 = full_hyperparameters(C_w0, pop)
+    Λ_w0 = canonical_hyperparameters(order_w0, (; base..., w0 = -0.9))
+    @test cosmology(C_w0, Λ_w0) isa ModifiedPropagation{<:W0CDM}
 
-    model_cpl = madau_dickinson_physical_model(ModifiedPropagation{W0WaCDM})
-    Λ_cpl = (; H0 = base.H0, Ωm = base.Ωm, w0 = -0.9, wa = 0.2, Ξ₀ = base.Ξ₀,
-        Ξₙ = base.Ξₙ, γ = base.γ, κ = base.κ, zpeak = base.zpeak)
-    @test cosmology(model_cpl, Λ_cpl) isa ModifiedPropagation{<:W0WaCDM}
-
-    @test external_parameter_names(model_lcdm) ==
-          (H0 = "H0", Ωm = "Omega_m", Ξ₀ = "Xi_0", Ξₙ = "Xi_n",
-        γ = "gamma", κ = "kappa", zpeak = "z_peak")
-    @test external_parameter_names(model_w0).w0 == "w0"
-    @test external_parameter_names(model_cpl).wa == "wa"
+    C_cpl = ModifiedPropagation{W0WaCDM}
+    order_cpl = full_hyperparameters(C_cpl, pop)
+    Λ_cpl = canonical_hyperparameters(order_cpl, (; base..., w0 = -0.9, wa = 0.2))
+    @test cosmology(C_cpl, Λ_cpl) isa ModifiedPropagation{<:W0WaCDM}
 end

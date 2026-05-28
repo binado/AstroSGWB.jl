@@ -23,6 +23,8 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
         parity_observation_kwargs(:posterior)...
     )
     theta0 = PARITY_THETA
+    order = _PARITY_ORDER
+
     reordered_priors = product_distribution((
         zpeak = Uniform(0.0, 5.0),
         κ = Uniform(0.0, 10.0),
@@ -33,12 +35,10 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
         H0 = Uniform(20.0, 140.0)
     ))
 
-    @test_throws ArgumentError ASGWBLogDensity(
-        cache, reordered_priors; model = PARITY_MODEL)
+    @test_throws ArgumentError ASGWBLogDensity(cache, reordered_priors)
 
-    problem = ASGWBLogDensity(cache, PARITY_PRIORS; model = PARITY_MODEL)
-    ordered_theta0 = (;
-        (k => theta0[k] for k in hyperparameters(PARITY_MODEL))...)
+    problem = ASGWBLogDensity(cache, PARITY_PRIORS)
+    ordered_theta0 = (; (k => theta0[k] for k in order)...)
 
     @test unconstrained_initial_point(problem, theta0) ==
           collect(Bijectors.link(PARITY_PRIORS, ordered_theta0))
@@ -54,9 +54,8 @@ end
         )
         theta0 = PARITY_THETA
         priors = PARITY_PRIORS
-        prior_bounds = PARITY_PRIOR_BOUNDS
 
-        problem = ASGWBLogDensity(cache, priors; model = PARITY_MODEL)
+        problem = ASGWBLogDensity(cache, priors)
         z0 = unconstrained_initial_point(problem, theta0)
         ad_problem = ad_logdensity(problem)
         logdensity,
@@ -73,24 +72,24 @@ end
 
         samples, stats,
         sampling_problem = sample_with_advancedhmc(
-            cache, priors, theta0; model = PARITY_MODEL, n_adapts = 3, n_samples = 3)
+            cache, priors, theta0; n_adapts = 3, n_samples = 3)
 
         @test sampling_problem isa ASGWBLogDensity
         @test length(samples) == 3
         @test length(stats) == 3
 
-        _prop_sym = Dict(
-            "H0" => :H0,
-            "Omega_m" => :Ωm,
-            "Xi_0" => :Ξ₀,
-            "Xi_n" => :Ξₙ,
-            "gamma" => :γ,
-            "kappa" => :κ,
-            "z_peak" => :zpeak
+        prior_bounds = Dict(
+            :H0 => (20.0, 140.0),
+            :Ωm => (0.05, 0.95),
+            :Ξ₀ => (0.5, 5.0),
+            :Ξₙ => (0.05, 3.0),
+            :γ => (0.5, 10.0),
+            :κ => (0.05, 10.0),
+            :zpeak => (0.05, 10.0)
         )
         for sample in samples
-            for (name, (low, high)) in prior_bounds
-                value = getproperty(sample, _prop_sym[name])
+            for (sym, (low, high)) in prior_bounds
+                value = getproperty(sample, sym)
                 @test isfinite(value)
                 @test low <= value <= high
             end

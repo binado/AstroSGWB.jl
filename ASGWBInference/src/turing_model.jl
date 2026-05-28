@@ -7,27 +7,29 @@ function condition_turing_model(
         theta0::NamedTuple,
         prior::ProductNamedTupleDistribution,
         sample_only::Union{Nothing, Tuple{Vararg{Symbol}}};
-        model::AbstractASGWBModel
+        order::Tuple{Vararg{Symbol}}
 )
-    validate_hyperprior(model, prior)
-    ordered_theta0 = canonical_hyperparameters(model, theta0; context = "initial hyperparameters")
+    validate_hyperprior(order, prior)
+    ordered_theta0 = canonical_hyperparameters(order, theta0; context = "initial hyperparameters")
     sample_only === nothing && return turing_model
     isempty(sample_only) && throw(
         ArgumentError(
         "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
     ),
     )
-    validate_subset(sample_only, model)
-    order = hyperparameters(model)
+    validate_subset(sample_only, order)
     fixed = Tuple(s for s in order if s ∉ sample_only)
     isempty(fixed) && return turing_model
     return turing_model | (; (s => ordered_theta0[s] for s in fixed)...)
 end
 
+# Generate a `sample_hyperparameters` submodel for each (cosmology, BNSPopulationModel)
+# combination. `full_hyperparameters` is called at module-load time so Turing sees
+# literal symbol names in the generated tilde-sites.
 for C in SUPPORTED_COSMOLOGIES
-    flds = (hyperparameters(C)..., :γ, :κ, :zpeak)
+    flds = full_hyperparameters(C, BNSPopulationModel())
     @eval begin
-        @model function sample_hyperparameters(c::Val{$C}, d)
+        @model function sample_hyperparameters(c::Val{$C}, pop::BNSPopulationModel, d)
             $([:($f ~ d.$f) for f in flds]...)
             return (; $(flds...))
         end
@@ -35,15 +37,15 @@ for C in SUPPORTED_COSMOLOGIES
 end
 
 @model function asgwb_importance_turing_model(
-        asgw_model::PhysicalModel{C},
         track::Bool,
-        problem::ImportanceSamplingProblem,
+        problem::ImportanceSamplingProblem{C, M},
         prior::ProductNamedTupleDistribution,
         observed_in_band::AbstractVector{<:Real}
-) where {C}
-    Λ ~ to_submodel(sample_hyperparameters(Val(C), prior.dists), false)
+) where {C, M}
+    Λ ~ to_submodel(sample_hyperparameters(Val(C), problem.population, prior.dists), false)
+    order = full_hyperparameters(C, problem.population)
     Λc = canonical_hyperparameters(
-        asgw_model,
+        order,
         Λ;
         context = "sampled hyperparameters",
         eltype = nothing
@@ -71,15 +73,14 @@ end
 end
 
 function build_turing_model(
-        problem::ImportanceSamplingProblem,
+        problem::ImportanceSamplingProblem{C, M},
         prior::ProductNamedTupleDistribution;
-        model::AbstractASGWBModel,
         track::Bool = false,
         observed_spectral_density::AbstractVector{<:Real} = problem.observation.fiducial_spectral_density
-)
-    validate_hyperprior(model, prior)
+) where {C, M}
+    order = full_hyperparameters(C, problem.population)
+    validate_hyperprior(order, prior)
     return asgwb_importance_turing_model(
-        model,
         track,
         problem,
         prior,

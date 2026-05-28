@@ -26,10 +26,12 @@ function load_problem(
 )::ImportanceSamplingProblem where {D <: Detector}
     catalog = load_bundle(bundle_path)
     verify_model_fingerprint(catalog, model_path)
-    config = load_model_config(model_path)
+    C, pop, Λ = load_model_toml(model_path)
     return load_problem(
         catalog,
-        config,
+        C,
+        pop,
+        Λ,
         detectors;
         local_merger_rate = local_merger_rate,
         observation_time_yr = observation_time_yr
@@ -38,25 +40,22 @@ end
 
 function load_problem(
         catalog::WaveformCatalog,
-        config::ModelConfig,
+        ::Type{C},
+        population::M,
+        Λ::NamedTuple,
         detectors::AbstractVector{D};
         local_merger_rate::Real,
         observation_time_yr::Real
-)::ImportanceSamplingProblem where {D <: Detector}
+)::ImportanceSamplingProblem where {C <: AbstractCosmology, M <: PopulationModel,
+                                    D <: Detector}
     length(detectors) < 2 && throw(
         ArgumentError(
         "load_problem: at least two detectors are required to build effective_psd and sgwb_scale",
     ),
     )
-
-    model = config.model
-    require_redshift_population(model)
-    Λ = config.fiducial_hyperparameters
-    spec = config.redshift_prior_spec
-    cache_C = cosmology_type(model)
-    cache_C ∈ SUPPORTED_COSMOLOGIES || throw(
+    C ∈ SUPPORTED_COSMOLOGIES || throw(
         ArgumentError(
-        "model.toml specifies unsupported cosmology type $(cache_C); " *
+        "model.toml specifies unsupported cosmology type $(C); " *
         "supported: $(join(SUPPORTED_COSMOLOGIES, ", "))",
     ),
     )
@@ -98,9 +97,9 @@ function load_problem(
 
     intrinsic_site_order = _bns_intrinsic_site_order(catalog.samples)
     samples = _catalog_samples_to_bns_soa(catalog.samples)
-    cached_flux_over_dgw2 = reconstruct_cached_flux_over_dgw2(catalog.fluxes, z, model, Λ)
-    dgw_fid_sq = reconstruct_dgw_fid_sq(z, model, Λ)
-    lp = reconstruct_proposal_log_prob(samples, spec, model, Λ)
+    cached_flux_over_dgw2 = reconstruct_cached_flux_over_dgw2(catalog.fluxes, z, C, Λ)
+    dgw_fid_sq = reconstruct_dgw_fid_sq(z, C, Λ)
+    lp = reconstruct_proposal_log_prob(samples, C, population, Λ)
     intrinsic_vector = _build_intrinsic_vector(catalog.samples, intrinsic_site_order)
 
     proposal = ProposalData(
@@ -114,14 +113,14 @@ function load_problem(
 
     local_rate = Float64(local_merger_rate)
 
-    redshift_cache = build_redshift_grid_cache(proposal, spec)
+    redshift_cache = build_redshift_grid_cache(proposal)
     strategy = resolve_intrinsic_strategy(proposal.intrinsic_site_order)
     p_shell = ImportanceSamplingProblem(
         proposal,
         observation,
-        model,
+        C,
+        population,
         Λ,
-        spec,
         redshift_cache.redshift_grid,
         redshift_cache,
         local_rate,
@@ -150,9 +149,9 @@ function load_problem(
     return ImportanceSamplingProblem(
         proposal,
         observation2,
-        model,
+        C,
+        population,
         Λ,
-        spec,
         redshift_cache.redshift_grid,
         redshift_cache,
         local_rate,

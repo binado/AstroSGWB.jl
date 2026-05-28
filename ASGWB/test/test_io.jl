@@ -57,71 +57,64 @@ end
     end
 end
 
-@testset "save_model_config/load_model_config round-trip" begin
+@testset "save_model_toml/load_model_toml round-trip" begin
     cases = (
         (
-            madau_dickinson_physical_model(),
+            ModifiedPropagation{LambdaCDM},
+            BNSPopulationModel(),
             (H0 = 67.4, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5),
             "ModifiedPropagation{LambdaCDM}"
         ),
         (
-            madau_dickinson_physical_model(ModifiedPropagation{W0CDM}),
+            ModifiedPropagation{W0CDM},
+            BNSPopulationModel(),
             (H0 = 67.4, Ωm = 0.315, w0 = -0.9, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0,
                 zpeak = 2.5),
             "ModifiedPropagation{W0CDM}"
         ),
         (
-            madau_dickinson_physical_model(ModifiedPropagation{W0WaCDM}),
+            ModifiedPropagation{W0WaCDM},
+            BNSPopulationModel(),
             (H0 = 67.4, Ωm = 0.315, w0 = -0.9, wa = 0.1, Ξ₀ = 1.0, Ξₙ = 0.0,
                 γ = 2.7, κ = 3.0, zpeak = 2.5),
             "ModifiedPropagation{W0WaCDM}"
         )
     )
 
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
-    for (model, Λ, tag) in cases
-        config = ModelConfig(model, canonical_hyperparameters(model, Λ), spec)
+    for (C, pop, Λ_raw, tag) in cases
+        order = full_hyperparameters(C, pop)
+        Λ = canonical_hyperparameters(order, Λ_raw)
         path = joinpath(mktempdir(), "model.toml")
-        save_model_config(path, config)
-        loaded = load_model_config(path)
+        save_model_toml(path, C, Λ)
+        C2, pop2, Λ2 = load_model_toml(path)
         @testset "$tag" begin
-            @test loaded.model.cosmology_type === model.cosmology_type
-            @test loaded.fiducial_hyperparameters == config.fiducial_hyperparameters
-            @test loaded.redshift_prior_spec.family == spec.family
-            @test loaded.redshift_prior_spec.z_min == spec.z_min
-            @test loaded.redshift_prior_spec.z_max == spec.z_max
-            @test loaded.redshift_prior_spec.num_interp == spec.num_interp
-            @test loaded.redshift_prior_spec.time_delay_model === nothing
+            @test C2 === C
+            @test pop2 isa BNSPopulationModel
+            @test Λ2 == Λ
         end
     end
 end
 
-@testset "load_model_config requires [parameters]" begin
+@testset "load_model_toml requires [parameters]" begin
     path = joinpath(mktempdir(), "model.toml")
     write(path,
         """
         [model]
         cosmology = "ModifiedPropagation{LambdaCDM}"
-
-        [population.redshift]
-        model = "madau_dickinson_source_frame"
-        z_min = 0.001
-        z_max = 20.0
-        num_interp = 64
-        time_delay_model = "none"
         """)
-    @test_throws ArgumentError load_model_config(path)
+    @test_throws ArgumentError load_model_toml(path)
 end
 
 @testset "load_problem reconstructs derived fields" begin
     problem = _load_variant(:importance_context)
     z = problem.proposal.samples.redshift
     Λ = fiducial_hyperparameters(problem)
-    spec = problem.redshift_prior_spec
+    C = problem.cosmology_type
+    pop = problem.population
 
-    expected_dgw_sq = reconstruct_dgw_fid_sq(z, problem.model, Λ)
-    expected_lp = reconstruct_proposal_log_prob(problem.proposal.samples, spec, problem.model, Λ)
-    expected_ri = fiducial_redshift_integral(problem.model, Λ, spec)
+    expected_dgw_sq = reconstruct_dgw_fid_sq(z, C, Λ)
+    expected_lp = reconstruct_proposal_log_prob(problem.proposal.samples, C, pop, Λ)
+    expected_ri = fiducial_redshift_integral(C, pop, Λ)
 
     @test problem.proposal.dgw_fid_sq ≈ expected_dgw_sq
     @test problem.proposal.log_prob ≈ expected_lp
@@ -131,9 +124,9 @@ end
 
 @testset "importance_sampling_problem matches load_problem fixture" begin
     from_file = _load_variant(:importance_context)
-    model = from_file.model
+    C = from_file.cosmology_type
+    pop = from_file.population
     Λ = from_file.fiducial_hyperparameters
-    spec = from_file.redshift_prior_spec
     samples = (
         mass = stack_source_masses([1.4, 1.4], [1.2, 1.2]),
         redshift = [0.1, 0.2],
@@ -142,10 +135,10 @@ end
         Λ₁ = [100.0, 100.0],
         Λ₂ = [100.0, 100.0]
     )
-    lp = reconstruct_proposal_log_prob(samples, spec, model, Λ)
+    lp = reconstruct_proposal_log_prob(samples, C, pop, Λ)
     intrinsic_mat = Float64[1.4 1.2 0.1 0.0 0.0 100.0 100.0
                             1.4 1.2 0.2 0.0 0.0 100.0 100.0]
-    dgw_sq = reconstruct_dgw_fid_sq(samples.redshift, model, Λ)
+    dgw_sq = reconstruct_dgw_fid_sq(samples.redshift, C, Λ)
     proposal = ProposalData(
         FULL_BNS_INTRINSIC_ORDER,
         samples,
@@ -157,9 +150,9 @@ end
     from_memory = importance_sampling_problem(
         proposal,
         from_file.observation,
-        model,
+        C,
+        pop,
         Λ,
-        spec,
         from_file.local_merger_rate
     )
 
@@ -177,8 +170,7 @@ end
     @test from_memory.observation.in_band_mask == from_file.observation.in_band_mask
     @test from_memory.observation.fiducial_spectral_density ≈
           from_file.observation.fiducial_spectral_density
-    @test from_memory.redshift_prior_spec.num_interp ==
-          from_file.redshift_prior_spec.num_interp
+    @test length(from_memory.redshift_grid) == length(from_file.redshift_grid)
     @test from_memory.fiducial_hyperparameters == from_file.fiducial_hyperparameters
     @test from_memory.local_merger_rate == from_file.local_merger_rate
     @test typeof(from_memory.strategy) == typeof(from_file.strategy)
@@ -197,20 +189,17 @@ end
     @test s.Λ₁ ≈ [100.0, 100.0]
     @test s.Λ₂ ≈ [100.0, 100.0]
 
-    expected_lp = reconstruct_proposal_log_prob(
-        problem.proposal.samples,
-        problem.redshift_prior_spec,
-        problem.model,
-        fiducial_hyperparameters(problem)
-    )
+    C = problem.cosmology_type
+    pop = problem.population
+    Λ = fiducial_hyperparameters(problem)
+
+    expected_lp = reconstruct_proposal_log_prob(problem.proposal.samples, C, pop, Λ)
     @test problem.proposal.log_prob ≈ expected_lp rtol = 1e-6
     @test problem.proposal.intrinsic_vector ≈ Float64[1.4 1.2 0.1 0.0 0.0 100.0 100.0
                   1.4 1.2 0.2 0.0 0.0 100.0 100.0]
     @test problem.proposal.cached_flux_over_dgw2 ≈ Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
     @test problem.proposal.dgw_fid_sq ≈ reconstruct_dgw_fid_sq(
-        problem.proposal.samples.redshift,
-        problem.model,
-        fiducial_hyperparameters(problem)
+        problem.proposal.samples.redshift, C, Λ
     )
 
     @test problem.observation.frequencies ≈ [0.0, 20.0, 40.0]
@@ -226,43 +215,44 @@ end
     @test problem.observation.fiducial_spectral_density_in_band ≈
           ev.spectral_density_in_band
 
-    Λ = fiducial_hyperparameters(problem)
-    @test problem.model.cosmology_type === ModifiedPropagation{LambdaCDM}
+    @test C === ModifiedPropagation{LambdaCDM}
     @test Λ.H0 == 67.0
     @test Λ.Ωm == 0.315
     @test Λ.Ξ₀ == 1.0
     @test Λ.Ξₙ == 0.0
-    @test problem.redshift_prior_spec.family == MadauDickinson
-    @test problem.redshift_prior_spec.z_min == 0.001
-    @test problem.redshift_prior_spec.z_max == 20.0
-    @test problem.redshift_prior_spec.time_delay_model === nothing
-    @test problem.redshift_prior_spec.num_interp == 1024
+    @test Λ.γ == 2.7
+    @test Λ.κ == 3.0
+    @test Λ.zpeak == 2.5
     @test problem.local_merger_rate == 161.0
     @test problem.observation.observation_time_yr == 1.0
     @test problem.observation.observation_time_sec ≈ 365.25 * 24 * 3600
     @test fiducial_redshift_integral(problem) ≈
-          fiducial_redshift_integral(problem.model, Λ, problem.redshift_prior_spec) rtol = 1e-6
+          fiducial_redshift_integral(C, pop, Λ) rtol = 1e-6
     @test problem.strategy isa FullBNS
     @test redshift(problem) ≈ [0.1, 0.2]
+    @test length(problem.redshift_grid) == length(DEFAULT_Z_GRID)
 end
 
 @testset "fiducial_spectral_density uses W0CDM bundle" begin
     p = _load_variant(:w0cdm)
-    @test p.model.cosmology_type === ModifiedPropagation{W0CDM}
+    @test p.cosmology_type === ModifiedPropagation{W0CDM}
     Λ = fiducial_hyperparameters(p)
     ev = evaluate_model_terms(Λ, p)
     @test fiducial_spectral_density(p) ≈ ev.spectral_density
 
+    C_lcdm = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    order_lcdm = full_hyperparameters(C_lcdm, pop)
     h_lcdm = canonical_hyperparameters(
-        madau_dickinson_physical_model(),
-        (; (k => Λ[k] for k in hyperparameters(madau_dickinson_physical_model()))...)
+        order_lcdm,
+        (; (k => Λ[k] for k in order_lcdm)...)
     )
     p_lcdm = ASGWB.ImportanceSamplingProblem(
         p.proposal,
         p.observation,
-        madau_dickinson_physical_model(),
+        C_lcdm,
+        pop,
         h_lcdm,
-        p.redshift_grid_spec,
         p.redshift_grid,
         p.redshift_cache,
         p.local_merger_rate,
@@ -284,19 +274,12 @@ end
 
         [parameters]
         H0 = 99.0
-        Omega_m = 0.5
-        Xi_0 = 1.0
-        Xi_n = 0.0
-        gamma = 2.7
-        kappa = 3.0
-        z_peak = 2.5
-
-        [population.redshift]
-        model = "madau_dickinson_source_frame"
-        z_min = 0.001
-        z_max = 20.0
-        num_interp = 64
-        time_delay_model = "none"
+        "Ωm" = 0.5
+        "Ξ₀" = 1.0
+        "Ξₙ" = 0.0
+        "γ" = 2.7
+        "κ" = 3.0
+        zpeak = 2.5
         """)
     @test_throws ArgumentError load_problem(
         bundle_path,
@@ -307,12 +290,13 @@ end
 end
 
 @testset "importance_sampling_problem builds redshift cache" begin
-    model = madau_dickinson_physical_model()
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    order = full_hyperparameters(C, pop)
     Λ = canonical_hyperparameters(
-        model,
+        order,
         (H0 = 67.0, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5)
     )
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 256, nothing)
     samples = (
         mass = stack_source_masses([1.4], [1.2]),
         redshift = [0.1],
@@ -321,7 +305,7 @@ end
         Λ₁ = [100.0],
         Λ₂ = [100.0]
     )
-    lp = reconstruct_proposal_log_prob(samples, spec, model, Λ)
+    lp = reconstruct_proposal_log_prob(samples, C, pop, Λ)
     proposal = ProposalData(
         FULL_BNS_INTRINSIC_ORDER,
         samples,
@@ -339,17 +323,18 @@ end
         1.0,
         1.0
     )
-    p = importance_sampling_problem(proposal, observation, model, Λ, spec, 1.0)
-    @test fiducial_redshift_integral(p) ≈ fiducial_redshift_integral(model, Λ, spec) rtol = 1e-10
+    p = importance_sampling_problem(proposal, observation, C, pop, Λ, 1.0)
+    @test fiducial_redshift_integral(p) ≈ fiducial_redshift_integral(C, pop, Λ) rtol = 1e-10
 end
 
 @testset "importance_sampling_problem realizes population prior per call" begin
-    model = madau_dickinson_physical_model()
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    order = full_hyperparameters(C, pop)
     Λ = canonical_hyperparameters(
-        model,
+        order,
         (H0 = 67.0, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5)
     )
-    spec = RedshiftPriorSpec(MadauDickinson, 0.001, 20.0, 64, nothing)
     samples = (
         mass = stack_source_masses([1.4, 1.5], [1.2, 1.3]),
         redshift = [0.1, 0.2],
@@ -376,14 +361,8 @@ end
         1.0,
         1.0
     )
-    p = importance_sampling_problem(
-        proposal,
-        observation,
-        model,
-        Λ,
-        spec,
-        1.0
-    )
-    prior = population_prior(model, Λ; z_grid = redshift_grid(spec))
+    p = importance_sampling_problem(proposal, observation, C, pop, Λ, 1.0)
+    c = cosmology(C, Λ)
+    prior = single_event_prior(pop, c, Λ)
     @test compute_importance_weights(p, Λ).target_log_prob ≈ batched_logpdf(prior, samples)
 end

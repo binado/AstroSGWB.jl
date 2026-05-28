@@ -7,26 +7,25 @@ using LogDensityProblems
 using LogDensityProblemsAD
 
 """
-    ASGWBLogDensity(problem, prior; model)
+    ASGWBLogDensity(problem, prior; order)
 
 A struct representing the log-density of the ASGWB importance sampling model,
 conforming to the `LogDensityProblems.jl` interface. It handles the
 transformation between unconstrained parameters (where the sampler operates)
 and constrained physical parameters.
+
+`order` is the full hyperparameter order tuple from `full_hyperparameters(C, pop)`.
 """
-struct ASGWBLogDensity{
-    C <: ImportanceSamplingProblem, P <: ProductNamedTupleDistribution, B,
-    M <: AbstractASGWBModel}
+struct ASGWBLogDensity{C <: ImportanceSamplingProblem, P <: ProductNamedTupleDistribution, B}
     problem::C
     prior::P
     transform::B
-    model::M
+    order::Tuple{Vararg{Symbol}}
 end
 
-function validate_hyperprior(model::AbstractASGWBModel, prior::ProductNamedTupleDistribution)
-    order = hyperparameters(model)
+function validate_hyperprior(order::Tuple{Vararg{Symbol}}, prior::ProductNamedTupleDistribution)
     keys(prior.dists) == order || throw(
-        ArgumentError("hyperprior must match $(typeof(model)); expected $(order), got $(keys(prior.dists))"),
+        ArgumentError("hyperprior must match order $(order), got $(keys(prior.dists))"),
     )
     return nothing
 end
@@ -42,12 +41,12 @@ function logposterior(
 end
 
 function ASGWBLogDensity(
-        problem::ImportanceSamplingProblem,
-        prior::ProductNamedTupleDistribution;
-        model::AbstractASGWBModel
-)
-    validate_hyperprior(model, prior)
-    return ASGWBLogDensity(problem, prior, bijector(prior), model)
+        problem::ImportanceSamplingProblem{C, M},
+        prior::ProductNamedTupleDistribution
+) where {C, M}
+    order = full_hyperparameters(C, problem.population)
+    validate_hyperprior(order, prior)
+    return ASGWBLogDensity(problem, prior, bijector(prior), order)
 end
 
 """
@@ -69,12 +68,12 @@ Transform a set of physical hyperparameters `theta0` into the unconstrained
 parameter space.
 """
 function unconstrained_initial_point(ld::ASGWBLogDensity, theta0::NamedTuple)
-    validate_hyperparameters(ld.model, theta0; context = "initial hyperparameters")
-    ordered_theta0 = (; (k => theta0[k] for k in hyperparameters(ld.model))...)
+    validate_hyperparameters(ld.order, theta0; context = "initial hyperparameters")
+    ordered_theta0 = (; (k => theta0[k] for k in ld.order)...)
     return collect(Bijectors.link(ld.prior, ordered_theta0))
 end
 
-LogDensityProblems.dimension(ld::ASGWBLogDensity) = length(hyperparameters(ld.model))
+LogDensityProblems.dimension(ld::ASGWBLogDensity) = length(ld.order)
 function LogDensityProblems.capabilities(::Type{<:ASGWBLogDensity})
     LogDensityProblems.LogDensityOrder{0}()
 end
@@ -115,7 +114,7 @@ function finite_difference_logdensity_and_gradient(
 end
 
 """
-    sample_with_advancedhmc(problem, prior, theta0; model, kwargs...) -> (samples, stats, ld)
+    sample_with_advancedhmc(problem, prior, theta0; kwargs...) -> (samples, stats, ld)
 
 Sample from the ASGWB posterior using `AdvancedHMC.jl` directly (without Turing).
 """
@@ -123,12 +122,11 @@ function sample_with_advancedhmc(
         problem::ImportanceSamplingProblem,
         prior::ProductNamedTupleDistribution,
         theta0::NamedTuple;
-        model::AbstractASGWBModel,
         n_adapts::Int = 25,
         n_samples::Int = 25,
         target_acceptance::Float64 = 0.8
 )
-    ld = ASGWBLogDensity(problem, prior; model = model)
+    ld = ASGWBLogDensity(problem, prior)
     z0 = unconstrained_initial_point(ld, theta0)
     ad_problem = ad_logdensity(ld)
 
@@ -147,7 +145,7 @@ function sample_with_advancedhmc(
 
     samples_constrained = map(samples_unconstrained) do z
         Λ, _ = constrained_parameters(ld, z)
-        canonical_hyperparameters(ld.model, Λ; context = "sampled hyperparameters")
+        canonical_hyperparameters(ld.order, Λ; context = "sampled hyperparameters")
     end
 
     return samples_constrained, stats, ld

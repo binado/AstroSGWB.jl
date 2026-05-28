@@ -3,13 +3,14 @@ module RunInferenceCLI
 using ASGWB
 using ASGWB:
              load_problem,
-             load_model_config,
+             load_model_toml,
              Detector,
              canonical_hyperparameters,
-             external_parameter_names,
-             hyperparameters,
              validate_hyperparameters,
-             validate_subset
+             validate_subset,
+             full_hyperparameters,
+             full_hyperprior,
+             hyperparameters
 using ..ChainIO: atomic_save_chain
 using ..InferenceImpl: build_turing_model, condition_turing_model, validate_hyperprior
 
@@ -35,23 +36,6 @@ function validate_init_against_priors(priors, init)
         )
     end
     return nothing
-end
-
-const PRIORS = (
-    H0 = Uniform(20, 140),
-    Ωm = Uniform(0.05, 0.95),
-    w0 = Uniform(-3.0, 0.0),
-    wa = Uniform(-3.0, 3.0),
-    Ξ₀ = Uniform(0.5, 5),
-    Ξₙ = Uniform(0.05, 3),
-    γ = Uniform(0.5, 10),
-    κ = Uniform(0.05, 10),
-    zpeak = Uniform(0.05, 10)
-)
-
-"""Select the subset of `priors` corresponding to `names`."""
-function select_priors(priors::NamedTuple, names::Tuple{Vararg{Symbol}})
-    return NamedTuple{names}(priors)
 end
 
 """Resolve `path` relative to `base` if it is not absolute."""
@@ -185,20 +169,7 @@ function resolve_adtype(name::AbstractString)
     end
 end
 
-function _external_to_parameter(model)
-    return Dict(external => k for (k, external) in pairs(external_parameter_names(model)))
-end
-
-function _config_parameter_overrides(raw::AbstractDict, model)
-    mapping = _external_to_parameter(model)
-    for k in keys(raw)
-        haskey(mapping, String(k)) ||
-            throw(ArgumentError("init contains unknown parameter $(repr(String(k)))"))
-    end
-    return (; (mapping[String(k)] => v for (k, v) in raw)...)
-end
-
-function parse_sample_only(settings::Dict, model)
+function parse_sample_only(settings::Dict, order::Tuple{Vararg{Symbol}})
     raw = get(settings, "sample_only", nothing)
     raw === nothing && return nothing
     raw isa Vector || throw(
@@ -206,12 +177,13 @@ function parse_sample_only(settings::Dict, model)
     )
     all(x -> x isa AbstractString, raw) ||
         throw(ArgumentError("sample_only must be an array of strings"))
-    mapping = _external_to_parameter(model)
     return Tuple(
-        get(mapping, s) do
-            throw(ArgumentError("sample_only contains unknown parameter $(repr(s))"))
+        let s = Symbol(x)
+            s in order ||
+                throw(ArgumentError("sample_only contains unknown parameter $(repr(String(s)))"))
+            s
         end
-    for s in raw
+        for x in raw
     )
 end
 
@@ -220,19 +192,7 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     model_path = resolve_path(settings["model_path"]::String, settings_dir)
     detectors = [Detector(n) for n in settings["detectors"]]
     seed = settings["seed"]::Int
-    model_config = load_model_config(model_path)
-    inference_model = model_config.model
-    model_params = hyperparameters(inference_model)
-    raw_init = get(settings, "init", Dict{String, Any}())
-    raw_init isa AbstractDict ||
-        throw(ArgumentError("init must be omitted or a TOML table"))
-    init_overrides = _config_parameter_overrides(raw_init, inference_model)
-    init = canonical_hyperparameters(
-        inference_model,
-        merge(model_config.fiducial_hyperparameters, init_overrides);
-        context = "init hyperparameters"
-    )
-    sample_only = parse_sample_only(settings, inference_model)
+
     local_merger_rate = Float64(settings["local_merger_rate"])
     observation_time_yr = Float64(settings["observation_time_yr"])
 
@@ -250,24 +210,43 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     output_prefix = get(settings, "output_prefix", "chains")::String
     mkpath(output_dir)
 
-    timestamp = format(now(), "yyyymmdd-HHMMSS")
-    det_suffix = join((d.name for d in detectors), ",")
-    params_suffix = sample_only === nothing ? "all" : join(sample_only, "-")
-    base = "$(output_prefix)-$(params_suffix)-det=$(det_suffix)-seed$(seed)-$(timestamp)"
-    output_jld2 = joinpath(output_dir, "$base.jld2")
+    @info "loading bundle" bundle_path model_path
+    problem = load_problem(
+        bundle_path,
+        model_path,
+        detectors;
+        local_merger_rate = local_merger_rate,
+        observation_time_yr = observation_time_yr
+    )
+    @info "bundle loaded" n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
 
-    selected_priors = select_priors(PRIORS, model_params)
-    validate_init_against_priors(selected_priors, init)
-    priors_turing = product_distribution(selected_priors)
-    validate_hyperprior(inference_model, priors_turing)
-    validate_hyperparameters(inference_model, init; context = "init hyperparameters")
+    C = problem.cosmology_type
+    pop = problem.population
+    order = full_hyperparameters(C, pop)
+    hyperprior = full_hyperprior(C, pop)
+
+    raw_init = get(settings, "init", Dict{String, Any}())
+    raw_init isa AbstractDict ||
+        throw(ArgumentError("init must be omitted or a TOML table"))
+    init_overrides = NamedTuple(Symbol(k) => Float64(v) for (k, v) in raw_init)
+    init = canonical_hyperparameters(
+        order,
+        merge(problem.fiducial_hyperparameters, init_overrides);
+        context = "init hyperparameters"
+    )
+
+    sample_only = parse_sample_only(settings, order)
+
+    validate_init_against_priors(hyperprior.dists, init)
+    validate_hyperprior(order, hyperprior)
+    validate_hyperparameters(order, init; context = "init hyperparameters")
     if sample_only !== nothing
         isempty(sample_only) && throw(
             ArgumentError(
             "sample_only must not be empty; omit the key or use null to sample every hyperparameter",
         ),
         )
-        validate_subset(sample_only, inference_model)
+        validate_subset(sample_only, order)
     end
 
     # Cluster-friendly defaults: avoid BLAS oversubscription with MCMCThreads.
@@ -279,20 +258,16 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
         @warn "num_chains differs from Base.Threads.nthreads()" num_chains num_threads
     end
 
+    timestamp = format(now(), "yyyymmdd-HHMMSS")
+    det_suffix = join((d.name for d in detectors), ",")
+    params_suffix = sample_only === nothing ? "all" : join(sample_only, "-")
+    base = "$(output_prefix)-$(params_suffix)-det=$(det_suffix)-seed$(seed)-$(timestamp)"
+    output_jld2 = joinpath(output_dir, "$base.jld2")
+
     @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() bundle_path model_path detectors=join(
         (d.name for d in detectors), ",") sample_only output_dir
     @info "package versions"
     Pkg.status()
-
-    @info "loading bundle" bundle_path model_path
-    problem = load_problem(
-        bundle_path,
-        model_path,
-        detectors;
-        local_merger_rate = local_merger_rate,
-        observation_time_yr = observation_time_yr
-    )
-    @info "bundle loaded" n_frequency_bins=length(problem.observation.frequencies) n_proposal_samples=length(problem.proposal.samples.redshift)
 
     @info "using fiducial in-band spectrum from cache as observed data"
     observed = problem.observation.fiducial_spectral_density
@@ -306,17 +281,16 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     @info "starting NUTS" n_adapts n_samples target_acceptance ad_backend=ad_backend_name sample_only checkpoint_every
     turing_model = build_turing_model(
         problem,
-        priors_turing;
-        model = inference_model,
+        hyperprior;
         track = true,
         observed_spectral_density = observed
     )
     conditioned = condition_turing_model(
         turing_model,
         init,
-        priors_turing,
+        hyperprior,
         sample_only;
-        model = inference_model
+        order = order
     )
     nuts = Turing.NUTS(
         n_adapts,

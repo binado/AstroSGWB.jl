@@ -6,8 +6,8 @@ sampling, redshift grids, and likelihoods. MCMC via Turing/AdvancedHMC lives in 
 `ASGWBInference` package (see the `ASGWBInference/` directory in the repository).
 
 The inference input artifacts are two files:
-- **`model.toml`** — `[model]` (name and cosmology type), `[parameters]` (flat
-  hyperparameters), and `[redshift]` (grid settings).
+- **`model.toml`** — `[model]` (cosmology type) and `[parameters]` (flat
+  hyperparameters, keyed by Julia symbol names such as `Ωm`, `γ`, `Ξ₀`).
 - **`bundle.h5`** ([`WaveformCatalog`](@ref)) — per-sample intrinsic parameters with
   precomputed luminosity distances, and a `(n_freq, n_samples)` per-sample flux matrix
   `|h_+|² + |h_×|²` (before the fiducial `(D_L/D_gw)²` factor).
@@ -16,19 +16,21 @@ Use [`load_problem`](@ref) to load both files and build an in-memory
 [`ImportanceSamplingProblem`](@ref). Use [`importance_sampling_problem`](@ref) to build
 problems directly from in-memory objects (primarily for tests).
 
-Inference state is a flat hyperparameter `NamedTuple` validated against an
-[`AbstractASGWBModel`](@ref) contract; the problem carries the structural model and
-canonical fiducial hyperparameters directly.
+Inference state is a flat hyperparameter `NamedTuple` validated against the
+[`PopulationModel`](@ref) contract; the problem carries the cosmology type and
+population model, plus canonical fiducial hyperparameters.
 """
 module ASGWB
 
 using CBCDistributions
-import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance
+import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance,
+                         hyperparameters, hyperprior, single_event_prior
 
 include("types.jl")
 include("models/base.jl")
 include("models/madau_dickinson.jl")
 include("models/config.jl")
+include("models/io.jl")
 include("bundle.jl")
 include("inference_types.jl")
 include("detector/psd.jl")
@@ -49,21 +51,13 @@ export ImportanceSamplingProblem,
        importance_sampling_problem,
        ProposalData,
        ObservationConfig,
-       RedshiftPriorSpec,
-       RedshiftPriorFamily,
-       MadauDickinson,
-       PowerLaw,
-       parse_redshift_prior_family,
-       AbstractASGWBModel,
-       PhysicalModel,
        PopulationModel,
-       PureModel,
-       ParametrizedModel,
-       MadauDickinsonSourceFrameModel,
-       madau_dickinson_physical_model,
+       BNSPopulationModel,
        hyperparameters,
-       model_parameters,
-       cosmology_type,
+       hyperprior,
+       single_event_prior,
+       full_hyperparameters,
+       full_hyperprior,
        canonical_hyperparameters,
        validate_hyperparameters,
        validate_subset,
@@ -79,15 +73,15 @@ export ImportanceSamplingProblem,
        FullBNS,
        redshift
 
-# Model config
-export ModelConfig,
-       load_model_config,
-       save_model_config,
+# Model I/O
+export load_model_toml,
+       save_model_toml,
        model_sha256_of_file,
-       model_hyperparameters,
-       external_parameter_names,
-       external_model_parameter_names,
-       redshift_prior_spec,
+       read_cosmology,
+       read_population,
+       read_parameters,
+       dump_parameters,
+       dump_model,
        reconstruct_proposal_log_prob,
        reconstruct_dgw_fid_sq
 
@@ -125,7 +119,6 @@ export E,
        ModifiedPropagation,
        dark_energy_eos,
        de_density_ratio,
-       hyperparameters,
        cosmology,
        cosmology_config_name,
        cosmology_type,
@@ -143,11 +136,13 @@ export madau_dickinson_source_frame_distribution,
        power_law_source_frame_distribution,
        detector_frame_merger_rate_density,
        build_redshift_prior,
-       cosmology_and_redshift_prior,
+       redshift_prior,
+       MadauDickinsonSourceFrame,
+       source_frame_distribution,
+       DEFAULT_Z_GRID,
        redshift_log_prob,
        redshift_log_prob_samples,
        redshift_log_prob_samples!,
-       redshift_grid,
        redshift_logpdf_eltype,
        redshift_integral,
        expected_number_of_events,
@@ -159,7 +154,6 @@ export OrderedUniformSourceMassPair,
        RedshiftInterpolatedDistribution,
        intrinsic_prior,
        validate_batch,
-       population_prior,
        batched_logpdf
 
 # Importance sampling

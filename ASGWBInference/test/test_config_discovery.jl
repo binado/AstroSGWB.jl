@@ -48,19 +48,21 @@ using ASGWBInference
 end
 
 @testset "sample_only config parsing" begin
-    model = madau_dickinson_physical_model()
-    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}(), model) === nothing
-    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => nothing), model) ===
+    order = full_hyperparameters(ModifiedPropagation{LambdaCDM}, BNSPopulationModel())
+    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}(), order) === nothing
+    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => nothing), order) ===
           nothing
-    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => ["H0"]), model) ==
+    @test RunInferenceCLI.parse_sample_only(Dict{String, Any}("sample_only" => ["H0"]), order) ==
           (:H0,)
     @test RunInferenceCLI.parse_sample_only(
-        Dict{String, Any}("sample_only" => ["H0", "Omega_m"]), model) == (:H0, :Ωm)
+        Dict{String, Any}("sample_only" => ["H0", "Ωm"]), order) == (:H0, :Ωm)
 
     @test_throws ArgumentError RunInferenceCLI.parse_sample_only(
-        Dict{String, Any}("sample_only" => "H0"), model)
+        Dict{String, Any}("sample_only" => "H0"), order)
     @test_throws ArgumentError RunInferenceCLI.parse_sample_only(
-        Dict{String, Any}("sample_only" => [1]), model)
+        Dict{String, Any}("sample_only" => [1]), order)
+    @test_throws ArgumentError RunInferenceCLI.parse_sample_only(
+        Dict{String, Any}("sample_only" => ["invalid_param"]), order)
 end
 
 @testset "julia_main rejects ARGS" begin

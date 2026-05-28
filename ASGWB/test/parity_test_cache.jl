@@ -4,56 +4,18 @@ const _PARITY_COMMAND = "ASGWB/test/parity_test_cache.jl (generated test bundle)
 const _PARITY_GIT_REVISION = "parity-snapshots"
 const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
 
-function _parity_model_toml_content(; H0 = 67.0, Omega_m = 0.315, Xi_0 = 1.0, Xi_n = 0.0,
-        gamma = 2.7, kappa = 3.0, z_peak = 2.5,
-        z_min = 0.001, z_max = 20.0, num_interp = 64)
-    return """
-[model]
-cosmology = "ModifiedPropagation{LambdaCDM}"
-
-[parameters]
-H0 = $H0
-Omega_m = $Omega_m
-Xi_0 = $Xi_0
-Xi_n = $Xi_n
-gamma = $gamma
-kappa = $kappa
-z_peak = $z_peak
-
-[population.redshift]
-model = "madau_dickinson_source_frame"
-z_min = $z_min
-z_max = $z_max
-num_interp = $num_interp
-time_delay_model = "none"
-"""
+# Use save_model_toml so TOML.print handles quoting of non-ASCII symbol names.
+function _parity_hyperparameters(C, pop, overrides::NamedTuple = NamedTuple())
+    defaults = (H0 = 67.0, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5)
+    order = full_hyperparameters(C, pop)
+    return canonical_hyperparameters(order, merge(defaults, overrides))
 end
 
-function _parity_model_toml_content_w0(; H0 = 67.0, Omega_m = 0.315, w0 = -0.9,
-        Xi_0 = 1.0, Xi_n = 0.0,
-        gamma = 2.7, kappa = 3.0, z_peak = 2.5,
-        z_min = 0.001, z_max = 20.0, num_interp = 64)
-    return """
-[model]
-cosmology = "ModifiedPropagation{W0CDM}"
-
-[parameters]
-H0 = $H0
-Omega_m = $Omega_m
-w0 = $w0
-Xi_0 = $Xi_0
-Xi_n = $Xi_n
-gamma = $gamma
-kappa = $kappa
-z_peak = $z_peak
-
-[population.redshift]
-model = "madau_dickinson_source_frame"
-z_min = $z_min
-z_max = $z_max
-num_interp = $num_interp
-time_delay_model = "none"
-"""
+function _parity_hyperparameters_w0(C, pop, overrides::NamedTuple = NamedTuple())
+    defaults = (H0 = 67.0, Ωm = 0.315, w0 = -0.9, Ξ₀ = 1.0, Ξₙ = 0.0,
+        γ = 2.7, κ = 3.0, zpeak = 2.5)
+    order = full_hyperparameters(C, pop)
+    return canonical_hyperparameters(order, merge(defaults, overrides))
 end
 
 function _write_parity_bundle!(dir::String, variant::Symbol)
@@ -71,9 +33,9 @@ function _write_parity_bundle!(dir::String, variant::Symbol)
     return dir
 end
 
-function _write_model_toml(dir, content)
+function _write_model_toml(dir, C, Λ)
     path = joinpath(dir, "model.toml")
-    write(path, content)
+    save_model_toml(path, C, Λ)
     return path
 end
 
@@ -105,9 +67,10 @@ function _make_bns_samples(masses1, masses2, redshifts; chi1 = nothing, chi2 = n
 end
 
 function _write_posterior_bundle(dir)
-    toml_content = _parity_model_toml_content(;
-        gamma = 2.7, kappa = 5.7, z_peak = 2.0, num_interp = 64)
-    model_path = _write_model_toml(dir, toml_content)
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
+    model_path = _write_model_toml(dir, C, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
@@ -126,9 +89,10 @@ function _write_posterior_bundle(dir)
 end
 
 function _write_full_intrinsic_bundle(dir)
-    toml_content = _parity_model_toml_content(;
-        gamma = 2.7, kappa = 5.7, z_peak = 2.0, num_interp = 64)
-    model_path = _write_model_toml(dir, toml_content)
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
+    model_path = _write_model_toml(dir, C, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
@@ -153,9 +117,10 @@ function _write_full_intrinsic_bundle(dir)
 end
 
 function _write_importance_context_bundle(dir)
-    toml_content = _parity_model_toml_content(;
-        gamma = 2.7, kappa = 3.0, z_peak = 2.5, num_interp = 1024)
-    model_path = _write_model_toml(dir, toml_content)
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
+    model_path = _write_model_toml(dir, C, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
@@ -174,9 +139,10 @@ function _write_importance_context_bundle(dir)
 end
 
 function _write_w0cdm_bundle(dir)
-    toml_content = _parity_model_toml_content_w0(;
-        gamma = 2.7, kappa = 3.0, z_peak = 2.5, num_interp = 64)
-    model_path = _write_model_toml(dir, toml_content)
+    C = ModifiedPropagation{W0CDM}
+    pop = BNSPopulationModel()
+    Λ = _parity_hyperparameters_w0(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
+    model_path = _write_model_toml(dir, C, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
