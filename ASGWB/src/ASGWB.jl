@@ -27,6 +27,7 @@ import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance
 
 include("types.jl")
 include("models/base.jl")
+include("models/config.jl")
 include("models/madau_dickinson.jl")
 include("bundle.jl")
 include("inference_types.jl")
