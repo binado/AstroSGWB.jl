@@ -23,18 +23,29 @@ function condition_turing_model(
     return turing_model | (; (s => ordered_theta0[s] for s in fixed)...)
 end
 
-# Generate a `sample_hyperparameters` submodel for each (cosmology, BNSPopulationModel)
-# combination. `full_hyperparameters` is called at module-load time so Turing sees
-# literal symbol names in the generated tilde-sites.
-for C in SUPPORTED_COSMOLOGIES
-    flds = full_hyperparameters(C, BNSPopulationModel())
-    @eval begin
-        @model function sample_hyperparameters(c::Val{$C}, pop::BNSPopulationModel, d)
-            $([:($f ~ d.$f) for f in flds]...)
-            return (; $(flds...))
+"""
+    register_sample_hyperparameters(pop::PopulationModel)
+
+Generate a `sample_hyperparameters` submodel for `pop` paired with each
+supported cosmology.  `full_hyperparameters(C, pop)` is evaluated at
+registration time so Turing sees literal symbol names in the generated
+tilde-sites, which is what enables per-parameter conditioning via
+[`condition_turing_model`](@ref).  Callers register their own population types.
+"""
+function register_sample_hyperparameters(pop::P) where {P <: PopulationModel}
+    for C in SUPPORTED_COSMOLOGIES
+        flds = full_hyperparameters(C, pop)
+        @eval begin
+            @model function sample_hyperparameters(c::Val{$C}, pop::$P, d)
+                $([:($f ~ d.$f) for f in flds]...)
+                return (; $(flds...))
+            end
         end
     end
+    return nothing
 end
+
+register_sample_hyperparameters(BNSPopulationModel())
 
 @model function asgwb_importance_turing_model(
         track::Bool,

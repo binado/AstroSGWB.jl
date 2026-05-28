@@ -8,7 +8,7 @@ end
 include(joinpath(@__DIR__, "parity_fixtures.jl"))
 
 const _IMP_C = ModifiedPropagation{LambdaCDM}
-const _IMP_POP = BNSPopulationModel()
+const _IMP_POP = ParityBNSPopulation()
 const _IMP_ORDER = full_hyperparameters(_IMP_C, _IMP_POP)
 
 function _importance_type_test_problem(n::Integer)
@@ -45,12 +45,7 @@ function _importance_type_test_problem(n::Integer)
 end
 
 @testset "importance smoke" begin
-    dir = parity_bundle_dir(:posterior)
-    cache = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
-        [Detector("H1"), Detector("L1")];
-        parity_observation_kwargs(:posterior)...
-    )
+    cache = parity_load_problem(:posterior, [Detector("H1"), Detector("L1")])
     theta = PARITY_THETA
 
     model_evaluation = evaluate_model_terms(theta, cache)

@@ -28,8 +28,6 @@ import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance,
 
 include("types.jl")
 include("models/base.jl")
-include("models/madau_dickinson.jl")
-include("models/config.jl")
 include("models/io.jl")
 include("bundle.jl")
 include("inference_types.jl")
@@ -52,7 +50,6 @@ export ImportanceSamplingProblem,
        ProposalData,
        ObservationConfig,
        PopulationModel,
-       BNSPopulationModel,
        hyperparameters,
        hyperprior,
        single_event_prior,
@@ -80,6 +77,7 @@ export load_model_toml,
        read_cosmology,
        read_population,
        read_parameters,
+       population_name,
        dump_parameters,
        dump_model,
        reconstruct_proposal_log_prob,
@@ -151,6 +149,7 @@ export madau_dickinson_source_frame_distribution,
 # Priors
 export OrderedUniformSourceMassPair,
        AlignedSpinChiSimple,
+       BNS_LAMBDA_HIGH,
        RedshiftInterpolatedDistribution,
        intrinsic_prior,
        validate_batch,

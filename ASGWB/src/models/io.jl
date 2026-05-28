@@ -24,14 +24,38 @@ function read_cosmology(data::AbstractDict)
 end
 
 """
-    read_population(data) -> PopulationModel
+    read_population(data, registry) -> PopulationModel
 
-Parse the population model from a TOML dict.  The default implementation
-always returns a [`BNSPopulationModel`](@ref); callers may override this
-function to support additional population types.
+Parse the population model from a TOML dict.  `[model].population` names the
+population; `registry` maps that name to a concrete [`PopulationModel`](@ref).
+The framework owns no population types: callers supply the registry.
 """
-function read_population(::AbstractDict)
-    return BNSPopulationModel()
+function read_population(data::AbstractDict, registry::AbstractDict)
+    model_table = _require_table(data, "model")
+    name = get(model_table, "population", nothing)
+    name isa AbstractString ||
+        throw(ArgumentError("model.toml [model] requires a string \"population\" key"))
+    haskey(registry, name) || throw(
+        ArgumentError(
+        "unknown population $(repr(name)); registered: $(sort!(collect(keys(registry))))",
+    ),
+    )
+    return registry[name]
+end
+
+"""
+    population_name(registry, pop) -> String
+
+Reverse-lookup the registry name for `pop`.  Used for serialisation.
+"""
+function population_name(registry::AbstractDict, pop::PopulationModel)
+    for (name, candidate) in registry
+        candidate === pop && return String(name)
+    end
+    for (name, candidate) in registry
+        typeof(candidate) === typeof(pop) && return String(name)
+    end
+    throw(ArgumentError("population $(typeof(pop)) is not present in the registry"))
 end
 
 """
@@ -41,17 +65,18 @@ Parse `[parameters]` from a TOML dict.  Keys are symbol names (`Ωm`, `γ`, …)
 values are converted to `Float64`.  The returned NamedTuple is ordered by
 `full_hyperparameters(C, pop)` and validated via `canonical_hyperparameters`.
 """
-function read_parameters(data::AbstractDict, ::Type{C}, pop::M) where {C, M <: PopulationModel}
+function read_parameters(data::AbstractDict, ::Type{C}, pop::M) where {
+        C, M <: PopulationModel}
     params_table = _require_table(data, "parameters")
     order = full_hyperparameters(C, pop)
     raw = NamedTuple{order}(
         ntuple(Val(length(order))) do i
-            k = order[i]
-            v = get(params_table, String(k), nothing)
-            v === nothing &&
-                throw(ArgumentError("model.toml [parameters] missing key \"$(String(k))\""))
-            Float64(v)
-        end
+        k = order[i]
+        v = get(params_table, String(k), nothing)
+        v === nothing &&
+            throw(ArgumentError("model.toml [parameters] missing key \"$(String(k))\""))
+        Float64(v)
+    end
     )
     return canonical_hyperparameters(order, raw; context = "model parameters")
 end
@@ -67,36 +92,47 @@ function dump_parameters(Λ::NamedTuple)
 end
 
 """
-    dump_model(C) -> Dict{String,Any}
+    dump_model(C, population_name) -> Dict{String,Any}
 
-Serialise the cosmology type to a `[model]` section dict.
+Serialise the cosmology type and population name to a `[model]` section dict.
 """
-function dump_model(::Type{C}) where {C <: AbstractCosmology}
-    return Dict{String, Any}("cosmology" => cosmology_config_name(C))
+function dump_model(::Type{C}, population_name::AbstractString) where {C <:
+                                                                       AbstractCosmology}
+    return Dict{String, Any}(
+        "cosmology" => cosmology_config_name(C),
+        "population" => String(population_name)
+    )
 end
 
 """
-    load_model_toml(path) -> (C::Type, pop::PopulationModel, Λ::NamedTuple)
+    load_model_toml(path, registry) -> (C::Type, pop::PopulationModel, Λ::NamedTuple)
 
 Load a `model.toml` file and return the cosmology type, population model, and
-canonical fiducial hyperparameters.
+canonical fiducial hyperparameters.  `registry` resolves `[model].population`.
 """
-function load_model_toml(path::AbstractString)
+function load_model_toml(path::AbstractString, registry::AbstractDict)
     data = TOML.parsefile(path)
     C = read_cosmology(data)
-    pop = read_population(data)
+    pop = read_population(data, registry)
     Λ = read_parameters(data, C, pop)
     return C, pop, Λ
 end
 
 """
-    save_model_toml(path, C, Λ)
+    save_model_toml(path, C, pop, Λ, registry)
 
-Write cosmology type and hyperparameters to `path` as a `model.toml` file.
+Write cosmology type, population name, and hyperparameters to `path` as a
+`model.toml` file.  The population name is resolved from `registry`.
 """
-function save_model_toml(path::AbstractString, ::Type{C}, Λ::NamedTuple) where {C}
+function save_model_toml(
+        path::AbstractString,
+        ::Type{C},
+        pop::PopulationModel,
+        Λ::NamedTuple,
+        registry::AbstractDict
+) where {C}
     data = Dict{String, Any}(
-        "model" => dump_model(C),
+        "model" => dump_model(C, population_name(registry, pop)),
         "parameters" => dump_parameters(Λ)
     )
     open(path, "w") do io

@@ -4,7 +4,6 @@ using ASGWB
 using ASGWB:
              ImportanceSamplingProblem,
              PopulationModel,
-             BNSPopulationModel,
              AbstractCosmology,
              LambdaCDM,
              W0CDM,
@@ -17,11 +16,16 @@ using ASGWB:
              validate_hyperparameters,
              full_hyperparameters,
              full_hyperprior,
-             hyperparameters,
+             OrderedUniformSourceMassPair,
+             AlignedSpinChiSimple,
+             redshift_prior,
+             MadauDickinsonSourceFrame,
+             BNS_LAMBDA_HIGH,
              validate_subset,
              normalized_ess,
              spectral_snr_squared,
              frequency_bin_width
+import ASGWB: hyperparameters, hyperprior, single_event_prior
 using AdvancedHMC
 using Bijectors
 using Distributions: MvNormal, ProductNamedTupleDistribution
@@ -32,6 +36,7 @@ using LogDensityProblems
 using LogDensityProblemsAD
 using Turing
 
+include("populations.jl")
 include("sampling.jl")
 include("turing_model.jl")
 
@@ -43,6 +48,9 @@ export ASGWBLogDensity,
        sample_with_advancedhmc,
        build_turing_model,
        condition_turing_model,
-       validate_hyperprior
+       validate_hyperprior,
+       BNSPopulationModel,
+       POPULATION_REGISTRY,
+       register_sample_hyperparameters
 
 end

@@ -10,13 +10,7 @@ end
 const _TEST_LOAD_DETS = [Detector("H1"), Detector("L1")]
 
 function _load_variant(variant::Symbol)
-    dir = parity_bundle_dir(variant)
-    return load_problem(
-        joinpath(dir, "bundle.h5"),
-        joinpath(dir, "model.toml"),
-        _TEST_LOAD_DETS;
-        parity_observation_kwargs(variant)...
-    )
+    return parity_load_problem(variant, _TEST_LOAD_DETS)
 end
 
 @testset "save_bundle/load_bundle round-trip" begin
@@ -61,20 +55,20 @@ end
     cases = (
         (
             ModifiedPropagation{LambdaCDM},
-            BNSPopulationModel(),
+            ParityBNSPopulation(),
             (H0 = 67.4, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5),
             "ModifiedPropagation{LambdaCDM}"
         ),
         (
             ModifiedPropagation{W0CDM},
-            BNSPopulationModel(),
+            ParityBNSPopulation(),
             (H0 = 67.4, Ωm = 0.315, w0 = -0.9, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0,
                 zpeak = 2.5),
             "ModifiedPropagation{W0CDM}"
         ),
         (
             ModifiedPropagation{W0WaCDM},
-            BNSPopulationModel(),
+            ParityBNSPopulation(),
             (H0 = 67.4, Ωm = 0.315, w0 = -0.9, wa = 0.1, Ξ₀ = 1.0, Ξₙ = 0.0,
                 γ = 2.7, κ = 3.0, zpeak = 2.5),
             "ModifiedPropagation{W0WaCDM}"
@@ -85,11 +79,11 @@ end
         order = full_hyperparameters(C, pop)
         Λ = canonical_hyperparameters(order, Λ_raw)
         path = joinpath(mktempdir(), "model.toml")
-        save_model_toml(path, C, Λ)
-        C2, pop2, Λ2 = load_model_toml(path)
+        save_model_toml(path, C, pop, Λ, PARITY_REGISTRY)
+        C2, pop2, Λ2 = load_model_toml(path, PARITY_REGISTRY)
         @testset "$tag" begin
             @test C2 === C
-            @test pop2 isa BNSPopulationModel
+            @test pop2 isa ParityBNSPopulation
             @test Λ2 == Λ
         end
     end
@@ -101,8 +95,23 @@ end
         """
         [model]
         cosmology = "ModifiedPropagation{LambdaCDM}"
+        population = "bns"
         """)
-    @test_throws ArgumentError load_model_toml(path)
+    @test_throws ArgumentError load_model_toml(path, PARITY_REGISTRY)
+end
+
+@testset "read_population requires a registered population" begin
+    path = joinpath(mktempdir(), "model.toml")
+    write(path,
+        """
+        [model]
+        cosmology = "ModifiedPropagation{LambdaCDM}"
+        population = "unregistered"
+
+        [parameters]
+        H0 = 67.0
+        """)
+    @test_throws ArgumentError load_model_toml(path, PARITY_REGISTRY)
 end
 
 @testset "load_problem reconstructs derived fields" begin
@@ -241,7 +250,7 @@ end
     @test fiducial_spectral_density(p) ≈ ev.spectral_density
 
     C_lcdm = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     order_lcdm = full_hyperparameters(C_lcdm, pop)
     h_lcdm = canonical_hyperparameters(
         order_lcdm,
@@ -284,14 +293,15 @@ end
     @test_throws ArgumentError load_problem(
         bundle_path,
         bad_toml,
-        _TEST_LOAD_DETS;
+        _TEST_LOAD_DETS,
+        PARITY_REGISTRY;
         parity_observation_kwargs(:importance_context)...
     )
 end
 
 @testset "importance_sampling_problem builds redshift cache" begin
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     order = full_hyperparameters(C, pop)
     Λ = canonical_hyperparameters(
         order,
@@ -329,7 +339,7 @@ end
 
 @testset "importance_sampling_problem realizes population prior per call" begin
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     order = full_hyperparameters(C, pop)
     Λ = canonical_hyperparameters(
         order,

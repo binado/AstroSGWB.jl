@@ -1,5 +1,9 @@
 # Test-only synthetic bundle fixtures. Include after `using ASGWB` (see `runtests.jl`).
 
+if !@isdefined ParityBNSPopulation
+    include(joinpath(@__DIR__, "fixture_population.jl"))
+end
+
 const _PARITY_COMMAND = "ASGWB/test/parity_test_cache.jl (generated test bundle)"
 const _PARITY_GIT_REVISION = "parity-snapshots"
 const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
@@ -33,9 +37,9 @@ function _write_parity_bundle!(dir::String, variant::Symbol)
     return dir
 end
 
-function _write_model_toml(dir, C, Λ)
+function _write_model_toml(dir, C, pop, Λ)
     path = joinpath(dir, "model.toml")
-    save_model_toml(path, C, Λ)
+    save_model_toml(path, C, pop, Λ, PARITY_REGISTRY)
     return path
 end
 
@@ -68,9 +72,9 @@ end
 
 function _write_posterior_bundle(dir)
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
-    model_path = _write_model_toml(dir, C, Λ)
+    model_path = _write_model_toml(dir, C, pop, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
@@ -90,9 +94,9 @@ end
 
 function _write_full_intrinsic_bundle(dir)
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
-    model_path = _write_model_toml(dir, C, Λ)
+    model_path = _write_model_toml(dir, C, pop, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
@@ -118,9 +122,9 @@ end
 
 function _write_importance_context_bundle(dir)
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
-    model_path = _write_model_toml(dir, C, Λ)
+    model_path = _write_model_toml(dir, C, pop, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
@@ -140,9 +144,9 @@ end
 
 function _write_w0cdm_bundle(dir)
     C = ModifiedPropagation{W0CDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters_w0(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
-    model_path = _write_model_toml(dir, C, Λ)
+    model_path = _write_model_toml(dir, C, pop, Λ)
     sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
@@ -168,6 +172,28 @@ function parity_observation_kwargs(variant::Symbol)
     else
         return (local_merger_rate = 161.0, observation_time_yr = 1.0)
     end
+end
+
+"""
+    parity_load_problem(variant, detectors; registry=PARITY_REGISTRY)
+
+Load the parity bundle for `variant` through `load_problem`, resolving the
+`[model].population` name via `registry`.  Inference tests pass the production
+`POPULATION_REGISTRY` so the Turing codegen dispatch matches.
+"""
+function parity_load_problem(
+        variant::Symbol,
+        detectors;
+        registry::AbstractDict = PARITY_REGISTRY
+)
+    dir = parity_bundle_dir(variant)
+    return load_problem(
+        joinpath(dir, "bundle.h5"),
+        joinpath(dir, "model.toml"),
+        detectors,
+        registry;
+        parity_observation_kwargs(variant)...
+    )
 end
 
 """

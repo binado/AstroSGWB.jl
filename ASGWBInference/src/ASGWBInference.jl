@@ -11,7 +11,10 @@ using .InferenceImpl:
                       build_turing_model,
                       condition_turing_model,
                       logposterior,
-                      validate_hyperprior
+                      validate_hyperprior,
+                      BNSPopulationModel,
+                      POPULATION_REGISTRY,
+                      register_sample_hyperparameters
 
 export ASGWBLogDensity,
        unconstrained_initial_point,
@@ -23,6 +26,9 @@ export ASGWBLogDensity,
        condition_turing_model,
        logposterior,
        validate_hyperprior,
+       BNSPopulationModel,
+       POPULATION_REGISTRY,
+       register_sample_hyperparameters,
        run_inference,
        run_inference_from_env,
        julia_main

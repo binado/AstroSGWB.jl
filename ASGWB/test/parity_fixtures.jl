@@ -3,10 +3,14 @@
 # Included from test files that need `PARITY_THETA` (not from `runtests.jl`).
 
 using ASGWB: canonical_hyperparameters, full_hyperparameters, full_hyperprior,
-             BNSPopulationModel, ModifiedPropagation, LambdaCDM
+             ModifiedPropagation, LambdaCDM
+
+if !@isdefined ParityBNSPopulation
+    include(joinpath(@__DIR__, "fixture_population.jl"))
+end
 
 const _PARITY_C = ModifiedPropagation{LambdaCDM}
-const _PARITY_POP = BNSPopulationModel()
+const _PARITY_POP = ParityBNSPopulation()
 const _PARITY_ORDER = full_hyperparameters(_PARITY_C, _PARITY_POP)
 
 const PARITY_THETA = canonical_hyperparameters(

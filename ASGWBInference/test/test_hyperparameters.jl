@@ -4,12 +4,11 @@ using Distributions: product_distribution, Uniform
 using ASGWB:
              ModifiedPropagation,
              LambdaCDM, W0CDM, W0WaCDM,
-             BNSPopulationModel,
              full_hyperparameters,
              full_hyperprior,
              canonical_hyperparameters,
              validate_hyperparameters
-using ASGWBInference: validate_hyperprior
+using ASGWBInference: validate_hyperprior, BNSPopulationModel
 
 @testset "BNS+ModifiedPropagation{LambdaCDM} hyperparameter contract" begin
     C = ModifiedPropagation{LambdaCDM}

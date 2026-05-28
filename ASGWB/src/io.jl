@@ -4,11 +4,12 @@ const BUNDLE_COMMAND_ATTR = "command"
 const BUNDLE_GIT_REVISION_ATTR = "git_revision"
 
 """
-    load_problem(bundle_path, model_path, detectors; local_merger_rate, observation_time_yr) -> ImportanceSamplingProblem
+    load_problem(bundle_path, model_path, detectors, registry; local_merger_rate, observation_time_yr) -> ImportanceSamplingProblem
 
 Load a [`WaveformCatalog`](@ref) bundle and a `model.toml` file, verify
 their model fingerprint matches, and build an in-memory
-[`ImportanceSamplingProblem`](@ref) ready for MCMC.
+[`ImportanceSamplingProblem`](@ref) ready for MCMC.  `registry` maps the
+`[model].population` name to a concrete [`PopulationModel`](@ref).
 
 `detectors` must contain at least two [`Detector`](@ref) values; the network effective
 PSD and SGWB scale are computed from tabulated PSDs and overlap-reduction functions.
@@ -20,13 +21,14 @@ reflects the current Julia forward model rather than any stale on-disk value.
 function load_problem(
         bundle_path::AbstractString,
         model_path::AbstractString,
-        detectors::AbstractVector{D};
+        detectors::AbstractVector{D},
+        registry::AbstractDict;
         local_merger_rate::Real,
         observation_time_yr::Real
 )::ImportanceSamplingProblem where {D <: Detector}
     catalog = load_bundle(bundle_path)
     verify_model_fingerprint(catalog, model_path)
-    C, pop, Λ = load_model_toml(model_path)
+    C, pop, Λ = load_model_toml(model_path, registry)
     return load_problem(
         catalog,
         C,
@@ -47,7 +49,7 @@ function load_problem(
         local_merger_rate::Real,
         observation_time_yr::Real
 )::ImportanceSamplingProblem where {C <: AbstractCosmology, M <: PopulationModel,
-                                    D <: Detector}
+        D <: Detector}
     length(detectors) < 2 && throw(
         ArgumentError(
         "load_problem: at least two detectors are required to build effective_psd and sgwb_scale",

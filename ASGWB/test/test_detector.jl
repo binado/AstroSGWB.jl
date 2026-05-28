@@ -83,13 +83,9 @@ end
     if !@isdefined parity_bundle_dir
         include(joinpath(@__DIR__, "parity_test_cache.jl"))
     end
-    dir = parity_bundle_dir(:posterior_v2_minimal)
     d1 = Detector("H1")
     d2 = Detector("L1")
-    p = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"), [d1, d2];
-        parity_observation_kwargs(:posterior_v2_minimal)...
-    )
+    p = parity_load_problem(:posterior_v2_minimal, [d1, d2])
     @test length(p.observation.effective_psd) == length(p.observation.frequencies)
     # In-band bins have finite PSD; f=0 Hz (DC) is excluded by in_band_mask and may be Inf.
     @test all(isfinite, p.observation.effective_psd[p.observation.in_band_mask])
@@ -100,16 +96,9 @@ end
     if !@isdefined parity_bundle_dir
         include(joinpath(@__DIR__, "parity_test_cache.jl"))
     end
-    dir = parity_bundle_dir(:posterior)
     dets = [Detector("H1"), Detector("L1")]
-    p1 = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"), dets;
-        parity_observation_kwargs(:posterior)...
-    )
-    p2 = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"), dets;
-        parity_observation_kwargs(:posterior)...
-    )
+    p1 = parity_load_problem(:posterior, dets)
+    p2 = parity_load_problem(:posterior, dets)
     @test p1.observation.effective_psd == p2.observation.effective_psd
     @test p1.observation.sgwb_scale == p2.observation.sgwb_scale
 end

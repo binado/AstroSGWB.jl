@@ -2,9 +2,13 @@ using Test
 using ASGWB
 using Distributions: product_distribution, Normal, ProductNamedTupleDistribution
 
+if !@isdefined ParityBNSPopulation
+    include(joinpath(@__DIR__, "fixture_population.jl"))
+end
+
 @testset "Hyperparameter Validation" begin
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     order = full_hyperparameters(C, pop)
     expected_order = (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
     @test order == expected_order
@@ -49,9 +53,9 @@ using Distributions: product_distribution, Normal, ProductNamedTupleDistribution
     end
 
     @testset "hyperparameters W0CDM / W0WaCDM" begin
-        @test full_hyperparameters(ModifiedPropagation{W0CDM}, BNSPopulationModel()) ==
+        @test full_hyperparameters(ModifiedPropagation{W0CDM}, ParityBNSPopulation()) ==
               (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-        @test full_hyperparameters(ModifiedPropagation{W0WaCDM}, BNSPopulationModel()) ==
+        @test full_hyperparameters(ModifiedPropagation{W0WaCDM}, ParityBNSPopulation()) ==
               (:H0, :Ωm, :w0, :wa, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
     end
 end
@@ -60,7 +64,7 @@ end
     base = (H0 = 67.0, Ωm = 0.3, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 5.7, zpeak = 2.0)
 
     C_lcdm = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     order_lcdm = full_hyperparameters(C_lcdm, pop)
     Λ_lcdm = canonical_hyperparameters(order_lcdm, base)
     @test cosmology(C_lcdm, Λ_lcdm) isa ModifiedPropagation{<:LambdaCDM}

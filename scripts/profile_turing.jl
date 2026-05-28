@@ -28,7 +28,8 @@ using ASGWBInference.InferenceImpl:
                                     ad_logdensity,
                                     unconstrained_initial_point,
                                     logposterior,
-                                    validate_hyperprior
+                                    validate_hyperprior,
+                                    POPULATION_REGISTRY
 using ASGWB:
              load_problem,
              compute_importance_weights,
@@ -262,7 +263,8 @@ function _run(;
     problem = load_problem(
         bundle_path,
         model_path,
-        detectors;
+        detectors,
+        POPULATION_REGISTRY;
         local_merger_rate = local_merger_rate,
         observation_time_yr = observation_time_yr
     )

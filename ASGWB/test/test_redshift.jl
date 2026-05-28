@@ -2,9 +2,13 @@ using Test
 using CBCDistributions
 using ASGWB
 
+if !@isdefined ParityBNSPopulation
+    include(joinpath(@__DIR__, "fixture_population.jl"))
+end
+
 @testset "sample interpolation helpers" begin
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     order = full_hyperparameters(C, pop)
     theta = canonical_hyperparameters(
         order,

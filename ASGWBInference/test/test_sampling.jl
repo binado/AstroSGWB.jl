@@ -16,12 +16,7 @@ end
 include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
 
 @testset "AdvancedHMC initial point follows model order" begin
-    dir = parity_bundle_dir(:posterior)
-    cache = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
-        [Detector("H1"), Detector("L1")];
-        parity_observation_kwargs(:posterior)...
-    )
+    cache = parity_load_problem(:posterior, [Detector("H1"), Detector("L1")])
     theta0 = PARITY_THETA
     order = _PARITY_ORDER
 
@@ -46,12 +41,7 @@ end
 
 @testset "AdvancedHMC smoke test" begin
     for variant in (:posterior, :full_intrinsic)
-        dir = parity_bundle_dir(variant)
-        cache = load_problem(
-            joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
-            [Detector("H1"), Detector("L1")];
-            parity_observation_kwargs(variant)...
-        )
+        cache = parity_load_problem(variant, [Detector("H1"), Detector("L1")])
         theta0 = PARITY_THETA
         priors = PARITY_PRIORS
 

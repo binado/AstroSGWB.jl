@@ -12,7 +12,8 @@ using ASGWB:
              full_hyperprior,
              hyperparameters
 using ..ChainIO: atomic_save_chain
-using ..InferenceImpl: build_turing_model, condition_turing_model, validate_hyperprior
+using ..InferenceImpl: build_turing_model, condition_turing_model, validate_hyperprior,
+                       POPULATION_REGISTRY
 
 using Turing
 using AdvancedHMC
@@ -183,7 +184,7 @@ function parse_sample_only(settings::Dict, order::Tuple{Vararg{Symbol}})
                 throw(ArgumentError("sample_only contains unknown parameter $(repr(String(s)))"))
             s
         end
-        for x in raw
+    for x in raw
     )
 end
 
@@ -214,7 +215,8 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     problem = load_problem(
         bundle_path,
         model_path,
-        detectors;
+        detectors,
+        POPULATION_REGISTRY;
         local_merger_rate = local_merger_rate,
         observation_time_yr = observation_time_yr
     )

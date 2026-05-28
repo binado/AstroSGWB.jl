@@ -3,7 +3,8 @@ using Turing
 using Turing.DynamicPPL: VarInfo, getsym
 using FlexiChains
 using ASGWB
-using ASGWBInference: build_turing_model, condition_turing_model, logposterior
+using ASGWBInference: build_turing_model, condition_turing_model, logposterior,
+                      POPULATION_REGISTRY
 using Distributions: product_distribution, Uniform
 
 _varinfo_symbols(vi) = Set(getsym(vn) for vn in keys(vi))
@@ -15,12 +16,8 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
 
 @testset "Turing model smoke test" begin
     for variant in (:posterior, :full_intrinsic)
-        dir = parity_bundle_dir(variant)
-        cache = load_problem(
-            joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
-            [Detector("H1"), Detector("L1")];
-            parity_observation_kwargs(variant)...
-        )
+        cache = parity_load_problem(
+            variant, [Detector("H1"), Detector("L1")]; registry = POPULATION_REGISTRY)
         theta0 = PARITY_THETA
         priors = PARITY_PRIORS
         order = _PARITY_ORDER
@@ -98,12 +95,8 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
 end
 
 @testset "submodel boundary lifts VarNames to parent (flat)" begin
-    dir = parity_bundle_dir(:posterior)
-    cache = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
-        [Detector("H1"), Detector("L1")];
-        parity_observation_kwargs(:posterior)...
-    )
+    cache = parity_load_problem(
+        :posterior, [Detector("H1"), Detector("L1")]; registry = POPULATION_REGISTRY)
     priors = PARITY_PRIORS
 
     turing_model = build_turing_model(cache, priors)
@@ -117,12 +110,8 @@ end
 end
 
 @testset "condition_turing_model across submodel boundary" begin
-    dir = parity_bundle_dir(:posterior)
-    cache = load_problem(
-        joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml"),
-        [Detector("H1"), Detector("L1")];
-        parity_observation_kwargs(:posterior)...
-    )
+    cache = parity_load_problem(
+        :posterior, [Detector("H1"), Detector("L1")]; registry = POPULATION_REGISTRY)
     priors = PARITY_PRIORS
     order = _PARITY_ORDER
     theta0 = PARITY_THETA

@@ -5,7 +5,8 @@ using Distributions: Uniform, product_distribution
 
 Full binary-neutron-star population model: Madau–Dickinson source-frame
 redshift distribution plus uniform mass, spin, and tidal-deformability priors.
-Implements the three-method [`PopulationModel`](@ref) contract.
+Implements the three-method [`PopulationModel`](@ref) contract.  This is the
+production caller model; the framework owns no concrete population types.
 """
 struct BNSPopulationModel <: PopulationModel end
 
@@ -31,3 +32,11 @@ function single_event_prior(::BNSPopulationModel, cosmo::AbstractCosmology, Λ::
         Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
     ))
 end
+
+"""
+    POPULATION_REGISTRY
+
+Maps `[model].population` names to concrete [`PopulationModel`](@ref) instances.
+Passed into [`load_problem`](@ref)/`load_model_toml` by the inference CLI.
+"""
+const POPULATION_REGISTRY = Dict{String, PopulationModel}("bns" => BNSPopulationModel())
