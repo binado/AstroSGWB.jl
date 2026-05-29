@@ -35,12 +35,13 @@ using ASGWB:
              compute_importance_weights,
              merger_rate_per_sec,
              spectral_density,
-             population_prior,
+             single_event_prior,
              CosmologyCache,
              redshift,
              canonical_hyperparameters,
-             madau_dickinson_physical_model,
+             full_hyperparameters,
              cosmology,
+             luminosity_distance,
              Detector
 using BenchmarkTools
 using DelimitedFiles
@@ -54,7 +55,7 @@ using Statistics: mean
 using TOML
 using Turing: DynamicPPL
 
-const INFERENCE_MODEL = madau_dickinson_physical_model()
+include(_PARITY_TEST_CACHE)
 
 # ---------------------------------------------------------------------------
 # TOML config helpers
@@ -85,8 +86,6 @@ function _resolve_problem_paths(
         base::AbstractString
 )
     if startswith(bundle_path, "parity:")
-        isdefined(@__MODULE__, :resolve_parity_bundle_dir) ||
-            include(_PARITY_TEST_CACHE)
         dir = resolve_parity_bundle_dir(bundle_path)
         dir === nothing && throw(
             ArgumentError("unknown parity bundle alias $(repr(bundle_path))"),
@@ -136,9 +135,9 @@ function _priors_from_toml(priors_tbl::Dict)
     ))
 end
 
-function _theta0_from_toml(init_tbl::Dict)
+function _theta0_from_toml(init_tbl::Dict, order::Tuple{Vararg{Symbol}})
     return canonical_hyperparameters(
-        INFERENCE_MODEL,
+        order,
         (;
             H0 = init_tbl["H0"],
             Ωm = init_tbl["Omega_m"],
@@ -245,7 +244,7 @@ function _run(;
         model_path::String,
         detectors::Vector{Detector},
         priors,
-        θ0::NamedTuple,
+        init_tbl::Dict,
         seed::Union{Nothing, Int},
         observed_spectral_density_csv::Union{Nothing, String},
         local_merger_rate::Float64,
@@ -290,9 +289,12 @@ function _run(;
     # Build callables
     # ------------------------------------------------------------------
 
+    order = full_hyperparameters(problem.cosmology_type, problem.population)
+    validate_hyperprior(order, priors)
+    θ0 = _theta0_from_toml(init_tbl, order)
+
     # Native (ASGWBLogDensity) path — pure Julia, no DynamicPPL
-    validate_hyperprior(INFERENCE_MODEL, priors)
-    ld = ASGWBLogDensity(problem, priors; model = INFERENCE_MODEL)
+    ld = ASGWBLogDensity(problem, priors)
     z0 = unconstrained_initial_point(ld, θ0)
     ad_ld = ad_logdensity(ld)
 
@@ -300,7 +302,6 @@ function _run(;
     model = build_turing_model(
         problem,
         priors;
-        model = INFERENCE_MODEL,
         track = false,
         observed_spectral_density = observed
     )
@@ -309,8 +310,9 @@ function _run(;
 
     # Intermediate values frozen at θ0 for stage-level benchmarks
     h = θ0
-    cosmology_cache0 = CosmologyCache(cosmology(INFERENCE_MODEL, h), problem.redshift_grid)
-    prior0 = population_prior(INFERENCE_MODEL, h; z_grid = problem.redshift_grid)
+    c0 = cosmology(problem.cosmology_type, h)
+    cosmology_cache0 = CosmologyCache(c0, problem.redshift_grid)
+    prior0 = single_event_prior(problem.population, c0, h)
     redshift_prior0 = prior0.dists.redshift.prior
     iw0 = compute_importance_weights(problem, h, cosmology_cache0, prior0)
     rate0 = merger_rate_per_sec(
@@ -330,8 +332,7 @@ function _run(;
     LogDensityProblems.logdensity_and_gradient(ad_ld, z0)
     LogDensityProblems.logdensity(lf, z0_turing)
     LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
-    logposterior(h, problem, priors;
-        model = INFERENCE_MODEL, observed_spectral_density = observed)
+    logposterior(h, problem, priors; observed_spectral_density = observed)
 
     # ------------------------------------------------------------------
     # BenchmarkTools suite
@@ -350,7 +351,6 @@ function _run(;
         $h,
         $problem,
         $priors;
-        model = $INFERENCE_MODEL,
         observed_spectral_density = $observed
     )
 
@@ -363,8 +363,8 @@ function _run(;
         gcsample = true)
 
     suite["stage"] = BenchmarkGroup()
-    suite["stage"]["redshift"] = @benchmarkable population_prior(
-        $INFERENCE_MODEL, $h; z_grid = $(problem.redshift_grid))
+    suite["stage"]["redshift"] = @benchmarkable single_event_prior(
+        $(problem.population), $c0, $h)
     suite["stage"]["weights"] = @benchmarkable compute_importance_weights(
         $problem, $h, $cosmology_cache0, $prior0)
     suite["stage"]["rate"] = @benchmarkable merger_rate_per_sec(
@@ -381,7 +381,6 @@ function _run(;
     suite["stage"]["prior"] = @benchmarkable logpdf($priors, $h)
     # Bare luminosity_distance broadcast — isolates per-sample distance work in
     # bundle reconstruction and importance weighting (see ASGWB/src/reconstruction.jl).
-    c0 = cosmology(INFERENCE_MODEL, h)
     suite["stage"]["lumdist"] = @benchmarkable luminosity_distance.($z_samples, $c0)
 
     @info "tuning benchmark suite (evals/sample calibration)"
@@ -584,7 +583,6 @@ function profile_turing(;
     init_tbl = _require_table(cfg, "init")
     priors = _priors_from_toml(priors_tbl)
     _validate_init_in_priors(priors, init_tbl)
-    θ0 = _theta0_from_toml(init_tbl)
 
     @info "effective settings" bundle_path model_path detectors=join(
         (d.name for d in detectors), ",") seed=seed
@@ -594,7 +592,7 @@ function profile_turing(;
         model_path,
         detectors,
         priors,
-        θ0,
+        init_tbl,
         seed,
         observed_spectral_density_csv = observed_csv,
         local_merger_rate,
@@ -674,4 +672,6 @@ end
 
 end # module ASGWBProfileCLI
 
-exit(Base.invokelatest(ASGWBProfileCLI.command_main))
+if abspath(PROGRAM_FILE) == abspath(@__FILE__)
+    exit(Base.invokelatest(ASGWBProfileCLI.command_main))
+end
