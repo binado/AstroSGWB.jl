@@ -6,10 +6,12 @@ using CBCDistributions
 struct TestPop <: PopulationModel end
 
 CBCDistributions.hyperparameters(::TestPop) = (:α, :β)
-CBCDistributions.hyperprior(::TestPop) = product_distribution((
-    α = Uniform(0.0, 1.0),
-    β = Uniform(1.0, 2.0)
-))
+function CBCDistributions.hyperprior(::TestPop)
+    product_distribution((
+        α = Uniform(0.0, 1.0),
+        β = Uniform(1.0, 2.0)
+    ))
+end
 function CBCDistributions.single_event_prior(::TestPop, cosmo::AbstractCosmology, Λ::NamedTuple)
     return product_distribution((x = Uniform(0.0, Λ.α), y = Uniform(0.0, Λ.β)))
 end
@@ -73,7 +75,8 @@ end
     @test Λc_raw.α === 0.5f0
 
     @test_throws ArgumentError canonical_hyperparameters(order, (H0 = 1.0,))
-    @test_throws ArgumentError canonical_hyperparameters(order, (; (k => 1.0 for k in order)..., extra = 0.0))
+    @test_throws ArgumentError canonical_hyperparameters(order, (;
+        (k => 1.0 for k in order)..., extra = 0.0))
 end
 
 @testset "validate_hyperparameters" begin

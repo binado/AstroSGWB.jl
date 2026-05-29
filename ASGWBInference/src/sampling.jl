@@ -16,7 +16,8 @@ and constrained physical parameters.
 
 `order` is the full hyperparameter order tuple from `full_hyperparameters(C, pop)`.
 """
-struct ASGWBLogDensity{C <: ImportanceSamplingProblem, P <: ProductNamedTupleDistribution, B}
+struct ASGWBLogDensity{
+    C <: ImportanceSamplingProblem, P <: ProductNamedTupleDistribution, B}
     problem::C
     prior::P
     transform::B

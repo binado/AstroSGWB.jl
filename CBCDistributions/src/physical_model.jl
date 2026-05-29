@@ -47,7 +47,8 @@ function single_event_prior end
 Concatenation of cosmology and population hyperparameter symbols, in the order
 used for the flat HMC/Turing parameter vector.
 """
-function full_hyperparameters(::Type{C}, pop::PopulationModel) where {C <: AbstractCosmology}
+function full_hyperparameters(::Type{C}, pop::PopulationModel) where {C <:
+                                                                      AbstractCosmology}
     return (hyperparameters(C)..., hyperparameters(pop)...)
 end
 

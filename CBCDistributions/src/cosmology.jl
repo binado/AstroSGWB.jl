@@ -256,20 +256,26 @@ end
 # Hyperpriors over cosmological parameters (mirror of hyperparameters(::Type{C}))
 # ---------------------------------------------------------------------------
 
-hyperprior(::Type{LambdaCDM}) = product_distribution((
-    H0 = Uniform(20.0, 140.0),
-    Ωm = Uniform(0.05, 0.95)
-))
+function hyperprior(::Type{LambdaCDM})
+    product_distribution((
+        H0 = Uniform(20.0, 140.0),
+        Ωm = Uniform(0.05, 0.95)
+    ))
+end
 
-hyperprior(::Type{W0CDM}) = product_distribution(merge(
-    hyperprior(LambdaCDM).dists,
-    (w0 = Uniform(-3.0, 0.0),)
-))
+function hyperprior(::Type{W0CDM})
+    product_distribution(merge(
+        hyperprior(LambdaCDM).dists,
+        (w0 = Uniform(-3.0, 0.0),)
+    ))
+end
 
-hyperprior(::Type{W0WaCDM}) = product_distribution(merge(
-    hyperprior(W0CDM).dists,
-    (wa = Uniform(-3.0, 3.0),)
-))
+function hyperprior(::Type{W0WaCDM})
+    product_distribution(merge(
+        hyperprior(W0CDM).dists,
+        (wa = Uniform(-3.0, 3.0),)
+    ))
+end
 
 function hyperprior(::Type{<:ModifiedPropagation{C}}) where {C <: AbstractCosmology}
     return product_distribution(merge(
