@@ -9,7 +9,7 @@ using Distributions: product_distribution, Uniform
 
 _varinfo_symbols(vi) = Set(getsym(vn) for vn in keys(vi))
 
-if !@isdefined parity_bundle_dir
+if !@isdefined parity_catalog_dir
     include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_test_cache.jl"))
 end
 include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))

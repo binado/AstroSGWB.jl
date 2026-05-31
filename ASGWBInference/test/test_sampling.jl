@@ -10,7 +10,7 @@ using ASGWBInference:
                       finite_difference_logdensity_and_gradient,
                       sample_with_advancedhmc
 
-if !@isdefined parity_bundle_dir
+if !@isdefined parity_catalog_dir
     include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_test_cache.jl"))
 end
 include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))

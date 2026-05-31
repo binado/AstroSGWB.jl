@@ -3,7 +3,7 @@ using CBCDistributions: SampleInterpolant
 using ForwardDiff
 using Test
 
-if !@isdefined parity_bundle_dir
+if !@isdefined parity_catalog_dir
     include(joinpath(@__DIR__, "parity_test_cache.jl"))
 end
 include(joinpath(@__DIR__, "parity_fixtures.jl"))
@@ -12,7 +12,7 @@ const _IMP_C = ModifiedPropagation{LambdaCDM}
 const _IMP_POP = ParityBNSPopulation()
 const _IMP_ORDER = full_hyperparameters(_IMP_C, _IMP_POP)
 
-# Construct a problem + ModelContext directly (no bundle/detectors) for type/edge tests.
+# Construct a problem + ModelContext directly (no catalog/detectors) for type/edge tests.
 function _importance_type_test_fixture(n::Integer)
     samples = (
         mass = stack_source_masses(fill(1.4, n), fill(1.2, n)),

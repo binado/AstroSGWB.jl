@@ -12,13 +12,13 @@ using ASGWBInference.InferenceImpl: POPULATION_REGISTRY, validate_hyperprior,
     cfg = TOML.parsefile(cfg_path)
     settings_dir = dirname(abspath(cfg_path))
 
-    bundle_path,
+    catalog_path,
     model_path = ASGWBProfileCLI._resolve_problem_paths(
-        cfg["bundle_path"], cfg["model_path"], settings_dir)
+        cfg["catalog_path"], cfg["model_path"], settings_dir)
     detectors = [Detector(n)
                  for n in ASGWBProfileCLI._require_string_array(cfg, "detectors")]
     loaded = load_problem_context(
-        bundle_path,
+        catalog_path,
         model_path,
         detectors,
         POPULATION_REGISTRY;

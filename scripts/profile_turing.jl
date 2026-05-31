@@ -82,23 +82,23 @@ function _require_string_array(settings::Dict, key::AbstractString)
 end
 
 function _resolve_problem_paths(
-        bundle_path::String,
+        catalog_path::String,
         model_path::String,
         base::AbstractString
 )
-    if startswith(bundle_path, "parity:")
-        dir = resolve_parity_bundle_dir(bundle_path)
+    if startswith(catalog_path, "parity:")
+        dir = resolve_parity_catalog_dir(catalog_path)
         dir === nothing && throw(
-            ArgumentError("unknown parity bundle alias $(repr(bundle_path))"),
+            ArgumentError("unknown parity catalog alias $(repr(catalog_path))"),
         )
-        return joinpath(dir, "bundle.h5"), joinpath(dir, "model.toml")
+        return joinpath(dir, "catalog.h5"), joinpath(dir, "model.toml")
     end
-    resolved_bundle = isabspath(bundle_path) ? bundle_path :
-                      normpath(joinpath(base, bundle_path))
+    resolved_catalog = isabspath(catalog_path) ? catalog_path :
+                       normpath(joinpath(base, catalog_path))
     resolved_model = isabspath(model_path) ?
                      model_path :
                      normpath(joinpath(base, model_path))
-    return resolved_bundle, resolved_model
+    return resolved_catalog, resolved_model
 end
 
 function _load_observed_spectral_density(path::AbstractString, expected_len::Int)
@@ -241,7 +241,7 @@ end
 # ---------------------------------------------------------------------------
 
 function _run(;
-        bundle_path::String,
+        catalog_path::String,
         model_path::String,
         detectors::Vector{Detector},
         priors,
@@ -257,11 +257,11 @@ function _run(;
 )
     t0 = time()
 
-    @info "loading bundle" bundle_path model_path detectors=join(
+    @info "loading catalog" catalog_path model_path detectors=join(
         (d.name
         for d in detectors), ",")
     loaded = load_problem_context(
-        bundle_path,
+        catalog_path,
         model_path,
         detectors,
         POPULATION_REGISTRY;
@@ -271,10 +271,10 @@ function _run(;
     problem = loaded.problem
     C = loaded.cosmology_type
     ctx = loaded.ctx
-    @info "bundle loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
+    @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
 
     observed = if observed_spectral_density_csv === nothing
-        @info "using fiducial in-band spectrum from bundle as observed data"
+        @info "using fiducial in-band spectrum from catalog as observed data"
         ctx.fiducial_spectral_density
     else
         @info "loading observed spectrum from CSV" path = observed_spectral_density_csv
@@ -381,7 +381,7 @@ function _run(;
     )
     suite["stage"]["prior"] = @benchmarkable logpdf($priors, $h)
     # Bare luminosity_distance broadcast — isolates per-sample distance work in
-    # bundle reconstruction and importance weighting (see ASGWB/src/reconstruction.jl).
+    # Catalog reconstruction and importance weighting.
     suite["stage"]["lumdist"] = @benchmarkable luminosity_distance.($z_samples, $c0)
 
     @info "tuning benchmark suite (evals/sample calibration)"
@@ -568,9 +568,9 @@ function profile_turing(;
     cfg = TOML.parsefile(config_file)
     settings_dir = dirname(abspath(config_file))
 
-    raw_bundle = _require(cfg, "bundle_path")::String
+    raw_catalog = _require(cfg, "catalog_path")::String
     raw_model = _require(cfg, "model_path")::String
-    bundle_path, model_path = _resolve_problem_paths(raw_bundle, raw_model, settings_dir)
+    catalog_path, model_path = _resolve_problem_paths(raw_catalog, raw_model, settings_dir)
     detectors = [Detector(n) for n in _require_string_array(cfg, "detectors")]
     seed = get(cfg, "seed", nothing)
     observed_csv = get(cfg, "observed_spectral_density_csv", nothing)
@@ -585,11 +585,11 @@ function profile_turing(;
     priors = _priors_from_toml(priors_tbl)
     _validate_init_in_priors(priors, init_tbl)
 
-    @info "effective settings" bundle_path model_path detectors=join(
+    @info "effective settings" catalog_path model_path detectors=join(
         (d.name for d in detectors), ",") seed=seed
 
     return _run(;
-        bundle_path,
+        catalog_path,
         model_path,
         detectors,
         priors,

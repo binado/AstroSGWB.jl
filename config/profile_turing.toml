@@ -1,4 +1,4 @@
-bundle_path = "parity:posterior"
+catalog_path = "parity:posterior"
 model_path = "parity:posterior"
 detectors = ["H1", "L1"]
 seed = 1

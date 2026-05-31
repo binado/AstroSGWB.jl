@@ -53,7 +53,7 @@ mask). `detectors` must contain at least two [`Detector`](@ref)s; the network ef
 and Gaussian bin scales are computed from tabulated PSDs and overlap-reduction functions.
 
 The proposal caches (`proposal_log_prob`, `dgw_fid_sq`, `cached_flux_over_dgw2`) are
-recomputed from the raw bundle at the fiducial cosmology `cosmology(C, Λ_fid)`, so stale
+recomputed from the raw catalog at the fiducial cosmology `cosmology(C, Λ_fid)`, so stale
 on-disk values are never trusted. The `fiducial_spectral_density` is produced by running the
 inline `weights → rate → Sₕ` sequence at the fiducial point.
 """

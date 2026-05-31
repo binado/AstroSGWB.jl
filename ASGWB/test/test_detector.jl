@@ -80,7 +80,7 @@ end
 end
 
 @testset "build_model_context reconstructs effective_psd from detectors" begin
-    if !@isdefined parity_bundle_dir
+    if !@isdefined parity_catalog_dir
         include(joinpath(@__DIR__, "parity_test_cache.jl"))
     end
     d1 = Detector("H1")
@@ -93,7 +93,7 @@ end
 end
 
 @testset "build_model_context is deterministic for the same paths and detectors" begin
-    if !@isdefined parity_bundle_dir
+    if !@isdefined parity_catalog_dir
         include(joinpath(@__DIR__, "parity_test_cache.jl"))
     end
     dets = [Detector("H1"), Detector("L1")]

@@ -26,7 +26,7 @@ using ASGWB:
              MadauDickinsonSourceFrame,
              BNS_LAMBDA_HIGH,
              stack_source_masses,
-             load_bundle,
+             load_catalog,
              load_model_toml,
              verify_model_fingerprint,
              validate_subset,

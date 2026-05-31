@@ -1,4 +1,4 @@
-bundle_path = "../bundle.h5"
+catalog_path = "../catalog.h5"
 model_path = "../model.toml"
 detectors = ["E1", "E2", "E3"]
 sample_only = ["H0"]

@@ -1,12 +1,12 @@
-# Test-only synthetic bundle fixtures. Include after `using ASGWB` (see `runtests.jl`).
+# Test-only synthetic catalog fixtures. Include after `using ASGWB` (see `runtests.jl`).
 
 if !@isdefined ParityBNSPopulation
     include(joinpath(@__DIR__, "fixture_population.jl"))
 end
 
-const _PARITY_COMMAND = "ASGWB/test/parity_test_cache.jl (generated test bundle)"
+const _PARITY_COMMAND = "ASGWB/test/parity_test_cache.jl (generated test catalog)"
 const _PARITY_GIT_REVISION = "parity-snapshots"
-const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
+const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
 
 # Use save_model_toml so TOML.print handles quoting of non-ASCII symbol names.
 function _parity_hyperparameters(C, pop, overrides::NamedTuple = NamedTuple())
@@ -22,17 +22,17 @@ function _parity_hyperparameters_w0(C, pop, overrides::NamedTuple = NamedTuple()
     return canonical_hyperparameters(order, merge(defaults, overrides))
 end
 
-function _write_parity_bundle!(dir::String, variant::Symbol)
+function _write_parity_catalog!(dir::String, variant::Symbol)
     if variant == :posterior
-        _write_posterior_bundle(dir)
+        _write_posterior_catalog(dir)
     elseif variant == :full_intrinsic
-        _write_full_intrinsic_bundle(dir)
+        _write_full_intrinsic_catalog(dir)
     elseif variant == :importance_context || variant == :posterior_v2_minimal
-        _write_importance_context_bundle(dir)
+        _write_importance_context_catalog(dir)
     elseif variant == :w0cdm
-        _write_w0cdm_bundle(dir)
+        _write_w0cdm_catalog(dir)
     else
-        throw(ArgumentError("unknown parity bundle variant $(repr(variant))"))
+        throw(ArgumentError("unknown parity catalog variant $(repr(variant))"))
     end
     return dir
 end
@@ -43,9 +43,9 @@ function _write_model_toml(dir, C, pop, Λ)
     return path
 end
 
-function _write_bundle_h5(dir, catalog)
-    path = joinpath(dir, "bundle.h5")
-    save_bundle(path, catalog)
+function _write_catalog_h5(dir, catalog)
+    path = joinpath(dir, "catalog.h5")
+    save_catalog(path, catalog)
     return path
 end
 
@@ -70,7 +70,7 @@ function _make_bns_samples(masses1, masses2, redshifts; chi1 = nothing, chi2 = n
     )
 end
 
-function _write_posterior_bundle(dir)
+function _write_posterior_catalog(dir)
     C = ModifiedPropagation{LambdaCDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
@@ -83,16 +83,16 @@ function _write_posterior_bundle(dir)
     )
     grid = _PARITY_FREQUENCY_GRID
     cached_flux = Float64[0.0 0.0; 1.0 4.0; 2.0 5.0]
-    metadata = WaveformMetadata(
+    metadata = WaveformCatalogMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
-    catalog = WaveformCatalog(samples, cached_flux, metadata)
-    _write_bundle_h5(dir, catalog)
+    catalog = WaveformCatalog(samples, cached_flux)
+    _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
     return dir
 end
 
-function _write_full_intrinsic_bundle(dir)
+function _write_full_intrinsic_catalog(dir)
     C = ModifiedPropagation{LambdaCDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
@@ -111,16 +111,16 @@ function _write_full_intrinsic_bundle(dir)
     cached_flux = Float64[0.0 0.0 0.0 0.0
                           1.0 1.5 2.0 2.5
                           2.0 2.5 3.0 3.5]
-    metadata = WaveformMetadata(
+    metadata = WaveformCatalogMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
-    catalog = WaveformCatalog(samples, cached_flux, metadata)
-    _write_bundle_h5(dir, catalog)
+    catalog = WaveformCatalog(samples, cached_flux)
+    _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
     return dir
 end
 
-function _write_importance_context_bundle(dir)
+function _write_importance_context_catalog(dir)
     C = ModifiedPropagation{LambdaCDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
@@ -133,16 +133,16 @@ function _write_importance_context_bundle(dir)
     )
     grid = _PARITY_FREQUENCY_GRID
     cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
-    metadata = WaveformMetadata(
+    metadata = WaveformCatalogMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
-    catalog = WaveformCatalog(samples, cached_flux, metadata)
-    _write_bundle_h5(dir, catalog)
+    catalog = WaveformCatalog(samples, cached_flux)
+    _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
     return dir
 end
 
-function _write_w0cdm_bundle(dir)
+function _write_w0cdm_catalog(dir)
     C = ModifiedPropagation{W0CDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters_w0(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
@@ -155,16 +155,16 @@ function _write_w0cdm_bundle(dir)
     )
     grid = _PARITY_FREQUENCY_GRID
     cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
-    metadata = WaveformMetadata(
+    metadata = WaveformCatalogMetadata(
         "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
         _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
-    catalog = WaveformCatalog(samples, cached_flux, metadata)
-    _write_bundle_h5(dir, catalog)
+    catalog = WaveformCatalog(samples, cached_flux)
+    _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
     return dir
 end
 
-const _PARITY_BUNDLE_DIRS = Dict{Symbol, String}()
+const _PARITY_CATALOG_DIRS = Dict{Symbol, String}()
 
 function parity_observation_kwargs(variant::Symbol)
     if variant == :posterior || variant == :full_intrinsic
@@ -195,7 +195,7 @@ end
 """
     parity_problem_context(variant, detectors; registry=PARITY_REGISTRY) -> (; problem, cosmology_type, ctx)
 
-Load the parity bundle for `variant`, restructure its samples, build the pure
+Load the parity catalog for `variant`, restructure its samples, build the pure
 [`ImportanceSamplingProblem`](@ref), and build its [`ModelContext`](@ref). Inference tests
 pass the production `POPULATION_REGISTRY` so the Turing codegen dispatch matches.
 """
@@ -204,18 +204,19 @@ function parity_problem_context(
         detectors;
         registry::AbstractDict = PARITY_REGISTRY
 )
-    dir = parity_bundle_dir(variant)
-    catalog = load_bundle(joinpath(dir, "bundle.h5"))
+    dir = parity_catalog_dir(variant)
+    loaded = load_catalog(joinpath(dir, "catalog.h5"))
     model_path = joinpath(dir, "model.toml")
-    verify_model_fingerprint(catalog, model_path)
+    verify_model_fingerprint(loaded, model_path)
     C, pop, Λ = load_model_toml(model_path, registry)
+    catalog = loaded.catalog
     samples = parity_bns_samples_from_catalog(catalog.samples)
     problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, Λ)
     kw = parity_observation_kwargs(variant)
     ctx = build_model_context(
         problem,
         C,
-        catalog.metadata.grid,
+        loaded.metadata.grid,
         detectors,
         kw.observation_time_yr,
         kw.local_merger_rate
@@ -224,34 +225,34 @@ function parity_problem_context(
 end
 
 """
-    parity_bundle_dir(variant) -> String
+    parity_catalog_dir(variant) -> String
 
-Return the directory containing `model.toml` and `bundle.h5` for `variant`.
-The bundle is generated lazily on first call.
+Return the directory containing `model.toml` and `catalog.h5` for `variant`.
+The catalog is generated lazily on first call.
 
 Variants: `:posterior`, `:full_intrinsic`, `:importance_context`,
 `:posterior_v2_minimal` (alias for `:importance_context`), `:w0cdm`.
 """
-function parity_bundle_dir(variant::Symbol)
-    get(_PARITY_BUNDLE_DIRS, variant) do
+function parity_catalog_dir(variant::Symbol)
+    get(_PARITY_CATALOG_DIRS, variant) do
         dir = mktempdir()
-        _write_parity_bundle!(dir, variant)
-        _PARITY_BUNDLE_DIRS[variant] = dir
+        _write_parity_catalog!(dir, variant)
+        _PARITY_CATALOG_DIRS[variant] = dir
         return dir
     end
 end
 
-function resolve_parity_bundle_dir(path::AbstractString)
+function resolve_parity_catalog_dir(path::AbstractString)
     if path == "parity:posterior"
-        return parity_bundle_dir(:posterior)
+        return parity_catalog_dir(:posterior)
     elseif path == "parity:full_intrinsic"
-        return parity_bundle_dir(:full_intrinsic)
+        return parity_catalog_dir(:full_intrinsic)
     elseif path == "parity:importance_context"
-        return parity_bundle_dir(:importance_context)
+        return parity_catalog_dir(:importance_context)
     elseif path == "parity:posterior_v2_minimal"
-        return parity_bundle_dir(:posterior_v2_minimal)
+        return parity_catalog_dir(:posterior_v2_minimal)
     elseif path == "parity:w0cdm"
-        return parity_bundle_dir(:w0cdm)
+        return parity_catalog_dir(:w0cdm)
     end
     return nothing
 end

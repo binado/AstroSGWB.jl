@@ -8,11 +8,11 @@ sampling, redshift grids, and likelihoods. MCMC via Turing/AdvancedHMC lives in 
 The inference input artifacts are two files:
 - **`model.toml`** — `[model]` (cosmology type) and `[parameters]` (flat
   hyperparameters, keyed by Julia symbol names such as `Ωm`, `γ`, `Ξ₀`).
-- **`bundle.h5`** ([`WaveformCatalog`](@ref)) — per-sample intrinsic parameters with
+- **`catalog.h5`** ([`WaveformCatalogFile`](@ref)) — per-sample intrinsic parameters with
   precomputed luminosity distances, and a `(n_freq, n_samples)` per-sample flux matrix
   `|h_+|² + |h_×|²` (before the fiducial `(D_L/D_gw)²` factor).
 
-Load the bundle with [`load_bundle`](@ref) and the model with [`load_model_toml`](@ref),
+Load the catalog with [`load_catalog`](@ref) and the model with [`load_model_toml`](@ref),
 restructure the catalog samples into the proposal layout, and construct a pure
 [`ImportanceSamplingProblem`](@ref). Derived/`Λ`-independent caches (rescaled fluxes,
 proposal log-prob, redshift interpolant, detector PSDs, fiducial spectral density) are
@@ -32,7 +32,9 @@ import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance,
 include("types.jl")
 include("models/base.jl")
 include("models/io.jl")
-include("bundle.jl")
+include("catalog/grid.jl")
+include("catalog/catalog.jl")
+include("catalog/io.jl")
 include("inference_types.jl")
 include("detector/psd.jl")
 include("detector/detector.jl")
@@ -60,10 +62,9 @@ export ImportanceSamplingProblem,
        canonical_hyperparameters,
        validate_hyperparameters,
        validate_subset,
-       ProposalSampleBundle,
        stack_source_masses,
-       PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR,
-       PROPOSAL_SAMPLES_SOURCE_TYPE_BNS,
+       CATALOG_SOURCE_TYPE_ATTR,
+       CATALOG_SOURCE_TYPE_BNS,
        CumulativeIntegral1D,
        RedshiftPrior,
        redshift
@@ -79,14 +80,15 @@ export load_model_toml,
        dump_parameters,
        dump_model
 
-# Bundle I/O
+# Catalog I/O
 export FrequencyGrid,
        frequencies,
        in_band_mask,
-       WaveformMetadata,
        WaveformCatalog,
-       load_bundle,
-       save_bundle,
+       WaveformCatalogMetadata,
+       WaveformCatalogFile,
+       load_catalog,
+       save_catalog,
        verify_model_fingerprint
 
 # Detector network (ORF / PSD effective strain PSD; used by `build_model_context`)

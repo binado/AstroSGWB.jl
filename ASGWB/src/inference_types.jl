@@ -1,5 +1,3 @@
-abstract type ProposalSampleBundle end
-
 """
     ImportanceSamplingProblem{M <: PopulationModel}
 
@@ -36,7 +34,7 @@ redshift(problem::ImportanceSamplingProblem) = redshift(problem.samples)
 """
     ModelContext
 
-Flat bundle of all `Λ`-independent derived state for an [`ImportanceSamplingProblem`](@ref),
+Flat catalog-derived cache of all `Λ`-independent derived state for an [`ImportanceSamplingProblem`](@ref),
 built once by [`build_model_context`](@ref) and reused by every likelihood/model call:
 
 - proposal caches at the fiducial point: `proposal_log_prob`, `dgw_fid_sq`,

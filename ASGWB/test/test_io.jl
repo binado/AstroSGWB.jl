@@ -3,7 +3,7 @@ using Distributions: Uniform, logpdf
 using Test
 using ASGWB
 
-if !@isdefined parity_bundle_dir
+if !@isdefined parity_catalog_dir
     include(joinpath(@__DIR__, "parity_test_cache.jl"))
 end
 
@@ -13,7 +13,7 @@ function _load_variant(variant::Symbol)
     return parity_problem_context(variant, _TEST_LOAD_DETS)
 end
 
-@testset "save_bundle/load_bundle round-trip" begin
+@testset "save_catalog/load_catalog round-trip" begin
     grid = FrequencyGrid(1.0, 4.0, 2.0, 1.0, 2.0)
     samples = (
         mass_1_source = [1.4, 1.4],
@@ -26,19 +26,20 @@ end
         luminosity_distance = [430.0, 880.0]
     )
     fluxes = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
-    meta = WaveformMetadata("IMRPhenomPV2", :BNS, grid, "deadbeef", "rev", "cmd")
-    catalog = WaveformCatalog(samples, fluxes, meta)
+    meta = WaveformCatalogMetadata("IMRPhenomPV2", :BNS, grid, "deadbeef", "rev", "cmd")
+    catalog = WaveformCatalog(samples, fluxes)
+    file = WaveformCatalogFile(catalog, meta)
 
     path, io = mktemp()
     close(io)
     try
-        save_bundle(path, catalog)
-        loaded = load_bundle(path)
-        @test Set(keys(loaded.samples)) == Set(keys(catalog.samples))
+        save_catalog(path, file)
+        loaded = load_catalog(path)
+        @test Set(keys(loaded.catalog.samples)) == Set(keys(catalog.samples))
         for k in keys(catalog.samples)
-            @test loaded.samples[k] ≈ catalog.samples[k]
+            @test loaded.catalog.samples[k] ≈ catalog.samples[k]
         end
-        @test loaded.fluxes ≈ catalog.fluxes
+        @test loaded.catalog.fluxes ≈ catalog.fluxes
         @test loaded.metadata.approximant == meta.approximant
         @test loaded.metadata.source_type == meta.source_type
         @test loaded.metadata.model_sha256 == meta.model_sha256
@@ -49,6 +50,34 @@ end
     finally
         rm(path; force = true)
     end
+end
+
+@testset "FrequencyGrid dictionary conversion and validation" begin
+    data = Dict(
+        "duration" => 1.0,
+        "sampling_frequency" => 4.0,
+        "reference_frequency" => 2.0,
+        "minimum_frequency" => 1.0,
+        "maximum_frequency" => 2.0
+    )
+    grid = FrequencyGrid(data)
+    @test grid == FrequencyGrid(1.0, 4.0, 2.0, 1.0, 2.0)
+    @test Dict(grid) == data
+    @test FrequencyGrid(1.0, 4.0, 2.0, 1.0).maximum_frequency == 2.0
+
+    @test_throws ArgumentError FrequencyGrid(Dict(:duration => 1.0))
+    @test_throws ArgumentError FrequencyGrid(0.0, 4.0, 2.0, 1.0, 2.0)
+    @test_throws ArgumentError FrequencyGrid(1.0, 0.0, 2.0, 1.0, 2.0)
+    @test_throws ArgumentError FrequencyGrid(1.0, 4.0, 2.0, -1.0, 2.0)
+    @test_throws ArgumentError FrequencyGrid(1.0, 4.0, 2.0, 2.0, 2.0)
+    @test_throws ArgumentError FrequencyGrid(1.0, 4.0, 2.0, 1.0, 3.0)
+end
+
+@testset "WaveformCatalog shape validation" begin
+    @test WaveformCatalog((redshift = [0.1, 0.2],), zeros(3, 2)) isa WaveformCatalog
+    @test WaveformCatalog((x = [1.0], y = [2.0]), zeros(2, 1)) isa WaveformCatalog
+    @test_throws ArgumentError WaveformCatalog((x = [1.0], y = [2.0, 3.0]), zeros(2, 2))
+    @test_throws ArgumentError WaveformCatalog((redshift = [0.1, 0.2],), zeros(3, 3))
 end
 
 @testset "save_model_toml/load_model_toml round-trip" begin
@@ -182,15 +211,15 @@ end
     Λ_lcdm = canonical_hyperparameters(order_lcdm, (; (k => Λ[k] for k in order_lcdm)...))
     p_lcdm = ImportanceSamplingProblem(
         p_w0.population_model, p_w0.fluxes, p_w0.samples, Λ_lcdm)
-    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 45.0)
+    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
     ctx_lcdm = build_model_context(
         p_lcdm, C_lcdm, grid, _TEST_LOAD_DETS, 1.0, 161.0)
     @test !(fs_w0 ≈ ctx_lcdm.fiducial_spectral_density)
 end
 
 @testset "verify_model_fingerprint throws on mismatch" begin
-    dir = parity_bundle_dir(:importance_context)
-    catalog = load_bundle(joinpath(dir, "bundle.h5"))
+    dir = parity_catalog_dir(:importance_context)
+    catalog = load_catalog(joinpath(dir, "catalog.h5"))
     tmp_dir = mktempdir()
     bad_toml = joinpath(tmp_dir, "model.toml")
     write(bad_toml,

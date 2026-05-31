@@ -88,7 +88,7 @@ end
 AbstractMCMC callback that buffers transitions separately for each chain and
 saves a single-chain `FlexiChains.VNChain` snapshot to
 `base.partial.chainN.jld2` every time that chain crosses a new multiple of
-`every`. With `save_state = true` on the bundled samples, the snapshot retains
+`every`. With `save_state = true` on the saved samples, the snapshot retains
 the matching sampler state for manual recovery/debugging.
 """
 mutable struct CheckpointCallback{M, S}
@@ -187,7 +187,7 @@ function parse_sample_only(settings::Dict, order::Tuple{Vararg{Symbol}})
 end
 
 function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = false)
-    bundle_path = resolve_path(settings["bundle_path"]::String, settings_dir)
+    catalog_path = resolve_path(settings["catalog_path"]::String, settings_dir)
     model_path = resolve_path(settings["model_path"]::String, settings_dir)
     detectors = [Detector(n) for n in settings["detectors"]]
     seed = settings["seed"]::Int
@@ -209,9 +209,9 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     output_prefix = get(settings, "output_prefix", "chains")::String
     mkpath(output_dir)
 
-    @info "loading bundle" bundle_path model_path
+    @info "loading catalog" catalog_path model_path
     loaded = load_problem_context(
-        bundle_path,
+        catalog_path,
         model_path,
         detectors,
         POPULATION_REGISTRY;
@@ -221,7 +221,7 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     problem = loaded.problem
     C = loaded.cosmology_type
     ctx = loaded.ctx
-    @info "bundle loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
+    @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
 
     pop = problem.population_model
     order = full_hyperparameters(C, pop)
@@ -266,7 +266,7 @@ function _run(settings::Dict, settings_dir::AbstractString; interactive::Bool = 
     base = "$(output_prefix)-$(params_suffix)-det=$(det_suffix)-seed$(seed)-$(timestamp)"
     output_jld2 = joinpath(output_dir, "$base.jld2")
 
-    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() bundle_path model_path detectors=join(
+    @info "starting run" julia=VERSION threads=num_threads chains=num_chains blas_threads=BLAS.get_num_threads() catalog_path model_path detectors=join(
         (d.name for d in detectors), ",") sample_only output_dir
     @info "package versions"
     Pkg.status()
