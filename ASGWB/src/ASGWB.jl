@@ -62,13 +62,10 @@ export ImportanceSamplingProblem,
        validate_subset,
        ProposalSampleBundle,
        stack_source_masses,
-       FULL_BNS_INTRINSIC_ORDER,
        PROPOSAL_SAMPLES_SOURCE_TYPE_ATTR,
        PROPOSAL_SAMPLES_SOURCE_TYPE_BNS,
        CumulativeIntegral1D,
        RedshiftPrior,
-       IntrinsicPriorStrategy,
-       FullBNS,
        redshift
 
 # Model I/O
@@ -147,8 +144,6 @@ export OrderedUniformSourceMassPair,
        AlignedSpinChiSimple,
        BNS_LAMBDA_HIGH,
        RedshiftInterpolatedDistribution,
-       intrinsic_prior,
-       validate_batch,
        batched_logpdf
 
 # Importance sampling

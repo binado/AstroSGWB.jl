@@ -108,9 +108,70 @@ function _component_batch_length(d::Distribution, samples::NamedTuple, key)
     return _component_batch_length(d, samples[key], key)
 end
 
+function _component_batch_length(d::UnivariateDistribution, field::AbstractVector, key)
+    return length(field)
+end
+
+function _component_batch_length(d::MultivariateDistribution, field::AbstractMatrix, key)
+    expected = length(d)
+    size(field, 1) == expected ||
+        throw(
+            ArgumentError(
+            "population prior field $(repr(key)) must have $expected rows, got $(size(field, 1))",
+        ),
+        )
+    return size(field, 2)
+end
+
+function _component_batch_length(d, field, key)
+    throw(
+        ArgumentError(
+        "unsupported batch layout for population prior field $(repr(key)) and distribution $(typeof(d))",
+    ),
+    )
+end
+
 function _batched_output_eltype(dists)
     isempty(dists) && return Float64
     return promote_type(map(eltype, values(dists))...)
+end
+
+function _add_component_logpdf!(
+        out::AbstractVector,
+        d::UnivariateDistribution,
+        field::AbstractVector
+)
+    @inbounds for i in eachindex(out, field)
+        out[i] += logpdf(d, field[i])
+    end
+    return out
+end
+
+function _add_component_logpdf!(
+        out::AbstractVector,
+        d::MultivariateDistribution,
+        field::AbstractMatrix
+)
+    values = logpdf(d, field)
+    length(values) == length(out) ||
+        throw(ArgumentError("component logpdf length must match output length"))
+    @inbounds for i in eachindex(out, values)
+        out[i] += values[i]
+    end
+    return out
+end
+
+function _add_component_logpdf!(
+        out::AbstractVector,
+        d::OrderedUniformSourceMassPair,
+        field::AbstractMatrix
+)
+    size(field, 1) == 2 ||
+        throw(ArgumentError("ordered source-mass batch must have two rows"))
+    @inbounds for i in eachindex(out)
+        out[i] += logpdf(d, (field[1, i], field[2, i]))
+    end
+    return out
 end
 
 """

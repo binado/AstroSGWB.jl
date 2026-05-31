@@ -12,9 +12,7 @@ export PopulationModel, single_event_prior,
        canonical_hyperparameters, validate_hyperparameters,
        batched_logpdf
 export CumulativeIntegral1D, interpolate, cdf, normalizer
-export IntrinsicPriorStrategy, FullBNS,
-       stack_source_masses, FULL_BNS_INTRINSIC_ORDER,
-       IntrinsicPrior, validate_batch, intrinsic_prior
+export stack_source_masses
 export MadauDickinsonSourceFrame, source_frame_distribution, redshift_prior, DEFAULT_Z_GRID
 
 include("types.jl")
@@ -24,6 +22,5 @@ include("priors.jl")
 include("redshift.jl")
 include("physical_model.jl")
 include("samples.jl")
-include("intrinsic_prior.jl")
 
 end # module
