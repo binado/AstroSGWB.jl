@@ -52,20 +52,17 @@ end
     end
 end
 
-@testset "FrequencyGrid dictionary conversion and validation" begin
-    data = Dict(
+@testset "FrequencyGrid Dict export and validation" begin
+    grid = FrequencyGrid(1.0, 4.0, 2.0, 1.0, 2.0)
+    @test Dict(grid) == Dict(
         "duration" => 1.0,
         "sampling_frequency" => 4.0,
         "reference_frequency" => 2.0,
         "minimum_frequency" => 1.0,
         "maximum_frequency" => 2.0
     )
-    grid = FrequencyGrid(data)
-    @test grid == FrequencyGrid(1.0, 4.0, 2.0, 1.0, 2.0)
-    @test Dict(grid) == data
     @test FrequencyGrid(1.0, 4.0, 2.0, 1.0).maximum_frequency == 2.0
 
-    @test_throws ArgumentError FrequencyGrid(Dict(:duration => 1.0))
     @test_throws ArgumentError FrequencyGrid(0.0, 4.0, 2.0, 1.0, 2.0)
     @test_throws ArgumentError FrequencyGrid(1.0, 0.0, 2.0, 1.0, 2.0)
     @test_throws ArgumentError FrequencyGrid(1.0, 4.0, 2.0, -1.0, 2.0)

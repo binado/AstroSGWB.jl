@@ -79,10 +79,10 @@ function load_catalog(path::AbstractString)::WaveformCatalogFile
         a = attributes(f)
         approx = String(_read_catalog_attr(a, "approximant"))
         src_type = Symbol(String(_read_catalog_attr(a, CATALOG_SOURCE_TYPE_ATTR)))
-        grid = FrequencyGrid(Dict(
-            string(f) => Float64(_read_catalog_attr(a, "grid_$f"))
+        grid = FrequencyGrid((
+            Float64(_read_catalog_attr(a, "grid_$f"))
         for f in fieldnames(FrequencyGrid)
-        ))
+        )...)
         model_sha = String(_read_catalog_attr(a, "model_sha256"))
         git_rev = String(_read_catalog_attr(a, "git_revision"))
         cmd = String(_read_catalog_attr(a, "command"))
