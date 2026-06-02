@@ -8,11 +8,15 @@ using ASGWB:
              full_hyperprior,
              canonical_hyperparameters,
              validate_hyperparameters
-using ASGWBInference: validate_hyperprior, BNSPopulationModel
+using ASGWBInference: validate_hyperprior
 
-@testset "BNS+ModifiedPropagation{LambdaCDM} hyperparameter contract" begin
+if !@isdefined ParityBNSPopulation
+    include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "fixture_population.jl"))
+end
+
+@testset "caller-defined population hyperparameter contract" begin
     C = ModifiedPropagation{LambdaCDM}
-    pop = BNSPopulationModel()
+    pop = ParityBNSPopulation()
     order = full_hyperparameters(C, pop)
 
     @test order == (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
@@ -60,8 +64,8 @@ using ASGWBInference: validate_hyperprior, BNSPopulationModel
     @test_throws ArgumentError validate_hyperparameters(order, merge(θ, (; extra = 1.0)))
     @test collect(Bijectors.link(prior_a, θ)) isa Vector
 
-    @test full_hyperparameters(ModifiedPropagation{W0CDM}, BNSPopulationModel()) ==
+    @test full_hyperparameters(ModifiedPropagation{W0CDM}, ParityBNSPopulation()) ==
           (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-    @test full_hyperparameters(ModifiedPropagation{W0WaCDM}, BNSPopulationModel()) ==
+    @test full_hyperparameters(ModifiedPropagation{W0WaCDM}, ParityBNSPopulation()) ==
           (:H0, :Ωm, :w0, :wa, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
 end

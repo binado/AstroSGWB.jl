@@ -1,5 +1,4 @@
 catalog_path = "parity:posterior"
-model_path = "parity:posterior"
 detectors = ["H1", "L1"]
 seed = 1
 local_merger_rate = 1e-7

@@ -8,7 +8,6 @@ const _PARITY_COMMAND = "ASGWB/test/parity_test_cache.jl (generated test catalog
 const _PARITY_GIT_REVISION = "parity-snapshots"
 const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
 
-# Use save_model_toml so TOML.print handles quoting of non-ASCII symbol names.
 function _parity_hyperparameters(C, pop, overrides::NamedTuple = NamedTuple())
     defaults = (H0 = 67.0, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5)
     order = full_hyperparameters(C, pop)
@@ -35,12 +34,6 @@ function _write_parity_catalog!(dir::String, variant::Symbol)
         throw(ArgumentError("unknown parity catalog variant $(repr(variant))"))
     end
     return dir
-end
-
-function _write_model_toml(dir, C, pop, Λ)
-    path = joinpath(dir, "model.toml")
-    save_model_toml(path, C, pop, Λ, PARITY_REGISTRY)
-    return path
 end
 
 function _write_catalog_h5(dir, catalog)
@@ -74,8 +67,6 @@ function _write_posterior_catalog(dir)
     C = ModifiedPropagation{LambdaCDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
-    model_path = _write_model_toml(dir, C, pop, Λ)
-    sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
@@ -84,8 +75,7 @@ function _write_posterior_catalog(dir)
     grid = _PARITY_FREQUENCY_GRID
     cached_flux = Float64[0.0 0.0; 1.0 4.0; 2.0 5.0]
     metadata = WaveformCatalogMetadata(
-        "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
-        _PARITY_GIT_REVISION, _PARITY_COMMAND
+        "IMRPhenomPV2_NRTidalv2", :BNS, grid, _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
     catalog = WaveformCatalog(samples, cached_flux)
     _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
@@ -96,8 +86,6 @@ function _write_full_intrinsic_catalog(dir)
     C = ModifiedPropagation{LambdaCDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
-    model_path = _write_model_toml(dir, C, pop, Λ)
-    sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
         [1.8, 2.2, 1.4, 2.4], [1.2, 1.7, 1.1, 1.3], [0.1, 0.2, 0.3, 0.5];
@@ -112,8 +100,7 @@ function _write_full_intrinsic_catalog(dir)
                           1.0 1.5 2.0 2.5
                           2.0 2.5 3.0 3.5]
     metadata = WaveformCatalogMetadata(
-        "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
-        _PARITY_GIT_REVISION, _PARITY_COMMAND
+        "IMRPhenomPV2_NRTidalv2", :BNS, grid, _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
     catalog = WaveformCatalog(samples, cached_flux)
     _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
@@ -124,8 +111,6 @@ function _write_importance_context_catalog(dir)
     C = ModifiedPropagation{LambdaCDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
-    model_path = _write_model_toml(dir, C, pop, Λ)
-    sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
@@ -134,8 +119,7 @@ function _write_importance_context_catalog(dir)
     grid = _PARITY_FREQUENCY_GRID
     cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
     metadata = WaveformCatalogMetadata(
-        "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
-        _PARITY_GIT_REVISION, _PARITY_COMMAND
+        "IMRPhenomPV2_NRTidalv2", :BNS, grid, _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
     catalog = WaveformCatalog(samples, cached_flux)
     _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
@@ -146,8 +130,6 @@ function _write_w0cdm_catalog(dir)
     C = ModifiedPropagation{W0CDM}
     pop = ParityBNSPopulation()
     Λ = _parity_hyperparameters_w0(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
-    model_path = _write_model_toml(dir, C, pop, Λ)
-    sha = model_sha256_of_file(model_path)
 
     samples = _make_bns_samples(
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
@@ -156,8 +138,7 @@ function _write_w0cdm_catalog(dir)
     grid = _PARITY_FREQUENCY_GRID
     cached_flux = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
     metadata = WaveformCatalogMetadata(
-        "IMRPhenomPV2_NRTidalv2", :BNS, grid, sha,
-        _PARITY_GIT_REVISION, _PARITY_COMMAND
+        "IMRPhenomPV2_NRTidalv2", :BNS, grid, _PARITY_GIT_REVISION, _PARITY_COMMAND
     )
     catalog = WaveformCatalog(samples, cached_flux)
     _write_catalog_h5(dir, WaveformCatalogFile(catalog, metadata))
@@ -193,22 +174,23 @@ function parity_bns_samples_from_catalog(catalog_samples::NamedTuple)
 end
 
 """
-    parity_problem_context(variant, detectors; registry=PARITY_REGISTRY) -> (; problem, cosmology_type, ctx)
+    parity_problem_context(variant, detectors) -> (; problem, cosmology_type, ctx)
 
 Load the parity catalog for `variant`, restructure its samples, build the pure
-[`ImportanceSamplingProblem`](@ref), and build its [`ModelContext`](@ref). Inference tests
-pass the production `POPULATION_REGISTRY` so the Turing codegen dispatch matches.
+[`ImportanceSamplingProblem`](@ref), and build its [`ModelContext`](@ref).
 """
-function parity_problem_context(
-        variant::Symbol,
-        detectors;
-        registry::AbstractDict = PARITY_REGISTRY
-)
+function parity_problem_context(variant::Symbol, detectors)
     dir = parity_catalog_dir(variant)
     loaded = load_catalog(joinpath(dir, "catalog.h5"))
-    model_path = joinpath(dir, "model.toml")
-    verify_model_fingerprint(loaded, model_path)
-    C, pop, Λ = load_model_toml(model_path, registry)
+    pop = ParityBNSPopulation()
+    C = variant == :w0cdm ? ModifiedPropagation{W0CDM} : ModifiedPropagation{LambdaCDM}
+    Λ = variant == :w0cdm ?
+        _parity_hyperparameters_w0(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5)) :
+        if variant == :posterior || variant == :full_intrinsic
+        _parity_hyperparameters(C, pop, (γ = 2.7, κ = 5.7, zpeak = 2.0))
+    else
+        _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
+    end
     catalog = loaded.catalog
     samples = parity_bns_samples_from_catalog(catalog.samples)
     problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, Λ)
@@ -227,7 +209,7 @@ end
 """
     parity_catalog_dir(variant) -> String
 
-Return the directory containing `model.toml` and `catalog.h5` for `variant`.
+Return the directory containing `catalog.h5` for `variant`.
 The catalog is generated lazily on first call.
 
 Variants: `:posterior`, `:full_intrinsic`, `:importance_context`,

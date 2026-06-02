@@ -26,7 +26,7 @@ end
         luminosity_distance = [430.0, 880.0]
     )
     fluxes = Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
-    meta = WaveformCatalogMetadata("IMRPhenomPV2", :BNS, grid, "deadbeef", "rev", "cmd")
+    meta = WaveformCatalogMetadata("IMRPhenomPV2", :BNS, grid, "rev", "cmd")
     catalog = WaveformCatalog(samples, fluxes)
     file = WaveformCatalogFile(catalog, meta)
 
@@ -42,7 +42,6 @@ end
         @test loaded.catalog.fluxes ≈ catalog.fluxes
         @test loaded.metadata.approximant == meta.approximant
         @test loaded.metadata.source_type == meta.source_type
-        @test loaded.metadata.model_sha256 == meta.model_sha256
         @test loaded.metadata.grid.duration == grid.duration
         @test loaded.metadata.grid.sampling_frequency == grid.sampling_frequency
         @test loaded.metadata.grid.minimum_frequency == grid.minimum_frequency
@@ -75,69 +74,6 @@ end
     @test WaveformCatalog((x = [1.0], y = [2.0]), zeros(2, 1)) isa WaveformCatalog
     @test_throws ArgumentError WaveformCatalog((x = [1.0], y = [2.0, 3.0]), zeros(2, 2))
     @test_throws ArgumentError WaveformCatalog((redshift = [0.1, 0.2],), zeros(3, 3))
-end
-
-@testset "save_model_toml/load_model_toml round-trip" begin
-    cases = (
-        (
-            ModifiedPropagation{LambdaCDM},
-            ParityBNSPopulation(),
-            (H0 = 67.4, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5),
-            "ModifiedPropagation{LambdaCDM}"
-        ),
-        (
-            ModifiedPropagation{W0CDM},
-            ParityBNSPopulation(),
-            (H0 = 67.4, Ωm = 0.315, w0 = -0.9, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0,
-                zpeak = 2.5),
-            "ModifiedPropagation{W0CDM}"
-        ),
-        (
-            ModifiedPropagation{W0WaCDM},
-            ParityBNSPopulation(),
-            (H0 = 67.4, Ωm = 0.315, w0 = -0.9, wa = 0.1, Ξ₀ = 1.0, Ξₙ = 0.0,
-                γ = 2.7, κ = 3.0, zpeak = 2.5),
-            "ModifiedPropagation{W0WaCDM}"
-        )
-    )
-
-    for (C, pop, Λ_raw, tag) in cases
-        order = full_hyperparameters(C, pop)
-        Λ = canonical_hyperparameters(order, Λ_raw)
-        path = joinpath(mktempdir(), "model.toml")
-        save_model_toml(path, C, pop, Λ, PARITY_REGISTRY)
-        C2, pop2, Λ2 = load_model_toml(path, PARITY_REGISTRY)
-        @testset "$tag" begin
-            @test C2 === C
-            @test pop2 isa ParityBNSPopulation
-            @test Λ2 == Λ
-        end
-    end
-end
-
-@testset "load_model_toml requires [parameters]" begin
-    path = joinpath(mktempdir(), "model.toml")
-    write(path,
-        """
-        [model]
-        cosmology = "ModifiedPropagation{LambdaCDM}"
-        population = "bns"
-        """)
-    @test_throws ArgumentError load_model_toml(path, PARITY_REGISTRY)
-end
-
-@testset "read_population requires a registered population" begin
-    path = joinpath(mktempdir(), "model.toml")
-    write(path,
-        """
-        [model]
-        cosmology = "ModifiedPropagation{LambdaCDM}"
-        population = "unregistered"
-
-        [parameters]
-        H0 = 67.0
-        """)
-    @test_throws ArgumentError load_model_toml(path, PARITY_REGISTRY)
 end
 
 @testset "ImportanceSamplingProblem is a pure spec" begin
@@ -212,26 +148,4 @@ end
     ctx_lcdm = build_model_context(
         p_lcdm, C_lcdm, grid, _TEST_LOAD_DETS, 1.0, 161.0)
     @test !(fs_w0 ≈ ctx_lcdm.fiducial_spectral_density)
-end
-
-@testset "verify_model_fingerprint throws on mismatch" begin
-    dir = parity_catalog_dir(:importance_context)
-    catalog = load_catalog(joinpath(dir, "catalog.h5"))
-    tmp_dir = mktempdir()
-    bad_toml = joinpath(tmp_dir, "model.toml")
-    write(bad_toml,
-        """
-        [model]
-        cosmology = "ModifiedPropagation{LambdaCDM}"
-
-        [parameters]
-        H0 = 99.0
-        "Ωm" = 0.5
-        "Ξ₀" = 1.0
-        "Ξₙ" = 0.0
-        "γ" = 2.7
-        "κ" = 3.0
-        zpeak = 2.5
-        """)
-    @test_throws ArgumentError verify_model_fingerprint(catalog, bad_toml)
 end

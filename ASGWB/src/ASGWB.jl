@@ -2,22 +2,19 @@
     ASGWB
 
 Astrophysical stochastic gravitational-wave background modeling: importance
-sampling, redshift grids, and likelihoods. MCMC via Turing/AdvancedHMC lives in the
+sampling, redshift grids, and likelihoods. Turing model construction lives in the
 `ASGWBInference` package (see the `ASGWBInference/` directory in the repository).
 
-The inference input artifacts are two files:
-- **`model.toml`** — `[model]` (cosmology type) and `[parameters]` (flat
-  hyperparameters, keyed by Julia symbol names such as `Ωm`, `γ`, `Ξ₀`).
-- **`catalog.h5`** ([`WaveformCatalogFile`](@ref)) — per-sample intrinsic parameters with
-  precomputed luminosity distances, and a `(n_freq, n_samples)` per-sample flux matrix
-  `|h_+|² + |h_×|²` (before the fiducial `(D_L/D_gw)²` factor).
+The primary inference artifact is **`catalog.h5`** ([`WaveformCatalogFile`](@ref)):
+per-sample intrinsic parameters with precomputed luminosity distances, and a
+`(n_freq, n_samples)` per-sample flux matrix `|h_+|² + |h_×|²` (before the
+fiducial `(D_L/D_gw)²` factor).
 
-Load the catalog with [`load_catalog`](@ref) and the model with [`load_model_toml`](@ref),
-restructure the catalog samples into the proposal layout, and construct a pure
-[`ImportanceSamplingProblem`](@ref). Derived/`Λ`-independent caches (rescaled fluxes,
-proposal log-prob, redshift interpolant, detector PSDs, fiducial spectral density) are
-built into a [`ModelContext`](@ref) by [`build_model_context`](@ref); orchestration of
-these load-time steps lives in the caller (`ASGWBInference`).
+Callers define their population model, fiducial hyperparameters, and catalog sample
+adapter in Julia, then construct a pure [`ImportanceSamplingProblem`](@ref). Derived
+`Λ`-independent caches (rescaled fluxes, proposal log-prob, redshift interpolant,
+detector PSDs, fiducial spectral density) are built into a [`ModelContext`](@ref) by
+[`build_model_context`](@ref).
 
 Inference state is a flat hyperparameter `NamedTuple` validated against the
 [`PopulationModel`](@ref) contract; the cosmology family `C` is threaded through atomic
@@ -31,7 +28,6 @@ import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance,
 
 include("types.jl")
 include("models/base.jl")
-include("models/io.jl")
 include("catalog/grid.jl")
 include("catalog/catalog.jl")
 include("catalog/io.jl")
@@ -69,17 +65,6 @@ export ImportanceSamplingProblem,
        RedshiftPrior,
        redshift
 
-# Model I/O
-export load_model_toml,
-       save_model_toml,
-       model_sha256_of_file,
-       read_cosmology,
-       read_population,
-       read_parameters,
-       population_name,
-       dump_parameters,
-       dump_model
-
 # Catalog I/O
 export FrequencyGrid,
        frequencies,
@@ -88,8 +73,7 @@ export FrequencyGrid,
        WaveformCatalogMetadata,
        WaveformCatalogFile,
        load_catalog,
-       save_catalog,
-       verify_model_fingerprint
+       save_catalog
 
 # Detector network (ORF / PSD effective strain PSD; used by `build_model_context`)
 export Detector,

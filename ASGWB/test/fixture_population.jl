@@ -1,7 +1,6 @@
 # Test-only reference population implementing the three-method PopulationModel
-# contract. The framework owns no concrete population types; production BNS lives
-# in ASGWBInference. This fixture mirrors it so the ASGWB suite can exercise
-# load_problem/importance/io without depending on ASGWBInference.
+# contract. The framework owns no concrete population types; callers define the
+# concrete model used by their notebooks or scripts.
 using ASGWB: PopulationModel, AbstractCosmology, OrderedUniformSourceMassPair,
              AlignedSpinChiSimple, redshift_prior, MadauDickinsonSourceFrame,
              BNS_LAMBDA_HIGH
@@ -32,5 +31,3 @@ function single_event_prior(::ParityBNSPopulation, cosmo::AbstractCosmology, Λ:
         Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
     ))
 end
-
-const PARITY_REGISTRY = Dict{String, PopulationModel}("bns" => ParityBNSPopulation())

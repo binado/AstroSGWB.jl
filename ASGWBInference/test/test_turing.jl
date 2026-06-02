@@ -3,8 +3,7 @@ using Turing
 using Turing.DynamicPPL: VarInfo, getsym
 using FlexiChains
 using ASGWB
-using ASGWBInference: build_turing_model, condition_turing_model, logposterior,
-                      POPULATION_REGISTRY
+using ASGWBInference: build_turing_model, condition_turing_model, logposterior
 using Distributions: product_distribution, Uniform
 
 _varinfo_symbols(vi) = Set(getsym(vn) for vn in keys(vi))
@@ -16,8 +15,7 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
 
 @testset "Turing model smoke test" begin
     for variant in (:posterior, :full_intrinsic)
-        loaded = parity_problem_context(
-            variant, [Detector("H1"), Detector("L1")]; registry = POPULATION_REGISTRY)
+        loaded = parity_problem_context(variant, [Detector("H1"), Detector("L1")])
         cache, C, ctx = loaded.problem, loaded.cosmology_type, loaded.ctx
         theta0 = PARITY_THETA
         priors = PARITY_PRIORS
@@ -98,8 +96,7 @@ include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
 end
 
 @testset "submodel boundary lifts VarNames to parent (flat)" begin
-    loaded = parity_problem_context(
-        :posterior, [Detector("H1"), Detector("L1")]; registry = POPULATION_REGISTRY)
+    loaded = parity_problem_context(:posterior, [Detector("H1"), Detector("L1")])
     cache, C, ctx = loaded.problem, loaded.cosmology_type, loaded.ctx
     priors = PARITY_PRIORS
 
@@ -114,8 +111,7 @@ end
 end
 
 @testset "condition_turing_model across submodel boundary" begin
-    loaded = parity_problem_context(
-        :posterior, [Detector("H1"), Detector("L1")]; registry = POPULATION_REGISTRY)
+    loaded = parity_problem_context(:posterior, [Detector("H1"), Detector("L1")])
     cache, C, ctx = loaded.problem, loaded.cosmology_type, loaded.ctx
     priors = PARITY_PRIORS
     order = _PARITY_ORDER

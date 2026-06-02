@@ -1,4 +1,5 @@
 [deps]
+ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
 ASGWB = "6a24b920-6d62-45b7-87dc-84df6f794d62"
 ASGWBInference = "17b6d0b6-80a1-4842-aa05-e7535ef3d247"
 AdvancedHMC = "0bf59076-c3b1-5ca4-86bd-e02cd72cde3d"
@@ -17,6 +18,7 @@ ASGWB = {path = "../ASGWB"}
 ASGWBInference = {path = "../ASGWBInference"}
 
 [compat]
+ADTypes = "1"
 CairoMakie = "0.15"
 Comonicon = "1.0.8"
 Distributions = "0.25.123"

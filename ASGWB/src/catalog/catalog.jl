@@ -43,7 +43,6 @@ struct WaveformCatalogMetadata
     approximant::String
     source_type::Symbol
     grid::FrequencyGrid
-    model_sha256::String
     git_revision::String
     command::String
 end

@@ -1,6 +1,26 @@
 using Distributions: MvNormal, ProductNamedTupleDistribution
 using LinearAlgebra: Diagonal
 using Turing
+using Turing: DynamicPPL
+
+function validate_hyperprior(order::Tuple{Vararg{Symbol}}, prior::ProductNamedTupleDistribution)
+    keys(prior.dists) == order || throw(
+        ArgumentError("hyperprior must match order $(order), got $(keys(prior.dists))"),
+    )
+    return nothing
+end
+
+function logposterior(
+        Λ::NamedTuple,
+        problem::ImportanceSamplingProblem,
+        ::Type{C},
+        ctx::ModelContext,
+        prior::ProductNamedTupleDistribution;
+        observed::AbstractVector{<:Real} = ctx.fiducial_spectral_density
+) where {C <: AbstractCosmology}
+    return logpdf(prior, Λ) +
+           loglikelihood(Λ, problem, C, ctx; observed = observed)
+end
 
 function condition_turing_model(
         turing_model,
@@ -26,26 +46,20 @@ end
 """
     register_sample_hyperparameters(pop::PopulationModel)
 
-Generate a `sample_hyperparameters` submodel for `pop` paired with each
-supported cosmology.  `full_hyperparameters(C, pop)` is evaluated at
-registration time so Turing sees literal symbol names in the generated
-tilde-sites, which is what enables per-parameter conditioning via
-[`condition_turing_model`](@ref).  Callers register their own population types.
+Compatibility no-op. `build_turing_model` now samples caller-defined model parameters
+through a generic `NamedDist` submodel, so no per-population registration is required.
 """
-function register_sample_hyperparameters(pop::P) where {P <: PopulationModel}
-    for C in SUPPORTED_COSMOLOGIES
-        flds = full_hyperparameters(C, pop)
-        @eval begin
-            @model function sample_hyperparameters(c::Val{$C}, pop::$P, d)
-                $([:($f ~ d.$f) for f in flds]...)
-                return (; $(flds...))
-            end
-        end
-    end
+function register_sample_hyperparameters(pop::PopulationModel)
     return nothing
 end
 
-register_sample_hyperparameters(BNSPopulationModel())
+@model function sample_hyperparameters(order::Tuple{Vararg{Symbol}}, dists)
+    values = map(order) do sym
+        x ~ DynamicPPL.NamedDist(dists[sym], sym)
+        x
+    end
+    return NamedTuple{order}(Tuple(values))
+end
 
 @model function asgwb_importance_turing_model(
         track::Bool,
@@ -55,9 +69,8 @@ register_sample_hyperparameters(BNSPopulationModel())
         prior::ProductNamedTupleDistribution,
         observed_in_band::AbstractVector{<:Real}
 ) where {C}
-    Λ ~ to_submodel(
-        sample_hyperparameters(Val(C), problem.population_model, prior.dists), false)
     order = full_hyperparameters(C, problem.population_model)
+    Λ ~ to_submodel(sample_hyperparameters(order, prior.dists), false)
     Λc = canonical_hyperparameters(
         order,
         Λ;
@@ -65,8 +78,6 @@ register_sample_hyperparameters(BNSPopulationModel())
         eltype = nothing
     )
 
-    # Inline weights → rate → Sₕ from the cached atomics (R8): the generative model and the
-    # ASGWBLogDensity likelihood write the same explicit sequence, divergence visible here.
     weights = compute_importance_weights(problem, C, Λc, ctx)
     rate = merger_rate(problem, C, Λc, ctx)
     Sh = spectral_density(ctx.cached_flux_over_dgw2, rate; weights = weights)

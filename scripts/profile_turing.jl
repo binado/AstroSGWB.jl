@@ -1,4 +1,4 @@
-# Profile the ASGWB Turing/AdvancedHMC log-density to find the bottleneck
+# Profile the ASGWB Turing log-density to find the bottleneck
 # inside a NUTS gradient evaluation, before deciding whether to refactor
 # the cosmology `quadgk` path.
 #
@@ -22,28 +22,34 @@ const _PARITY_TEST_CACHE = joinpath(_REPO_ROOT, "ASGWB", "test", "parity_test_ca
 
 using Distributions: logpdf, product_distribution, Uniform
 using ASGWB
-using ASGWBInference.InferenceImpl:
-                                    build_turing_model,
-                                    ASGWBLogDensity,
-                                    ad_logdensity,
-                                    unconstrained_initial_point,
-                                    logposterior,
-                                    validate_hyperprior,
-                                    load_problem_context,
-                                    POPULATION_REGISTRY
+using ASGWBInference: build_turing_model, logposterior, validate_hyperprior
 using ASGWB:
              compute_importance_weights,
              merger_rate,
              merger_rate_per_sec,
              spectral_density,
              single_event_prior,
+             PopulationModel,
+             AbstractCosmology,
+             OrderedUniformSourceMassPair,
+             AlignedSpinChiSimple,
+             redshift_prior,
+             MadauDickinsonSourceFrame,
+             BNS_LAMBDA_HIGH,
+             stack_source_masses,
              CosmologyCache,
              redshift,
              canonical_hyperparameters,
              full_hyperparameters,
              cosmology,
              luminosity_distance,
+             load_catalog,
+             build_model_context,
+             ImportanceSamplingProblem,
+             ModifiedPropagation,
+             LambdaCDM,
              Detector
+import ASGWB: hyperparameters, hyperprior, single_event_prior
 using BenchmarkTools
 using DelimitedFiles
 using LogDensityProblems
@@ -57,6 +63,43 @@ using TOML
 using Turing: DynamicPPL
 
 include(_PARITY_TEST_CACHE)
+
+struct BNSPopulationModel <: PopulationModel end
+
+hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
+
+function hyperprior(::BNSPopulationModel)
+    return product_distribution((
+        γ = Uniform(0.5, 10.0),
+        κ = Uniform(0.05, 10.0),
+        zpeak = Uniform(0.05, 10.0)
+    ))
+end
+
+function single_event_prior(::BNSPopulationModel, cosmo::AbstractCosmology, Λ::NamedTuple)
+    z_d = redshift_prior(MadauDickinsonSourceFrame(), cosmo, Λ)
+    spin = AlignedSpinChiSimple()
+    return product_distribution((
+        mass = OrderedUniformSourceMassPair(),
+        redshift = z_d,
+        χ₁ = spin,
+        χ₂ = spin,
+        Λ₁ = Uniform(0.0, BNS_LAMBDA_HIGH),
+        Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
+    ))
+end
+
+function bns_samples_from_catalog(catalog_samples::NamedTuple)
+    return (
+        mass = stack_source_masses(
+            catalog_samples.mass_1_source, catalog_samples.mass_2_source),
+        redshift = copy(catalog_samples.redshift),
+        χ₁ = copy(catalog_samples.chi_1),
+        χ₂ = copy(catalog_samples.chi_2),
+        Λ₁ = copy(catalog_samples.lambda_1),
+        Λ₂ = copy(catalog_samples.lambda_2)
+    )
+end
 
 # ---------------------------------------------------------------------------
 # TOML config helpers
@@ -81,24 +124,15 @@ function _require_string_array(settings::Dict, key::AbstractString)
     return Vector{String}(v)
 end
 
-function _resolve_problem_paths(
-        catalog_path::String,
-        model_path::String,
-        base::AbstractString
-)
+function _resolve_catalog_path(catalog_path::String, base::AbstractString)
     if startswith(catalog_path, "parity:")
         dir = resolve_parity_catalog_dir(catalog_path)
         dir === nothing && throw(
             ArgumentError("unknown parity catalog alias $(repr(catalog_path))"),
         )
-        return joinpath(dir, "catalog.h5"), joinpath(dir, "model.toml")
+        return joinpath(dir, "catalog.h5")
     end
-    resolved_catalog = isabspath(catalog_path) ? catalog_path :
-                       normpath(joinpath(base, catalog_path))
-    resolved_model = isabspath(model_path) ?
-                     model_path :
-                     normpath(joinpath(base, model_path))
-    return resolved_catalog, resolved_model
+    return isabspath(catalog_path) ? catalog_path : normpath(joinpath(base, catalog_path))
 end
 
 function _load_observed_spectral_density(path::AbstractString, expected_len::Int)
@@ -242,7 +276,6 @@ end
 
 function _run(;
         catalog_path::String,
-        model_path::String,
         detectors::Vector{Detector},
         priors,
         init_tbl::Dict,
@@ -257,20 +290,22 @@ function _run(;
 )
     t0 = time()
 
-    @info "loading catalog" catalog_path model_path detectors=join(
-        (d.name
-        for d in detectors), ",")
-    loaded = load_problem_context(
-        catalog_path,
-        model_path,
+    @info "loading catalog" catalog_path detectors=join((d.name for d in detectors), ",")
+    loaded = load_catalog(catalog_path)
+    C = ModifiedPropagation{LambdaCDM}
+    pop = BNSPopulationModel()
+    order = full_hyperparameters(C, pop)
+    θ0 = _theta0_from_toml(init_tbl, order)
+    samples = bns_samples_from_catalog(loaded.catalog.samples)
+    problem = ImportanceSamplingProblem(pop, loaded.catalog.fluxes, samples, θ0)
+    ctx = build_model_context(
+        problem,
+        C,
+        loaded.metadata.grid,
         detectors,
-        POPULATION_REGISTRY;
-        local_merger_rate = local_merger_rate,
-        observation_time_yr = observation_time_yr
+        observation_time_yr,
+        local_merger_rate
     )
-    problem = loaded.problem
-    C = loaded.cosmology_type
-    ctx = loaded.ctx
     @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
 
     observed = if observed_spectral_density_csv === nothing
@@ -293,14 +328,7 @@ function _run(;
     # Build callables
     # ------------------------------------------------------------------
 
-    order = full_hyperparameters(C, problem.population_model)
     validate_hyperprior(order, priors)
-    θ0 = _theta0_from_toml(init_tbl, order)
-
-    # Native (ASGWBLogDensity) path — pure Julia, no DynamicPPL
-    ld = ASGWBLogDensity(problem, C, ctx, priors; observed = observed)
-    z0 = unconstrained_initial_point(ld, θ0)
-    ad_ld = ad_logdensity(ld)
 
     # Turing / DynamicPPL path
     model = build_turing_model(
@@ -327,8 +355,6 @@ function _run(;
     # Warmup — trigger JIT / AD compilation before any benchmark
     # ------------------------------------------------------------------
     @info "warming up (JIT + AD compile)"
-    LogDensityProblems.logdensity(ld, z0)
-    LogDensityProblems.logdensity_and_gradient(ad_ld, z0)
     LogDensityProblems.logdensity(lf, z0_turing)
     LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
     logposterior(h, problem, C, ctx, priors; observed = observed)
@@ -344,7 +370,6 @@ function _run(;
     suite = BenchmarkGroup()
 
     suite["primal"] = BenchmarkGroup()
-    suite["primal"]["native"] = @benchmarkable LogDensityProblems.logdensity($ld, $z0)
     suite["primal"]["turing"] = @benchmarkable LogDensityProblems.logdensity($lf, $z0_turing)
     suite["primal"]["logposterior"] = @benchmarkable logposterior(
         $h,
@@ -358,8 +383,6 @@ function _run(;
     suite["gradient"] = BenchmarkGroup()
     # gcsample=true forces a GC before each sample so AD timings are not
     # polluted by GC pauses from previous samples (AD allocates a lot).
-    suite["gradient"]["native"] = @benchmarkable(LogDensityProblems.logdensity_and_gradient($ad_ld, $z0),
-        gcsample = true)
     suite["gradient"]["turing"] = @benchmarkable(LogDensityProblems.logdensity_and_gradient($ad_lf, $z0_turing),
         gcsample = true)
 
@@ -394,25 +417,18 @@ function _run(;
     # Reporting
     # ------------------------------------------------------------------
     @info "=== primal ==="
-    t_primal_native = results["primal"]["native"]
     t_primal_turing = results["primal"]["turing"]
     t_primal_logpost = results["primal"]["logposterior"]
-    _print_trial_row("native (ASGWBLogDensity)", t_primal_native)
     _print_trial_row("turing (DynamicPPL)", t_primal_turing)
     _print_trial_row("logposterior (bare)", t_primal_logpost)
 
     @info "=== gradient ==="
-    t_grad_native = results["gradient"]["native"]
     t_grad_turing = results["gradient"]["turing"]
-    _print_trial_row("native (ForwardDiff)", t_grad_native)
     _print_trial_row("turing (ForwardDiff)", t_grad_turing)
 
     # AD cost multiplier via BenchmarkTools.ratio
-    r_native = ratio(median(t_grad_native), median(t_primal_native))
     r_turing = ratio(median(t_grad_turing), median(t_primal_turing))
-    @info @sprintf("AD multiplier (gradient/primal): native=%.2fx  turing=%.2fx",
-        time(r_native),
-        time(r_turing),)
+    @info @sprintf("AD multiplier (gradient/primal): turing=%.2fx", time(r_turing))
 
     @info "=== per-stage breakdown (denominator: median of logposterior primal) ==="
     primal_ns = _median_ns(t_primal_logpost)
@@ -423,11 +439,7 @@ function _run(;
     # ------------------------------------------------------------------
     # Sampling profile on the gradient
     # ------------------------------------------------------------------
-    # NUTS evaluates the same log-posterior body as `logposterior`; the native
-    # `ASGWBLogDensity` + ForwardDiff path is used here so hot spots map cleanly
-    # to `src/` without DynamicPPL stack noise (benchmarks above already compare
-    # native vs Turing gradient wall times).
-    @info "sampling-profile: running $profile_samples native ForwardDiff gradient evals under Profile.@profile"
+    @info "sampling-profile: running $profile_samples Turing ForwardDiff gradient evals under Profile.@profile"
     Profile.clear()
     # 100µs sampling delay: one gradient eval is ~100µs, so the default 1ms
     # delay misses almost every sample. Pair with n=10^7 so we never run out
@@ -435,7 +447,7 @@ function _run(;
     Profile.init(; n = 10^7, delay = 1e-4)
     Profile.@profile begin
         for _ in 1:profile_samples
-            LogDensityProblems.logdensity_and_gradient(ad_ld, z0)
+            LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
         end
     end
 
@@ -473,7 +485,7 @@ function _run(;
         # the dominant allocation sites.
         Profile.Allocs.@profile sample_rate = 0.01 begin
             for _ in 1:max(profile_samples, 50)
-                LogDensityProblems.logdensity_and_gradient(ad_ld, z0)
+                LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
             end
         end
         allocs_snap = Profile.Allocs.fetch()
@@ -514,19 +526,15 @@ function _run(;
         _fmt_bytes(memory(median(t))),
         pct_of === nothing ? "-" : @sprintf("%.1f%%", 100 * _median_ns(t) / pct_of),)
     )
-    _mdrow("primal", "native", t_primal_native; pct_of = primal_ns)
     _mdrow("primal", "turing", t_primal_turing; pct_of = primal_ns)
     _mdrow("primal", "logposterior", t_primal_logpost; pct_of = primal_ns)
-    _mdrow("gradient", "native", t_grad_native; pct_of = primal_ns)
     _mdrow("gradient", "turing", t_grad_turing; pct_of = primal_ns)
     for key in ("redshift", "weights", "rate", "spectral", "prior", "lumdist")
         _mdrow("stage", key, results["stage"][key]; pct_of = primal_ns)
     end
     println()
     println(
-        @sprintf("AD multiplier (gradient/primal): native=%.2fx, turing=%.2fx",
-        time(r_native),
-        time(r_turing))
+        @sprintf("AD multiplier (gradient/primal): turing=%.2fx", time(r_turing))
     )
     println()
     println("Tip: save a baseline with")
@@ -541,7 +549,7 @@ function _run(;
 end
 
 """
-Profile the ASGWB Turing/AdvancedHMC log-density to localize the NUTS bottleneck.
+Profile the ASGWB Turing log-density to localize the NUTS bottleneck.
 
 Uses BenchmarkTools for timing and `Profile` (stdlib) for sampling/allocation profiles.
 
@@ -569,8 +577,7 @@ function profile_turing(;
     settings_dir = dirname(abspath(config_file))
 
     raw_catalog = _require(cfg, "catalog_path")::String
-    raw_model = _require(cfg, "model_path")::String
-    catalog_path, model_path = _resolve_problem_paths(raw_catalog, raw_model, settings_dir)
+    catalog_path = _resolve_catalog_path(raw_catalog, settings_dir)
     detectors = [Detector(n) for n in _require_string_array(cfg, "detectors")]
     seed = get(cfg, "seed", nothing)
     observed_csv = get(cfg, "observed_spectral_density_csv", nothing)
@@ -585,12 +592,11 @@ function profile_turing(;
     priors = _priors_from_toml(priors_tbl)
     _validate_init_in_priors(priors, init_tbl)
 
-    @info "effective settings" catalog_path model_path detectors=join(
+    @info "effective settings" catalog_path detectors=join(
         (d.name for d in detectors), ",") seed=seed
 
     return _run(;
         catalog_path,
-        model_path,
         detectors,
         priors,
         init_tbl,
