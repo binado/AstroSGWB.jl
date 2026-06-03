@@ -32,7 +32,6 @@ begin
                  Ωgw
     using ASGWBInference: build_turing_model, condition_turing_model
     using ASGWBInference.ChainIO: atomic_save_chain
-    import ASGWB: hyperparameters, hyperprior, single_event_prior
     using Distributions: Uniform, product_distribution
     using Turing
     using AdvancedHMC
@@ -77,20 +76,22 @@ end
 
 # ╔═╡ 2c6d5e4f-7b8a-4d9c-0e3f-4a5b6c7d8e9f
 begin
-    DEBUG = true
+    import ASGWB: hyperparameters, single_event_prior
+
+    DEBUG = false
     @info debug = DEBUG
 
     struct BNSPopulationModel <: PopulationModel end
 
     hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
 
-    function hyperprior(::BNSPopulationModel)
-        return product_distribution((
-            γ = Uniform(0.5, 10.0),
-            κ = Uniform(0.05, 10.0),
-            zpeak = Uniform(0.05, 10.0)
-        ))
-    end
+    # function hyperprior(::BNSPopulationModel)
+    #     return product_distribution((
+    #         γ = Uniform(0.5, 10.0),
+    #         κ = Uniform(0.05, 10.0),
+    #         zpeak = Uniform(0.05, 10.0)
+    #     ))
+    # end
 
     function single_event_prior(
             ::BNSPopulationModel, cosmo::AbstractCosmology, Λ::NamedTuple)
@@ -131,8 +132,8 @@ begin
     _repo_root = normpath(joinpath(@__DIR__, ".."))
 
     catalog_path = joinpath(_repo_root, "catalog.h5")
-    detectors = [Detector("E1"), Detector("E2"), Detector("E3")]
-    sample_only = (:Ξ₀,)
+    detectors = [Detector("S1"), Detector("R1")]
+    sample_only = (:H0, :w0)
 
     seed = 42
     @info "seeding RNG" rng_seed = seed
@@ -155,14 +156,9 @@ begin
     cosmology_parameters = (;
         H0 = 67.66,
         Ωm = 0.3096,
+        w0 = -1,
         Ξ₀ = 1.0,
         Ξₙ = 1.91
-    )
-    cosmology_model = LambdaCDM(cosmology_parameters.H0, cosmology_parameters.Ωm)
-    cosmology = ModifiedPropagation(
-        cosmology_model,
-        cosmology_parameters.Ξ₀,
-        cosmology_parameters.Ξₙ
     )
     fiducials = (;
         cosmology_parameters...,
@@ -175,6 +171,7 @@ begin
     hyperprior_dists = (
         H0 = Uniform(20.0, 140.0),
         Ωm = Uniform(0.05, 0.95),
+        w0 = Uniform(-3, 1),
         Ξ₀ = Uniform(0.5, 5.0),
         Ξₙ = Uniform(0.05, 3.0),
         γ = Uniform(0.5, 10.0),
@@ -197,7 +194,8 @@ begin
     @info "loading catalog" catalog_path detectors = join((d.name for d in detectors), ",")
     loaded = load_catalog(catalog_path)
     catalog = loaded.catalog
-    C = type(cosmology)
+    C = ModifiedPropagation{W0CDM}
+    @info hyperparameters(C)
     pop = BNSPopulationModel()
     samples = bns_samples_from_catalog(catalog.samples)
     problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
@@ -210,6 +208,7 @@ begin
         local_merger_rate
     )
     order = full_hyperparameters(C, pop)
+    @info order
     sample_only_tup = sample_only === nothing ? nothing : Tuple(sample_only)
 
     @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(
@@ -231,8 +230,6 @@ begin
 end
 
 # ╔═╡ 7b1c0d9e-2f3a-4c4b-5d6e-7f8a9b0c1d2e
-# ╠═╡ disabled = true
-#=╠═╡
 begin
     if chain_input_jld2 !== nothing
         chain_path = isabspath(chain_input_jld2) ? String(chain_input_jld2) :
@@ -246,27 +243,27 @@ begin
         initial_params = fill(InitFromPrior(), num_chains)
         adtype = resolve_adtype(sampler.ad_backend)
 
-        @info "starting NUTS" n_adapts = sampler.n_adapts n_samples = sampler.n_samples target_acceptance = sampler.target_acceptance ad_backend = sampler.ad_backend sample_only = sample_only_tup
+        @info "starting NUTS" n_adapts=sampler.n_adapts n_samples=sampler.n_samples target_acceptance=sampler.target_acceptance ad_backend=sampler.ad_backend sample_only=sample_only_tup
         turing_model = build_turing_model(
             problem,
             C,
             ctx,
             hyperprior;
             track = true,
-            observed = observed,
+            observed = observed
         )
         conditioned = condition_turing_model(
             turing_model,
             fiducials,
             hyperprior,
             sample_only_tup;
-            order = order,
+            order = order
         )
         nuts = Turing.NUTS(
             sampler.n_adapts,
             sampler.target_acceptance;
             metricT = AdvancedHMC.DenseEuclideanMetric,
-            adtype = adtype,
+            adtype = adtype
         )
         if DEBUG
             @info "MCMC skipped for debugging"
@@ -281,14 +278,13 @@ begin
                 progress = true,
                 save_state = false,
                 chain_type = VNChain,
-                initial_params = initial_params,
+                initial_params = initial_params
             )
             @info "NUTS finished" chain_size = size(chain)
         end
     end
     chain
 end
-  ╠═╡ =#
 
 # ╔═╡ 8c2d1e0f-3a4b-4c5d-6e7f-8a9b0c1d2e3f
 md"""
@@ -296,7 +292,6 @@ md"""
 """
 
 # ╔═╡ 9d3e2f1a-4b5c-4d6e-7f8a-9b0c1d2e3f4a
-#=╠═╡
 begin
     if chain_input_jld2 === nothing && chain != nothing
         @info "writing chain to JLD2" path = output_jld2
@@ -306,7 +301,6 @@ begin
         @info "skipping JLD2 save (chain was loaded from disk)"
     end
 end
-  ╠═╡ =#
 
 # ╔═╡ 0e4f3a2b-5c6d-4e7f-8a9b-0c1d2e3f4a5b
 md"""
@@ -314,9 +308,7 @@ md"""
 """
 
 # ╔═╡ 1f5a4b3c-6d7e-4f8a-9b0c-1d2e3f4a5b6c
-#=╠═╡
 summarystats(chain)
-  ╠═╡ =#
 
 # ╔═╡ 5f9a8b7c-0e1d-4a2f-3b6c-7d8e9f0a1b2c
 begin
@@ -345,7 +337,6 @@ begin
 end
 
 # ╔═╡ 4c8d7e6f-9a0b-4c1d-2e3f-4a5b6c7d8e9f
-#=╠═╡
 begin
     chain_params = FlexiChains.parameters(chain)
     fig = if length(chain_params) >= 2
@@ -355,25 +346,20 @@ begin
     end
     fig
 end
-  ╠═╡ =#
-
-# ╔═╡ 2a6b5c4d-7e8f-4a9b-0c1d-2e3f4a5b6c7d
-#=╠═╡
-begin
-    fig = FlexiChains.mtraceplot(chain)
-    fig
-end
-  ╠═╡ =#
 
 # ╔═╡ 3b7c6d5e-8f9a-4b0c-1d2e-3f4a5b6c7d8e
-#=╠═╡
 begin
     n_draws = size(chain, 1)
     autocor_maxlag = min(100, max(1, n_draws - 1))
     fig = FlexiChains.mautocorplot(chain; lags = 1:autocor_maxlag)
     fig
 end
-  ╠═╡ =#
+
+# ╔═╡ 2a6b5c4d-7e8f-4a9b-0c1d-2e3f4a5b6c7d
+begin
+    fig = FlexiChains.mtraceplot(chain)
+    fig
+end
 
 # ╔═╡ Cell order:
 # ╟─8f3a2c1d-4e5b-4a6c-9d0e-1f2a3b4c5d6e
