@@ -68,8 +68,7 @@ end
         eltype = nothing
     )
 
-    weights = compute_importance_weights(problem, C, Λc, ctx)
-    rate = merger_rate(problem, C, Λc, ctx)
+    weights, rate = weights_and_rate(problem, C, Λc, ctx)
     Sh = spectral_density(ctx.cached_flux_over_dgw2, rate; weights = weights)
 
     obs = ctx.observation

@@ -45,6 +45,32 @@ function merger_rate(
 end
 
 """
+    weights_and_rate(problem, C, Λ, ctx::ModelContext) -> (weights, rate)
+
+Importance weights and detector-frame merger rate (events/sec) at `Λ`, built from a single
+`single_event_prior(...)` construction. The standalone `compute_importance_weights` and
+`merger_rate` helpers each rebuild the cosmology and prior (including a redshift
+`CosmologyCache`), so the inner forward model uses this to share that work across both.
+"""
+function weights_and_rate(
+        problem::ImportanceSamplingProblem,
+        ::Type{C},
+        Λ::NamedTuple,
+        ctx::ModelContext
+) where {C <: AbstractCosmology}
+    c = cosmology(C, Λ)
+    prior = single_event_prior(problem.population_model, c, Λ)
+    weights = _importance_weights(problem, c, prior, ctx)
+    rate = merger_rate_per_sec(
+        prior.dists.redshift.prior,
+        ctx.local_merger_rate,
+        ctx.observation.observation_time_yr,
+        ctx.observation.observation_time_sec
+    )
+    return weights, rate
+end
+
+"""
     loglikelihood(Λ, problem, C, ctx; observed = ctx.fiducial_spectral_density)
 
 Gaussian in-band log-likelihood of the SGWB spectral density at `Λ`. Inlines the
@@ -57,8 +83,7 @@ function loglikelihood(
         ctx::ModelContext;
         observed::AbstractVector{<:Real} = ctx.fiducial_spectral_density
 ) where {C <: AbstractCosmology}
-    weights = compute_importance_weights(problem, C, Λ, ctx)
-    rate = merger_rate(problem, C, Λ, ctx)
+    weights, rate = weights_and_rate(problem, C, Λ, ctx)
     Sh = spectral_density(ctx.cached_flux_over_dgw2, rate; weights = weights)
 
     obs = ctx.observation

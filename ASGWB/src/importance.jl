@@ -72,8 +72,21 @@ function compute_importance_weights(
         ctx::ModelContext
 ) where {C <: AbstractCosmology}
     c = cosmology(C, Λ)
-    cosmology_cache = CosmologyCache(c, ctx.redshift_grid)
     prior = single_event_prior(problem.population_model, c, Λ)
+    return _importance_weights(problem, c, prior, ctx)
+end
+
+# Importance weights from an already-built cosmology `c` and single-event `prior`. Callers
+# that also need `prior` (e.g. the likelihood, which derives the merger rate from it) build
+# the prior — and its embedded redshift CosmologyCache — only once per evaluation instead of
+# once per atomic call.
+function _importance_weights(
+        problem::ImportanceSamplingProblem,
+        c::AbstractCosmology,
+        prior,
+        ctx::ModelContext
+)
+    cosmology_cache = CosmologyCache(c, ctx.redshift_grid)
     target_log_prob = batched_logpdf(prior, problem.samples)
     return _importance_weights_core(
         target_log_prob,
