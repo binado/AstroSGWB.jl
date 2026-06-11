@@ -46,6 +46,8 @@ using ASGWB:
              LambdaCDM,
              Detector
 import ASGWB: hyperparameters, single_event_prior
+using ADTypes
+using Enzyme
 using BenchmarkTools
 using DelimitedFiles
 using LogDensityProblems
@@ -247,6 +249,28 @@ Build a DynamicPPL `LogDensityFunction` with a linked (unconstrained) `VarInfo`
 seeded from the model's prior. Returns (lf, z0_turing) ready for
 `LogDensityProblems.logdensity(lf, z0_turing)`.
 """
+# Map a config/CLI `ad_backend` string to an `LogDensityProblemsAD` gradient
+# wrapper. `Enzyme` uses reverse mode with runtime activity and a `Const` function
+# annotation; `looseTypeAnalysis!` is required because the cosmology-cache /
+# DataInterpolations construction path is not fully statically typed (the gradient
+# is validated against ForwardDiff in `ASGWBInference/test/test_enzyme.jl`).
+function _resolve_adgradient(ad_backend::AbstractString, lf)
+    if ad_backend == "ForwardDiff"
+        return LogDensityProblemsAD.ADgradient(:ForwardDiff, lf)
+    elseif ad_backend == "Enzyme"
+        Enzyme.API.looseTypeAnalysis!(true)
+        adtype = ADTypes.AutoEnzyme(;
+            mode = Enzyme.set_runtime_activity(Enzyme.Reverse),
+            function_annotation = Enzyme.Const
+        )
+        return LogDensityProblemsAD.ADgradient(adtype, lf)
+    else
+        throw(ArgumentError(
+            "unsupported ad_backend $(repr(ad_backend)); expected \"ForwardDiff\" or \"Enzyme\"",
+        ))
+    end
+end
+
 function _build_turing_logdensity(model)
     vi = DynamicPPL.VarInfo(model)
     vi_linked = DynamicPPL.link(vi, model)
@@ -274,7 +298,8 @@ function _run(;
         seconds::Float64,
         profile_samples::Int,
         do_alloc::Bool,
-        profile_out::Union{Nothing, String}
+        profile_out::Union{Nothing, String},
+        ad_backend::String = "ForwardDiff"
 )
     t0 = time()
 
@@ -328,7 +353,8 @@ function _run(;
         observed = observed
     )
     lf, z0_turing = _build_turing_logdensity(model)
-    ad_lf = LogDensityProblemsAD.ADgradient(:ForwardDiff, lf)
+    @info "AD backend" ad_backend
+    ad_lf = _resolve_adgradient(ad_backend, lf)
 
     # Intermediate values frozen at θ0 for stage-level benchmarks
     h = θ0
@@ -412,7 +438,7 @@ function _run(;
 
     @info "=== gradient ==="
     t_grad_turing = results["gradient"]["turing"]
-    _print_trial_row("turing (ForwardDiff)", t_grad_turing)
+    _print_trial_row("turing ($ad_backend)", t_grad_turing)
 
     # AD cost multiplier via BenchmarkTools.ratio
     r_turing = ratio(median(t_grad_turing), median(t_primal_turing))
@@ -427,7 +453,7 @@ function _run(;
     # ------------------------------------------------------------------
     # Sampling profile on the gradient
     # ------------------------------------------------------------------
-    @info "sampling-profile: running $profile_samples Turing ForwardDiff gradient evals under Profile.@profile"
+    @info "sampling-profile: running $profile_samples Turing $ad_backend gradient evals under Profile.@profile"
     Profile.clear()
     # 100µs sampling delay: one gradient eval is ~100µs, so the default 1ms
     # delay misses almost every sample. Pair with n=10^7 so we never run out
@@ -552,13 +578,18 @@ Uses BenchmarkTools for timing and `Profile` (stdlib) for sampling/allocation pr
 - `--alloc`: also run an allocation profile via `Profile.Allocs`.
 
 - `--profile-out=<path>`: write raw `Profile.retrieve()` snapshot via `Serialization`.
+
+- `--ad-backend=<name>`: reverse/forward AD backend for the gradient
+  (`ForwardDiff` (default) or `Enzyme`). May also be set via the `ad_backend`
+  TOML key; the CLI flag takes precedence.
 """
 function profile_turing(;
         config_file::String,
         seconds::Float64 = 2.0,
         profile_samples::Int = 500,
         alloc::Bool = false,
-        profile_out::String = ""
+        profile_out::String = "",
+        ad_backend::String = ""
 )
     @info "loading config" path = config_file
     cfg = TOML.parsefile(config_file)
@@ -574,6 +605,10 @@ function profile_turing(;
     end
     local_merger_rate = Float64(_require(cfg, "local_merger_rate"))
     observation_time_yr = Float64(_require(cfg, "observation_time_yr"))
+
+    # CLI flag (if given) overrides the TOML key, which defaults to ForwardDiff.
+    resolved_ad_backend = isempty(ad_backend) ?
+                          String(get(cfg, "ad_backend", "ForwardDiff")) : ad_backend
 
     priors_tbl = _require_table(cfg, "priors")
     init_tbl = _require_table(cfg, "init")
@@ -595,7 +630,8 @@ function profile_turing(;
         seconds,
         profile_samples,
         do_alloc = alloc,
-        profile_out = isempty(profile_out) ? nothing : profile_out
+        profile_out = isempty(profile_out) ? nothing : profile_out,
+        ad_backend = resolved_ad_backend
     )
 end
 
@@ -610,6 +646,7 @@ function _parse_args(args::Vector{String})
     profile_samples = 500
     alloc = false
     profile_out = ""
+    ad_backend = ""
 
     i = 1
     while i <= length(args)
@@ -639,6 +676,11 @@ function _parse_args(args::Vector{String})
         elseif startswith(arg, "--profile-out=")
             profile_out = arg[(lastindex("--profile-out=") + 1):end]
             i += 1
+        elseif arg == "--ad-backend"
+            ad_backend, i = _pop_value!(args, i, arg)
+        elseif startswith(arg, "--ad-backend=")
+            ad_backend = arg[(lastindex("--ad-backend=") + 1):end]
+            i += 1
         else
             throw(ArgumentError("unknown argument: $arg"))
         end
@@ -650,7 +692,8 @@ function _parse_args(args::Vector{String})
         seconds,
         profile_samples,
         alloc,
-        profile_out
+        profile_out,
+        ad_backend
     )
 end
 

@@ -1,5 +1,6 @@
 using ASGWB: Ωgw
 using CBCDistributions: hubble_constant_si
+using ChainRulesCore: rrule, unthunk, NoTangent
 using ForwardDiff
 using Statistics
 using Test
@@ -72,4 +73,24 @@ end
                   [ForwardDiff.partials(x)[lane] for x in expected]
         end
     end
+end
+
+@testset "spectral_density rrule matches ForwardDiff" begin
+    n_freq, n_samples = 4, 6
+    fluxes = rand(n_freq, n_samples)
+    rate = 2.5
+    w = rand(n_samples)
+    S̄ = rand(n_freq)
+
+    Sₕ, pullback = rrule(ASGWB._spectral_density, fluxes, rate, w)
+    @test Sₕ ≈ ASGWB._spectral_density(fluxes, rate, w)
+
+    dself, dfluxes, drate, dw = pullback(S̄)
+    @test dself === NoTangent()
+
+    # Each input cotangent equals the gradient of `dot(S̄, Sₕ)` w.r.t. that input.
+    @test drate ≈ ForwardDiff.derivative(r -> sum(S̄ .* ASGWB._spectral_density(fluxes, r, w)), rate)
+    @test dw ≈ ForwardDiff.gradient(v -> sum(S̄ .* ASGWB._spectral_density(fluxes, rate, v)), w)
+    @test unthunk(dfluxes) ≈
+          ForwardDiff.gradient(F -> sum(S̄ .* ASGWB._spectral_density(F, rate, w)), fluxes)
 end

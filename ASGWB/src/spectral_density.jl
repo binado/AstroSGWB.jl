@@ -1,4 +1,7 @@
 using ForwardDiff
+using LinearAlgebra: dot
+import ChainRulesCore
+using ChainRulesCore: NoTangent, @thunk, unthunk
 
 """
     spectral_density(fluxes, merger_rate_per_sec; weights=nothing) -> Vector
@@ -103,6 +106,33 @@ function _spectral_density_forwarddiff(
         out[i] = ForwardDiff.Dual{Tag, V, N}(value, ForwardDiff.Partials(partials))
     end
     return out
+end
+
+# Reverse-mode rule for the weighted contraction. The flux matrix collapses
+# `n_samples` weights into `n_freq` bins, so the pullback is a single adjoint gemv
+# `fluxesᵀ * S̄ₕ` (independent of the parameter count), which is asymptotically
+# cheaper than forward mode's per-lane contraction. `fluxes` is constant catalog
+# data, so its cotangent is thunked and never realized on the hot path. Enzyme
+# matches ForwardDiff exactly when this rrule is available; see
+# `ASGWBInference/test/test_enzyme.jl`.
+function ChainRulesCore.rrule(
+        ::typeof(_spectral_density),
+        fluxes::AbstractMatrix{<:Real},
+        merger_rate_per_sec::Real,
+        weights::AbstractVector{<:Real}
+)
+    n_samples = size(fluxes, 2)
+    fw = fluxes * weights
+    scale = 0.4 / n_samples
+    Sₕ = (scale * merger_rate_per_sec) .* fw
+    function _spectral_density_pullback(S̄)
+        S̄v = unthunk(S̄)
+        rate_bar = scale * dot(S̄v, fw)
+        weights_bar = (scale * merger_rate_per_sec) .* (fluxes' * S̄v)
+        fluxes_bar = @thunk((scale * merger_rate_per_sec) .* (S̄v * weights'))
+        return (NoTangent(), fluxes_bar, rate_bar, weights_bar)
+    end
+    return Sₕ, _spectral_density_pullback
 end
 
 """
