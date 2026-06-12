@@ -38,12 +38,6 @@ julia --project=ASGWBInference -e 'using Pkg; Pkg.test()'
 
 ## MCMC inference
 
-Interactive development and plotting use the notebooks; unattended or cluster sampling uses the headless runner below.
-
-### Notebook workflow (canonical for development)
-
-The canonical entry point is [`notebooks/mcmc_pluto.jl`](notebooks/mcmc_pluto.jl) (Pluto); [`notebooks/mcmc.jl`](notebooks/mcmc.jl) is the Jupytext equivalent.
-
 ### Data and model assembly
 
 1. Provide a waveform **catalog** HDF5 file (`catalog.h5`) at the repo root or set `catalog_path` in the notebook. Catalogs store per-sample intrinsic parameters and a `(n_freq, n_samples)` flux matrix `|h₊|² + |h×|²` (before fiducial `(D_L/D_gw)²` scaling). Use [`ASGWB.load_catalog`](ASGWB/src/catalog/io.jl) / [`ASGWB.save_catalog`](ASGWB/src/catalog/io.jl).
@@ -61,7 +55,7 @@ From the repository root:
 ```bash
 just pluto
 # or
-julia --project=notebooks -e 'using Pkg; Pkg.instantiate(); using Pluto; Pluto.run(notebook="notebooks/mcmc_pluto.jl")'
+julia --project=notebooks -e 'using Pkg; Pkg.instantiate(); using Pluto; Pluto.run(notebook="notebooks/mcmc.jl")'
 ```
 
 Edit fiducials, hyperprior bounds, detectors, and sampler settings in the notebook cells.
@@ -115,8 +109,7 @@ Notebooks live under [`notebooks/`](notebooks/) as Pluto (`.jl` with Pluto cell 
 
 | Notebook | Purpose |
 |----------|---------|
-| [`notebooks/mcmc_pluto.jl`](notebooks/mcmc_pluto.jl) | **Canonical** end-to-end catalog load, Ω_GW plots, Turing NUTS, chain save/load. |
-| [`notebooks/mcmc.jl`](notebooks/mcmc.jl) | Jupytext version of the MCMC workflow. |
+| [`notebooks/mcmc.jl`](notebooks/mcmc.jl) | **Canonical** end-to-end catalog load, Ω_GW plots, Turing NUTS, chain save/load. |
 | [`notebooks/plots.jl`](notebooks/plots.jl) | MCMC diagnostics and figures from saved chains (`FlexiChains`, `PairPlots`, `CairoMakie`). |
 | [`notebooks/amplitude_posterior_gaussian_approximation.jl`](notebooks/amplitude_posterior_gaussian_approximation.jl) | Compare a 1D posterior to a Fisher / SNR Gaussian approximation (single-parameter chains). |
 
