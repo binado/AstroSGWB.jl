@@ -282,10 +282,8 @@ end
 
 end # module ASGWBRunMCMC
 
-if abspath(PROGRAM_FILE) == abspath(@__FILE__)
-    function (@main)(args::Vector{String})
-        length(args) == 1 || throw(ArgumentError("usage: run_mcmc.jl <config.toml>"))
-        ASGWBRunMCMC.run_mcmc(args[1])
-        return 0
-    end
+function (@main)(args::Vector{String})
+    length(args) == 1 || throw(ArgumentError("usage: run_mcmc.jl <config.toml>"))
+    ASGWBRunMCMC.run_mcmc(args[1])
+    return 0
 end
