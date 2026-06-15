@@ -37,6 +37,9 @@ fi
 # Adjust this to your cluster's module system / Julia install.
 # module load julia/1.12
 
+# Locate the raw Julia binary to bypass the juliaup config lock issue on HPC
+JULIA_EXE=$(ls -d $HOME/.julia/juliaup/julia-*/bin/julia 2>/dev/null | sort -V | tail -n 1 || echo "julia")
+
 # Each Julia thread runs one MCMC chain.
 export JULIA_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 # Keep BLAS single-threaded; the runner also enforces this.
@@ -53,7 +56,7 @@ else
 fi
 mkdir -p "${JULIA_DEPOT_PATH%%:*}"
 
-echo "[submit_mcmc] config=$CONFIG threads=$JULIA_NUM_THREADS depot=${JULIA_DEPOT_PATH%%:*}"
+echo "[submit_mcmc] config=$CONFIG julia=$JULIA_EXE threads=$JULIA_NUM_THREADS depot=${JULIA_DEPOT_PATH%%:*}"
 
 # NOTE: Do NOT run Pkg.instantiate() on compute nodes.
 # Instead, ensure you run `just setup-run` on the login node BEFORE submitting.
@@ -61,6 +64,6 @@ echo "[submit_mcmc] config=$CONFIG threads=$JULIA_NUM_THREADS depot=${JULIA_DEPO
 # julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
 
 # Run the MCMC sampler
-job-nanny julia --project=scripts/run -t "$JULIA_NUM_THREADS" \
+job-nanny "$JULIA_EXE" --project=scripts/run -t "$JULIA_NUM_THREADS" \
     scripts/run_mcmc.jl "$CONFIG"
 
