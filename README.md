@@ -12,8 +12,8 @@ The root repository is organized as a monorepo comprised of different small pack
 | [`ASGWBInference/`](ASGWBInference/) | Inference layer on top of `ASGWB`: Turing model construction, log-posterior helpers, chain I/O |
 | [`CBCDistributions/`](CBCDistributions/) | Shared building blocks: ΛCDM / *w*CDM cosmology, redshift distributions, `PopulationModel` contract, and related `Distributions.jl` helpers used by `ASGWB`. |
 | [`notebooks/`](notebooks/) | **Canonical MCMC workflows** (Pluto / Jupytext): inline population model, `load_catalog`, NUTS sampling, diagnostics. |
-| [`config/`](config/) | TOML for developer scripts (e.g. [`config/profile_turing.toml`](config/profile_turing.toml) for `scripts/profile_turing.jl`). |
-| [`scripts/`](scripts/) | Developer utilities (profiling, chain tools, benchmarks). |
+| [`config/`](config/) | TOML for developer scripts and headless MCMC runs (e.g. [`config/mcmc/example.toml`](config/mcmc/example.toml)). |
+| [`scripts/`](scripts/) | Developer utilities (profiling, chain tools, benchmarks) and [`scripts/run_mcmc.jl`](scripts/run_mcmc.jl) for config-driven cluster runs. |
 
 
 ## Installation
@@ -36,9 +36,13 @@ julia --project=ASGWB -e 'using Pkg; Pkg.test()'
 julia --project=ASGWBInference -e 'using Pkg; Pkg.test()'
 ```
 
-## MCMC inference (notebook-first)
+## MCMC inference
 
-Production sampling is driven from the notebooks, not a TOML CLI. The canonical entry point is [`notebooks/mcmc_pluto.jl`](notebooks/mcmc_pluto.jl) (Pluto); [`notebooks/mcmc.jl`](notebooks/mcmc.jl) is the Jupytext equivalent.
+Interactive development and plotting use the notebooks; unattended or cluster sampling uses the headless runner below.
+
+### Notebook workflow (canonical for development)
+
+The canonical entry point is [`notebooks/mcmc_pluto.jl`](notebooks/mcmc_pluto.jl) (Pluto); [`notebooks/mcmc.jl`](notebooks/mcmc.jl) is the Jupytext equivalent.
 
 ### Data and model assembly
 
@@ -60,7 +64,42 @@ just pluto
 julia --project=notebooks -e 'using Pkg; Pkg.instantiate(); using Pluto; Pluto.run(notebook="notebooks/mcmc_pluto.jl")'
 ```
 
-Edit fiducials, hyperprior bounds, detectors, and sampler settings in the notebook cells (no `model.toml` or `MCMC_CONFIG_FILEPATH`).
+Edit fiducials, hyperprior bounds, detectors, and sampler settings in the notebook cells.
+
+### Headless MCMC (config-driven)
+
+[`scripts/run_mcmc.jl`](scripts/run_mcmc.jl) mirrors the sampling cells of [`notebooks/mcmc_pluto.jl`](notebooks/mcmc_pluto.jl) but reads run-specific settings from a TOML file. Cosmology (`ModifiedPropagation{W0CDM}`), population model (`BNSPopulationModel`), and hyperprior bounds are fixed in the script, matching the notebook.
+
+**One-time setup** (separate Julia project at [`scripts/run/`](scripts/run/)):
+
+```bash
+just setup-run
+# or
+julia --project=scripts/run -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+```
+
+Copy [`config/mcmc/example.toml`](config/mcmc/example.toml) per experiment and edit catalog path, detectors, fiducials, `sample_only`, sampler settings, and output paths. Catalog paths are resolved relative to the repository root unless absolute. Use ASCII keys in `[fiducials]` (e.g. `Omega_m`, `Xi_0`, `gamma`).
+
+**Run locally** (one Turing chain per Julia thread via `MCMCThreads()`):
+
+```bash
+just run-mcmc config/mcmc/my_run.toml
+# or
+julia --project=scripts/run -t auto scripts/run_mcmc.jl config/mcmc/my_run.toml
+```
+
+`sampler.num_chains` defaults to `0`, which uses `Base.Threads.nthreads()`. If set explicitly, it must equal the thread count passed to `-t` (or `SLURM_CPUS_PER_TASK` on a cluster). The runner currently supports `ad_backend = "ForwardDiff"` only. Chains are written as JLD2 under `output_dir` (default `chains/`).
+
+**Submit on SLURM** from the repository root (pre-instantiate on the login node with `just setup-run`; the batch script does not run `Pkg.instantiate()` on compute nodes):
+
+```bash
+just submit-mcmc config/mcmc/my_run.toml
+# or
+mkdir -p logs
+sbatch scripts/submit_mcmc.sbatch config/mcmc/my_run.toml
+```
+
+Set `#SBATCH --cpus-per-task` in [`scripts/submit_mcmc.sbatch`](scripts/submit_mcmc.sbatch) to the number of chains you want; adjust the Julia module load line for your cluster.
 
 ### Profiling the log-density
 
