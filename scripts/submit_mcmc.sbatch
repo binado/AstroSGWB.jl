@@ -10,7 +10,8 @@
 
 # Headless ASGWB NUTS run on SLURM. One config file == one experiment.
 #
-# Submit with the config as the single positional argument:
+# Submit from the repository root with the config as the single positional argument:
+#   cd /path/to/ASGWB.jl
 #   sbatch scripts/submit_mcmc.sbatch config/mcmc/example.toml
 #
 # One Turing chain runs per allocated CPU thread (MCMCThreads), so set
@@ -20,10 +21,18 @@ set -euo pipefail
 
 CONFIG="${1:?usage: sbatch scripts/submit_mcmc.sbatch <config.toml>}"
 
-# Resolve repo root from this script's location so the job is cwd-independent.
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Slurm executes a copied batch script from its spool directory on some
+# clusters, so BASH_SOURCE/dirname can point at /var/spool/slurmd. Anchor all
+# relative paths to the directory where sbatch was submitted.
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
 cd "$REPO_ROOT"
 mkdir -p logs
+
+if [[ ! -d ASGWB || ! -d ASGWBInference || ! -f scripts/run_mcmc.jl ]]; then
+    echo "submit_mcmc.sbatch must be submitted from the ASGWB.jl repository root" >&2
+    echo "current directory: $PWD" >&2
+    exit 2
+fi
 
 # Adjust this to your cluster's module system / Julia install.
 # module load julia/1.12
