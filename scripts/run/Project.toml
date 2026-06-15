@@ -1,0 +1,26 @@
+[deps]
+ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
+ASGWB = "6a24b920-6d62-45b7-87dc-84df6f794d62"
+ASGWBInference = "17b6d0b6-80a1-4842-aa05-e7535ef3d247"
+AdvancedHMC = "0bf59076-c3b1-5ca4-86bd-e02cd72cde3d"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+FlexiChains = "4a37a8b9-6e57-4b92-8664-298d46e639f7"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
+
+[sources]
+ASGWB = {path = "../../ASGWB"}
+ASGWBInference = {path = "../../ASGWBInference"}
+
+[compat]
+ADTypes = "1"
+Distributions = "0.25.123"
+FlexiChains = "0.6"
+Turing = "0.45"
+julia = "1.12"

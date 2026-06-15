@@ -9,6 +9,13 @@ test:
 pluto threads='"auto"':
     julia -e 'using Pluto; Pluto.run(threads={{threads}})'
 
+run-mcmc config="config/mcmc/example.toml" threads="auto":
+    julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
+    julia --project=scripts/run -t {{threads}} scripts/run_mcmc.jl {{config}}
+
+submit-mcmc config="config/mcmc/example.toml":
+    sbatch scripts/submit_mcmc.sbatch {{config}}
+
 resolve package="ASGWB":
     julia --project={{package}} -e 'using Pkg; Pkg.resolve()'
 

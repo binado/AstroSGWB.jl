@@ -1,0 +1,70 @@
+# Example MCMC run config for scripts/run_mcmc.jl.
+# Copy this file per experiment; the runner never edits notebooks/mcmc_pluto.jl.
+# Cosmology family and population are fixed in the script
+# (ModifiedPropagation{W0CDM} + BNSPopulationModel).
+
+# Catalog path is relative to the repo root unless absolute.
+catalog_path = "catalog.h5"
+detectors = ["E1", "E2", "E3", "C2"]
+
+# Hyperparameters to sample; the rest are fixed at their fiducial values.
+# Omit this key (or set to []) to sample every hyperparameter.
+sample_only = ["H0"]
+
+seed = 42
+local_merger_rate = 161.0   # matches COBA simulations
+observation_time_yr = 1.0
+
+output_dir = "chains"
+output_prefix = "chains"
+
+[sampler]
+n_samples = 3000
+n_adapts = 3000
+target_acceptance = 0.9
+ad_backend = "ForwardDiff"   # or "ReverseDiff"
+num_chains = 0               # 0 -> use Base.Threads.nthreads()
+
+# Fiducial point (also the importance-sampling reference).
+[fiducials]
+H0 = 67.66
+Omega_m = 0.3096
+w0 = -1.0
+Xi_0 = 1.0
+Xi_n = 1.91
+gamma = 2.7
+kappa = 5.7
+z_peak = 2.0
+
+# Uniform hyperprior bounds (order: cosmology, then population).
+[priors.H0]
+low = 20.0
+high = 140.0
+
+[priors.Omega_m]
+low = 0.05
+high = 0.95
+
+[priors.w0]
+low = -3.0
+high = 1.0
+
+[priors.Xi_0]
+low = 0.5
+high = 5.0
+
+[priors.Xi_n]
+low = 0.05
+high = 3.0
+
+[priors.gamma]
+low = 0.5
+high = 10.0
+
+[priors.kappa]
+low = 0.05
+high = 10.0
+
+[priors.z_peak]
+low = 0.05
+high = 10.0
