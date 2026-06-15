@@ -41,6 +41,8 @@ fi
 export JULIA_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 # Keep BLAS single-threaded; the runner also enforces this.
 export OPENBLAS_NUM_THREADS=1
+export INPUT="*"
+export OUTPUT="*"
 
 # Set up a node-local depot to avoid file-locking contention on shared filesystems (NFS/Lustre).
 # Julia will read from ~/.julia but write any temporary/architecture cache to the local SSD.
@@ -59,6 +61,6 @@ echo "[submit_mcmc] config=$CONFIG threads=$JULIA_NUM_THREADS depot=${JULIA_DEPO
 # julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
 
 # Run the MCMC sampler
-julia --project=scripts/run -t "$JULIA_NUM_THREADS" \
+job-nanny julia --project=scripts/run -t "$JULIA_NUM_THREADS" \
     scripts/run_mcmc.jl "$CONFIG"
 
