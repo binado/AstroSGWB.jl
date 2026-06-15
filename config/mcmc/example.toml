@@ -35,36 +35,3 @@ Xi_n = 1.91
 gamma = 2.7
 kappa = 5.7
 z_peak = 2.0
-
-# Uniform hyperprior bounds (order: cosmology, then population).
-[priors.H0]
-low = 20.0
-high = 140.0
-
-[priors.Omega_m]
-low = 0.05
-high = 0.95
-
-[priors.w0]
-low = -3.0
-high = 1.0
-
-[priors.Xi_0]
-low = 0.5
-high = 5.0
-
-[priors.Xi_n]
-low = 0.05
-high = 3.0
-
-[priors.gamma]
-low = 0.5
-high = 10.0
-
-[priors.kappa]
-low = 0.05
-high = 10.0
-
-[priors.z_peak]
-low = 0.05
-high = 10.0

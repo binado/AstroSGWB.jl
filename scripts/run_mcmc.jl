@@ -1,9 +1,8 @@
 # Headless, config-driven NUTS runner for the ASGWB importance-sampling model.
 #
-# This mirrors the sampling cells of notebooks/mcmc_pluto.jl but takes every
-# run-specific setting from a TOML config, so cluster runs never edit the
-# notebook. Cosmology family and population are fixed here (matching the
-# notebook): ModifiedPropagation{W0CDM} + BNSPopulationModel.
+# This mirrors the sampling cells of notebooks/mcmc_pluto.jl but takes run-specific
+# settings (catalog, detectors, fiducials, sampler, etc.) from a TOML config.
+# Hyperprior bounds are fixed here, matching the notebook.
 #
 # Run from the repository root, for example:
 #   julia --project=scripts/run -t auto scripts/run_mcmc.jl config/mcmc/example.toml
@@ -79,6 +78,18 @@ end
 # Fixed model selection (see notebooks/mcmc_pluto.jl).
 const C = ModifiedPropagation{W0CDM}
 
+# Hard-coded hyperprior bounds (matching notebooks/mcmc_pluto.jl).
+const HYPERPRIOR = product_distribution((
+    H0 = Uniform(20.0, 140.0),
+    Ωm = Uniform(0.05, 0.95),
+    w0 = Uniform(-3, 1),
+    Ξ₀ = Uniform(0.5, 5.0),
+    Ξₙ = Uniform(0.05, 3.0),
+    γ = Uniform(0.5, 10.0),
+    κ = Uniform(0.05, 10.0),
+    zpeak = Uniform(0.05, 10.0)
+))
+
 # Map between TOML ASCII keys and the canonical Unicode hyperparameter symbols.
 const _ASCII_TO_SYM = Dict(
     "H0" => :H0,
@@ -130,29 +141,6 @@ function _fiducials_from_toml(fid_tbl::Dict, order::Tuple{Vararg{Symbol}})
     end
     nt = NamedTuple(pairs)
     return canonical_hyperparameters(order, nt; context = "fiducial hyperparameters")
-end
-
-function _uniform_bounds(priors_tbl::Dict, ascii::AbstractString)
-    sub = priors_tbl[ascii]
-    sub isa Dict ||
-        throw(ArgumentError("priors.$ascii must be a table with 'low' and 'high'"))
-    lo = Float64(sub["low"])
-    hi = Float64(sub["high"])
-    isfinite(lo) && isfinite(hi) ||
-        throw(ArgumentError("priors.$ascii: low and high must be finite"))
-    lo < hi || throw(ArgumentError("priors.$ascii: require low < high, got ($lo, $hi)"))
-    return lo, hi
-end
-
-"""Build the hyperprior `product_distribution` in the canonical `order`."""
-function _priors_from_toml(priors_tbl::Dict, order::Tuple{Vararg{Symbol}})
-    pairs = map(order) do sym
-        ascii = _SYM_TO_ASCII[sym]
-        haskey(priors_tbl, ascii) ||
-            throw(ArgumentError("missing prior bounds [priors.$ascii]"))
-        sym => Uniform(_uniform_bounds(priors_tbl, ascii)...)
-    end
-    return product_distribution(NamedTuple(pairs))
 end
 
 """Normalize a `sample_only` entry (ASCII alias or Unicode string) to a symbol."""
@@ -220,7 +208,6 @@ function _run(config_file::String)
     order = full_hyperparameters(C, pop)
     @info "model" cosmology=string(C) order
     fiducials = _fiducials_from_toml(_require_table(cfg, "fiducials"), order)
-    hyperprior = _priors_from_toml(_require_table(cfg, "priors"), order)
     sample_only = _sample_only_from_toml(cfg)
 
     @info "seeding RNG" seed
@@ -259,14 +246,14 @@ function _run(config_file::String)
         problem,
         C,
         ctx,
-        hyperprior;
+        HYPERPRIOR;
         track = true,
         observed = observed
     )
     conditioned = condition_turing_model(
         turing_model,
         fiducials,
-        hyperprior,
+        HYPERPRIOR,
         sample_only;
         order = order
     )
