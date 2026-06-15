@@ -177,7 +177,7 @@ end
 # Main
 # --------------------------------------------------------------------------
 
-function _run(config_file::String)
+function run_mcmc(config_file::String)
     BLAS.set_num_threads(1)
     num_threads = Base.Threads.nthreads()
 
@@ -283,21 +283,12 @@ function _run(config_file::String)
     return output_jld2
 end
 
-function command_main(args::Vector{String} = ARGS)::Cint
-    try
-        length(args) == 1 ||
-            throw(ArgumentError("usage: run_mcmc.jl <config.toml>"))
-        _run(args[1])
-        return Cint(0)
-    catch err
-        showerror(stderr, err, catch_backtrace())
-        println(stderr)
-        return Cint(1)
-    end
-end
-
 end # module ASGWBRunMCMC
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)
-    exit(Base.invokelatest(ASGWBRunMCMC.command_main))
+    function (@main)(args::Vector{String})
+        length(args) == 1 || throw(ArgumentError("usage: run_mcmc.jl <config.toml>"))
+        ASGWBRunMCMC.run_mcmc(args[1])
+        return 0
+    end
 end
