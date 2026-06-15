@@ -31,7 +31,7 @@ using ASGWB:
              stack_source_masses
 import ASGWB: hyperparameters, single_event_prior
 using ASGWBInference: build_turing_model, condition_turing_model, atomic_save_chain
-using ADTypes: AutoForwardDiff, AutoReverseDiff
+using ADTypes: AutoForwardDiff
 using AdvancedHMC: DenseEuclideanMetric
 using Distributions: Uniform, product_distribution
 using FlexiChains: VNChain
@@ -164,13 +164,8 @@ function _sample_only_from_toml(cfg::Dict)
 end
 
 function _resolve_adtype(name::AbstractString)
-    if name == "ForwardDiff"
-        return AutoForwardDiff()
-    elseif name == "ReverseDiff"
-        return AutoReverseDiff()
-    else
-        throw(ArgumentError("unsupported ad_backend $(repr(name)) (use \"ForwardDiff\" or \"ReverseDiff\")"))
-    end
+    name == "ForwardDiff" && return AutoForwardDiff()
+    throw(ArgumentError("unsupported ad_backend $(repr(name)) (use \"ForwardDiff\")"))
 end
 
 # --------------------------------------------------------------------------
@@ -200,9 +195,11 @@ function run_mcmc(config_file::String)
     cfg_num_chains = Int(get(sampler_tbl, "num_chains", 0))
 
     num_chains = cfg_num_chains > 0 ? cfg_num_chains : num_threads
-    if num_chains != num_threads
-        @warn "num_chains differs from Base.Threads.nthreads()" num_chains num_threads
-    end
+    num_chains == num_threads || throw(ArgumentError(
+        "sampler.num_chains must equal Base.Threads.nthreads() for MCMCThreads() " *
+        "(got num_chains=$num_chains, nthreads()=$num_threads); " *
+        "set num_chains = 0 or match -t / SLURM_CPUS_PER_TASK",
+    ))
 
     pop = BNSPopulationModel()
     order = full_hyperparameters(C, pop)
