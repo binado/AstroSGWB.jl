@@ -13,6 +13,9 @@ run-mcmc config="config/mcmc/example.toml" threads="auto":
     julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
     julia --project=scripts/run -t {{threads}} scripts/run_mcmc.jl {{config}}
 
+setup-run:
+    julia --project=scripts/run -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+
 submit-mcmc config="config/mcmc/example.toml":
     mkdir -p logs
     sbatch scripts/submit_mcmc.sbatch {{config}}

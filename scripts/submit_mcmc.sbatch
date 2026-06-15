@@ -42,10 +42,23 @@ export JULIA_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 # Keep BLAS single-threaded; the runner also enforces this.
 export OPENBLAS_NUM_THREADS=1
 
-echo "[submit_mcmc] config=$CONFIG threads=$JULIA_NUM_THREADS"
+# Set up a node-local depot to avoid file-locking contention on shared filesystems (NFS/Lustre).
+# Julia will read from ~/.julia but write any temporary/architecture cache to the local SSD.
+if [[ -n "${SLURM_TMPDIR:-}" ]]; then
+    export JULIA_DEPOT_PATH="$SLURM_TMPDIR/julia_depot:$HOME/.julia"
+else
+    export JULIA_DEPOT_PATH="/tmp/$USER/julia_depot:$HOME/.julia"
+fi
+mkdir -p "${JULIA_DEPOT_PATH%%:*}"
 
-# Instantiate the slim runner env once (cheap if already resolved).
-julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
+echo "[submit_mcmc] config=$CONFIG threads=$JULIA_NUM_THREADS depot=${JULIA_DEPOT_PATH%%:*}"
 
+# NOTE: Do NOT run Pkg.instantiate() on compute nodes.
+# Instead, ensure you run `just setup-run` on the login node BEFORE submitting.
+#
+# julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
+
+# Run the MCMC sampler
 julia --project=scripts/run -t "$JULIA_NUM_THREADS" \
     scripts/run_mcmc.jl "$CONFIG"
+
