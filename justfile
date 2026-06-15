@@ -14,6 +14,7 @@ run-mcmc config="config/mcmc/example.toml" threads="auto":
     julia --project=scripts/run -t {{threads}} scripts/run_mcmc.jl {{config}}
 
 submit-mcmc config="config/mcmc/example.toml":
+    mkdir -p logs
     sbatch scripts/submit_mcmc.sbatch {{config}}
 
 resolve package="ASGWB":
