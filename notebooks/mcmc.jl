@@ -187,7 +187,7 @@ begin
         Ωm = Uniform(0.05, 0.95),
         w0 = Uniform(-3, 1),
         Ξ₀ = Uniform(0.5, 5.0),
-        Ξₙ = Uniform(0.05, 3.0),
+        Ξₙ = Uniform(0.3, 3.0),
         γ = Uniform(0.5, 10.0),
         κ = Uniform(0.05, 10.0),
         zpeak = Uniform(0.05, 10.0)
