@@ -2,16 +2,16 @@ using Test
 using Turing
 using Turing.DynamicPPL: VarInfo, getsym
 using FlexiChains
-using ASGWB
-using ASGWBInference: build_turing_model, condition_turing_model, logposterior
+using AstroSGWB
+using AstroSGWBInference: build_turing_model, condition_turing_model, logposterior
 using Distributions: product_distribution, Uniform
 
 _varinfo_symbols(vi) = Set(getsym(vn) for vn in keys(vi))
 
 if !@isdefined parity_catalog_dir
-    include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_test_cache.jl"))
+    include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_test_cache.jl"))
 end
-include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
+include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"))
 
 @testset "Turing model smoke test" begin
     for variant in (:posterior, :full_intrinsic)

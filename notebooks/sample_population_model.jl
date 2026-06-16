@@ -9,7 +9,7 @@ begin
     import Pkg
     Pkg.activate(@__DIR__)
     Pkg.instantiate()
-    using ASGWB:
+    using AstroSGWB:
                  PopulationModel,
                  CosmologyCache,
                  LambdaCDM,
@@ -103,7 +103,7 @@ All we need to do to define a population model is to create a struct which subty
 
 # ╔═╡ a1b2c3d4-0004-4e5f-9a0b-1c2d3e4f5a6b
 begin
-    import ASGWB: single_event_prior, hyperparameters
+    import AstroSGWB: single_event_prior, hyperparameters
 
     struct BNSUniformMassAlignedSpinTidalSFR <: PopulationModel end
 

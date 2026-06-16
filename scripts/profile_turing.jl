@@ -1,8 +1,8 @@
-# Profile the ASGWB Turing log-density to find the bottleneck
+# Profile the AstroSGWB Turing log-density to find the bottleneck
 # inside a NUTS gradient evaluation.
 #
 # Run from the repository root, for example:
-#   julia --project=ASGWBInference scripts/profile_turing.jl --config-file=config/profile_turing.toml
+#   julia --project=AstroSGWBInference scripts/profile_turing.jl --config-file=config/profile_turing.toml
 #
 # Optional: --seconds=2.0 --profile-samples=500 --alloc --profile-out=profile.dat
 #
@@ -12,14 +12,14 @@
 # redshift-prior build dominate, which is wildly unrepresentative of production
 # runs (~10⁴ samples, ~10² bins) and produces misleading bottleneck rankings.
 #
-# This script is *measurement only*: it does not edit any ASGWB/src/ files.
+# This script is *measurement only*: it does not edit any AstroSGWB/src/ files.
 
-module ASGWBProfileCLI
+module AstroSGWBProfileCLI
 
 using Distributions: logpdf, product_distribution, Uniform
-using ASGWB
-using ASGWBInference: build_turing_model, logposterior, validate_hyperprior
-using ASGWB:
+using AstroSGWB
+using AstroSGWBInference: build_turing_model, logposterior, validate_hyperprior
+using AstroSGWB:
              compute_importance_weights,
              merger_rate,
              merger_rate_per_sec,
@@ -45,7 +45,7 @@ using ASGWB:
              ModifiedPropagation,
              LambdaCDM,
              Detector
-import ASGWB: hyperparameters, single_event_prior
+import AstroSGWB: hyperparameters, single_event_prior
 using BenchmarkTools
 using DelimitedFiles
 using LogDensityProblems
@@ -537,7 +537,7 @@ function _run(;
 end
 
 """
-Profile the ASGWB Turing log-density to localize the NUTS bottleneck.
+Profile the AstroSGWB Turing log-density to localize the NUTS bottleneck.
 
 Uses BenchmarkTools for timing and `Profile` (stdlib) for sampling/allocation profiles.
 
@@ -665,8 +665,8 @@ function command_main(args::Vector{String} = ARGS)::Cint
     end
 end
 
-end # module ASGWBProfileCLI
+end # module AstroSGWBProfileCLI
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)
-    exit(Base.invokelatest(ASGWBProfileCLI.command_main))
+    exit(Base.invokelatest(AstroSGWBProfileCLI.command_main))
 end

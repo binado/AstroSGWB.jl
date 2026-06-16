@@ -1,9 +1,9 @@
 """
-    ASGWB
+    AstroSGWB
 
 Astrophysical stochastic gravitational-wave background modeling: importance
 sampling, redshift grids, and likelihoods. Turing model construction lives in the
-`ASGWBInference` package (see the `ASGWBInference/` directory in the repository).
+`AstroSGWBInference` package (see the `AstroSGWBInference/` directory in the repository).
 
 The primary inference artifact is **`catalog.h5`** ([`WaveformCatalogFile`](@ref)):
 per-sample intrinsic parameters with precomputed luminosity distances, and a
@@ -20,7 +20,7 @@ Inference state is a flat hyperparameter `NamedTuple` validated against the
 [`PopulationModel`](@ref) contract; the cosmology family `C` is threaded through atomic
 calls rather than stored on the problem.
 """
-module ASGWB
+module AstroSGWB
 
 using CBCDistributions
 import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance,

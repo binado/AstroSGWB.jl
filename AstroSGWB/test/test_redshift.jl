@@ -1,6 +1,6 @@
 using Test
 using CBCDistributions
-using ASGWB
+using AstroSGWB
 
 if !@isdefined ParityBNSPopulation
     include(joinpath(@__DIR__, "fixture_population.jl"))

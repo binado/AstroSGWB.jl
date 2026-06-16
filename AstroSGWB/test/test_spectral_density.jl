@@ -1,4 +1,4 @@
-using ASGWB: Ωgw
+using AstroSGWB: Ωgw
 using CBCDistributions: hubble_constant_si
 using ForwardDiff
 using Statistics

@@ -1,10 +1,10 @@
-# Test-only synthetic catalog fixtures. Include after `using ASGWB` (see `runtests.jl`).
+# Test-only synthetic catalog fixtures. Include after `using AstroSGWB` (see `runtests.jl`).
 
 if !@isdefined ParityBNSPopulation
     include(joinpath(@__DIR__, "fixture_population.jl"))
 end
 
-const _PARITY_COMMAND = "ASGWB/test/parity_test_cache.jl (generated test catalog)"
+const _PARITY_COMMAND = "AstroSGWB/test/parity_test_cache.jl (generated test catalog)"
 const _PARITY_GIT_REVISION = "parity-snapshots"
 const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
 

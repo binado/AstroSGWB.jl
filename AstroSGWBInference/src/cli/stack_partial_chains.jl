@@ -1,6 +1,6 @@
 module StackPartialChainsCLI
 
-using ASGWB
+using AstroSGWB
 using ..ChainIO: atomic_save_chain
 using AbstractMCMC: chainsstack
 using FlexiChains: VNChain
@@ -85,8 +85,8 @@ and `snapshot` (checkpoint) keys.
 
 Invoke from Julia, for example:
 
-    using ASGWBInference
-    ASGWBInference.StackPartialChainsCLI.stack("partials*.jld2"; output = "stacked.jld2")
+    using AstroSGWBInference
+    AstroSGWBInference.StackPartialChainsCLI.stack("partials*.jld2"; output = "stacked.jld2")
 """
 function stack(
         inputs::String...;

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=asgwb-mcmc
+#SBATCH --job-name=astrosgwb-mcmc
 #SBATCH --output=logs/mcmc-%j.out
 #SBATCH --error=logs/mcmc-%j.err
 #SBATCH --time=24:00:00
@@ -8,10 +8,10 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 
-# Headless ASGWB NUTS run on SLURM. One config file == one experiment.
+# Headless AstroSGWB NUTS run on SLURM. One config file == one experiment.
 #
 # Submit from the repository root with the config as the single positional argument:
-#   cd /path/to/ASGWB.jl
+#   cd /path/to/AstroSGWB.jl
 #   sbatch scripts/submit_mcmc.sbatch config/mcmc/example.toml
 #
 # One Turing chain runs per allocated CPU thread (MCMCThreads), so set
@@ -28,8 +28,8 @@ REPO_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
 cd "$REPO_ROOT"
 mkdir -p logs
 
-if [[ ! -d ASGWB || ! -d ASGWBInference || ! -f scripts/run_mcmc.jl ]]; then
-    echo "submit_mcmc.sbatch must be submitted from the ASGWB.jl repository root" >&2
+if [[ ! -d AstroSGWB || ! -d AstroSGWBInference || ! -f scripts/run_mcmc.jl ]]; then
+    echo "submit_mcmc.sbatch must be submitted from the AstroSGWB.jl repository root" >&2
     echo "current directory: $PWD" >&2
     exit 2
 fi

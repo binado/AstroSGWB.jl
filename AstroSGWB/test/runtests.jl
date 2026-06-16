@@ -1,5 +1,5 @@
 using Test
-using ASGWB
+using AstroSGWB
 
 include("parity_test_cache.jl")
 include("test_io.jl")

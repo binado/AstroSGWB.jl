@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-ASGWB.jl is a Julia package for astrophysical stochastic gravitational-wave background modeling and inference. The package entry point is `ASGWB/src/ASGWB.jl`, which includes and exports the public API (physics, likelihoods, importance caches). Turing/AdvancedHMC model wrappers and sampling helpers live in the sibling package `ASGWBInference/` (see `ASGWBInference/src/InferenceImpl.jl`). Core modules live in `ASGWB/src/`, with detector-specific code under `ASGWB/src/detector/`. Tests live in `ASGWB/test/` and are listed from `ASGWB/test/runtests.jl`. Detector definitions and noise curves are stored in `ASGWB/assets/detector/`. **Production MCMC is notebook-first** (see `notebooks/mcmc.jl`): callers define a concrete [`PopulationModel`](ASGWB/src/models/base.jl), load a waveform catalog with [`load_catalog`](ASGWB/src/catalog/io.jl), build an [`ImportanceSamplingProblem`](ASGWB/src/inference_types.jl) and [`ModelContext`](ASGWB/src/context.jl), then sample via `ASGWBInference.build_turing_model`. Developer utilities (profiling, chain stacking, benchmarks) live in `scripts/` (for example `stack_partial_chains.jl` and `profile_turing.jl`). Pluto and Jupytext notebooks are under `notebooks/`.
+AstroSGWB.jl is a Julia package for astrophysical stochastic gravitational-wave background modeling and inference. The package entry point is `AstroSGWB/src/AstroSGWB.jl`, which includes and exports the public API (physics, likelihoods, importance caches). Turing/AdvancedHMC model wrappers and sampling helpers live in the sibling package `AstroSGWBInference/` (see `AstroSGWBInference/src/InferenceImpl.jl`). Core modules live in `AstroSGWB/src/`, with detector-specific code under `AstroSGWB/src/detector/`. Tests live in `AstroSGWB/test/` and are listed from `AstroSGWB/test/runtests.jl`. Detector definitions and noise curves are stored in `AstroSGWB/assets/detector/`. **Production MCMC is notebook-first** (see `notebooks/mcmc.jl`): callers define a concrete [`PopulationModel`](AstroSGWB/src/models/base.jl), load a waveform catalog with [`load_catalog`](AstroSGWB/src/catalog/io.jl), build an [`ImportanceSamplingProblem`](AstroSGWB/src/inference_types.jl) and [`ModelContext`](AstroSGWB/src/context.jl), then sample via `AstroSGWBInference.build_turing_model`. Developer utilities (profiling, chain stacking, benchmarks) live in `scripts/` (for example `stack_partial_chains.jl` and `profile_turing.jl`). Pluto and Jupytext notebooks are under `notebooks/`.
 
 Note: the package is still in the prototyping phase, so breaking changes are allowed and backwards compatibility is not a concern.
 
@@ -13,7 +13,7 @@ Note: the package is still in the prototyping phase, so breaking changes are all
 - `just pluto`: instantiate the notebook environment and launch Pluto.
 - `julia --project=notebooks -e 'using Pkg; Pkg.instantiate()'` then open `notebooks/mcmc.jl` in Pluto for the canonical MCMC workflow.
 
-If `just` is unavailable, use the Julia commands in the `justfile`, for example `julia --project=ASGWB -e 'using Pkg; Pkg.test()'`.
+If `just` is unavailable, use the Julia commands in the `justfile`, for example `julia --project=AstroSGWB -e 'using Pkg; Pkg.test()'`.
 
 ## Coding Style & Naming Conventions
 
@@ -23,9 +23,9 @@ Use existing Unicode scientific identifiers, including `Ωm`, `Ξ₀`, `Ξₙ`, 
 
 ## Testing Guidelines
 
-Tests use Julia's standard `Test` framework and are orchestrated by `ASGWB/test/runtests.jl`. Add new test files to `runtests.jl`; otherwise they will not run in CI or `Pkg.test()`. Prefer focused numerical tests with explicit tolerances for cosmology, redshift integrals, likelihoods, and interpolation behavior. Minimal catalog fixtures for tests are written on demand via `parity_catalog_dir` (see `ASGWB/test/parity_test_cache.jl`); shared smoke-test hyperparameters live in `ASGWB/test/parity_fixtures.jl`. The reference BNS population for tests is `ParityBNSPopulation` in `ASGWB/test/fixture_population.jl`.
+Tests use Julia's standard `Test` framework and are orchestrated by `AstroSGWB/test/runtests.jl`. Add new test files to `runtests.jl`; otherwise they will not run in CI or `Pkg.test()`. Prefer focused numerical tests with explicit tolerances for cosmology, redshift integrals, likelihoods, and interpolation behavior. Minimal catalog fixtures for tests are written on demand via `parity_catalog_dir` (see `AstroSGWB/test/parity_test_cache.jl`); shared smoke-test hyperparameters live in `AstroSGWB/test/parity_fixtures.jl`. The reference BNS population for tests is `ParityBNSPopulation` in `AstroSGWB/test/fixture_population.jl`.
 
-Run `just test` before opening a pull request. For narrow changes, also run the closest individual test file during development with `julia --project=ASGWB ASGWB/test/test_<area>.jl`.
+Run `just test` before opening a pull request. For narrow changes, also run the closest individual test file during development with `julia --project=AstroSGWB AstroSGWB/test/test_<area>.jl`.
 
 ## Commit & Pull Request Guidelines
 
