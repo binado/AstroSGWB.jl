@@ -45,27 +45,18 @@ begin
     using CairoMakie
     using LaTeXStrings
     using Dates: now, format
+    using Printf
     using LinearAlgebra: BLAS
     BLAS.set_num_threads(1)
 end
 
 # ╔═╡ 8f3a2c1d-4e5b-4a6c-9d0e-1f2a3b4c5d6e
 md"""
-# MCMC
+# Cosmological parameter inference with the astrophysical GWB
 
-Canonical notebook-first MCMC workflow: inline model definition, inline fiducials and hyperprior bounds, `load_catalog`, explicit `ImportanceSamplingProblem`, **NUTS** via `build_turing_model` / `condition_turing_model` / `sample`, and **`atomic_save_chain`** output. No config TOML, no `model.toml`, no checkpoint callbacks.
+In this notebook, we perform Bayesian inference on the cosmological and astrophysical parameters that play into the gravitational-wave background of stellar-mass compact binary coalescences (CBCs) such as neutron stars or black holes.
 
-Plots **Ω_GW(f)** at the fiducial point and optional **FlexiChains** / **PairPlots** diagnostics. Set **`chain_input_jld2`** to reload an existing chain without sampling.
-
-## Environment
-
-The first code cell runs `Pkg.activate(@__DIR__)`, so this notebook uses [notebooks/Project.toml](Project.toml). From the repository root:
-
-```bash
-julia -e 'using Pluto; Pluto.run(notebook="notebooks/mcmc.jl")'
-```
-
-Provide **`catalog.h5`** at the repo root (or change `catalog_path` in the config cell). **`ASGWB`** / **`ASGWBInference`** are path deps.
+To properly run the notebook, you must specify a path to a catalog HDF5 file containing the intrinsic parameter samples of the CBC population as well as the associated waveforms.
 """
 
 # ╔═╡ 9a4b3c2d-5f6e-4b7a-8c1d-2e3f4a5b6c7d
@@ -78,10 +69,12 @@ end
 md"""
 ## Population model
 
-Inference requires a concrete `PopulationModel` subtype (see `ASGWB/src/models/base.jl`). For this BNS workflow we implement two methods:
+Inference requires specifying a population model, parametrized by a vector ``\Lambda`` ,  which characterizes the distribution of the intrinsic parameters ``p(\theta | \Lambda)``.
 
-- **`hyperparameters`** — declares which population hyperparameters (beyond cosmology) enter the model. Here: `:γ`, `:κ`, `:zpeak`.
-- **`single_event_prior`** — defines the per-event intrinsic prior as a `product_distribution` over mass, redshift, spin, and tidal parameters, using cosmology cache `Λ` where needed (e.g. Madau–Dickinson redshift prior).
+At the level of the code, the user must implement a concrete `PopulationModel` subtype (see `ASGWB/src/models/base.jl`), overriding the following two methods:
+
+- **`hyperparameters`** — declares which population hyperparameters (beyond cosmology) enter the model. For instance, for a Madau-Dickinson like redshift distribution, that would be `:γ`, `:κ`, `:zpeak`.
+- **`single_event_prior`** — defines the per-event intrinsic prior as a `product_distribution` over mass, redshift, spin, and (for BNS) tidal parameters.
 
 `bns_samples_from_catalog` restructures catalog columns into the `NamedTuple` layout expected by `single_event_prior`.
 """
@@ -146,8 +139,9 @@ begin
     _repo_root = normpath(joinpath(@__DIR__, ".."))
 
     catalog_path = joinpath(_repo_root, "catalog.h5")
-    detectors = [Detector("S1"), Detector("R1")]
-    sample_only = (:H0, :γ, :κ, :zpeak)
+    detnames = [:S1, :R1, :C1]
+    detectors = map(Detector ∘ string, detnames)
+    sample_only = (:H0,)
 
     seed = 42
     @info "seeding RNG" rng_seed = seed
@@ -194,6 +188,10 @@ begin
     )
     hyperprior = product_distribution(hyperprior_dists)
 
+    # Defining cosmology and population model
+    C = ModifiedPropagation{W0CDM}
+    pop = BNSPopulationModel()
+
     chain_input_jld2 = nothing
 
     num_chains = sampler.num_chains > 0 ? sampler.num_chains : num_threads
@@ -208,9 +206,8 @@ begin
     @info "loading catalog" catalog_path detectors = join((d.name for d in detectors), ",")
     loaded = load_catalog(catalog_path)
     catalog = loaded.catalog
-    C = ModifiedPropagation{W0CDM}
+    
     @info hyperparameters(C)
-    pop = BNSPopulationModel()
     samples = bns_samples_from_catalog(catalog.samples)
     problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
     ctx = build_model_context(
@@ -243,12 +240,27 @@ begin
     nothing
 end
 
+# ╔═╡ c2627b5e-b9f4-4535-b0c3-69ce8b2a696c
+md"""
+## Visualizing ``\Omega_{\mathrm{GW}}``
+
+In the cells below, we plot ``\Omega_{\mathrm{GW}}(f)`` as a function of the frequency ``f`` for the fiducial values of the parameters ``\Lambda``.
+"""
+
 # ╔═╡ d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a
 function plot_fiducial_omega_gw(problem, C, fiducials, ctx)
     weights0 = compute_importance_weights(problem, C, fiducials, ctx)
     rate0 = merger_rate(problem, C, fiducials, ctx)
     Sh0 = spectral_density(problem.fluxes, rate0; weights = weights0)
     f = ctx.observation.frequencies
+    df = frequency_bin_width(f)
+    snr = spectral_snr(
+        Sh0, 
+        ctx.observation.effective_psd,
+        ctx.observation.observation_time_sec,
+        df
+    )
+    
     Ωgw_plot = Ωgw(Sh0, f, fiducials.H0)
     mask = Ωgw_plot .> 0.0
     fm = f[mask]
@@ -263,7 +275,8 @@ function plot_fiducial_omega_gw(problem, C, fiducials, ctx)
         limits = (nothing, nothing, 1e-15, nothing)
     )
     if !isempty(Ωgw_pos)
-        lines!(ax, fm, Ωgw_pos; label = L"$\mathrm{model~at~fiducial}$")
+        label = @sprintf "SNR = %.1f" snr
+        lines!(ax, fm, Ωgw_pos; label = label)
         axislegend(ax; position = :rt)
     end
     return fig
@@ -271,6 +284,11 @@ end
 
 # ╔═╡ 5f9a8b7c-0e1d-4a2f-3b6c-7d8e9f0a1b2c
 plot_fiducial_omega_gw(problem, C, fiducials, ctx)
+
+# ╔═╡ ccf43d43-7f31-41e9-85db-12842561973c
+md"""
+## Running the MCMC
+"""
 
 # ╔═╡ 7b1c0d9e-2f3a-4c4b-5d6e-7f8a9b0c1d2e
 begin
@@ -331,7 +349,7 @@ end
 
 # ╔═╡ 8c2d1e0f-3a4b-4c5d-6e7f-8a9b0c1d2e3f
 md"""
-## Storing the chains
+## Saving the chains to an output file
 """
 
 # ╔═╡ 9d3e2f1a-4b5c-4d6e-7f8a-9b0c1d2e3f4a
@@ -353,6 +371,16 @@ md"""
 # ╔═╡ 1f5a4b3c-6d7e-4f8a-9b0c-1d2e3f4a5b6c
 summarystats(chain)
 
+# ╔═╡ 2a6b5c4d-7e8f-4a9b-0c1d-2e3f4a5b6c7d
+FlexiChains.mtraceplot(chain)
+
+# ╔═╡ 3b7c6d5e-8f9a-4b0c-1d2e-3f4a5b6c7d8e
+begin
+    n_draws = size(chain, 1)
+    autocor_maxlag = min(100, max(1, n_draws - 1))
+    FlexiChains.mautocorplot(chain; lags = 1:autocor_maxlag)
+end
+
 # ╔═╡ 4c8d7e6f-9a0b-4c1d-2e3f-4a5b6c7d8e9f
 begin
     chain_params = FlexiChains.parameters(chain)
@@ -364,29 +392,21 @@ begin
     fig
 end
 
-# ╔═╡ 3b7c6d5e-8f9a-4b0c-1d2e-3f4a5b6c7d8e
-begin
-    n_draws = size(chain, 1)
-    autocor_maxlag = min(100, max(1, n_draws - 1))
-    FlexiChains.mautocorplot(chain; lags = 1:autocor_maxlag)
-end
-
-# ╔═╡ 2a6b5c4d-7e8f-4a9b-0c1d-2e3f4a5b6c7d
-FlexiChains.mtraceplot(chain)
-
 # ╔═╡ Cell order:
-# ╟─8f3a2c1d-4e5b-4a6c-9d0e-1f2a3b4c5d6e
+# ╠═8f3a2c1d-4e5b-4a6c-9d0e-1f2a3b4c5d6e
 # ╠═9a4b3c2d-5f6e-4b7a-8c1d-2e3f4a5b6c7d
 # ╠═1b5c4d3e-6a7f-4c8b-9d2e-3f4a5b6c7d8e
-# ╟─a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+# ╠═a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
 # ╠═2c6d5e4f-7b8a-4d9c-0e3f-4a5b6c7d8e9f
 # ╟─b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e
 # ╠═c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f
 # ╠═3d7e6f5a-8c9b-4e0d-1f4a-5b6c7d8e9f0a
+# ╠═c2627b5e-b9f4-4535-b0c3-69ce8b2a696c
 # ╠═d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a
 # ╠═5f9a8b7c-0e1d-4a2f-3b6c-7d8e9f0a1b2c
+# ╠═ccf43d43-7f31-41e9-85db-12842561973c
 # ╠═7b1c0d9e-2f3a-4c4b-5d6e-7f8a9b0c1d2e
-# ╟─8c2d1e0f-3a4b-4c5d-6e7f-8a9b0c1d2e3f
+# ╠═8c2d1e0f-3a4b-4c5d-6e7f-8a9b0c1d2e3f
 # ╠═9d3e2f1a-4b5c-4d6e-7f8a-9b0c1d2e3f4a
 # ╟─0e4f3a2b-5c6d-4e7f-8a9b-0c1d2e3f4a5b
 # ╠═1f5a4b3c-6d7e-4f8a-9b0c-1d2e3f4a5b6c
