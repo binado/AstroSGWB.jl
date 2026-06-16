@@ -107,8 +107,9 @@ begin
 
     struct BNSUniformMassAlignedSpinTidalSFR <: PopulationModel end
 
-    hyperparameters(::BNSUniformMassAlignedSpinTidalSFR) =
+    function hyperparameters(::BNSUniformMassAlignedSpinTidalSFR)
         (:γ, :κ, :zpeak, :m_low, :m_high, :a_max, :lambda_max)
+    end
 
     function single_event_prior(
             ::BNSUniformMassAlignedSpinTidalSFR,
@@ -142,8 +143,9 @@ This is the fast path for bulk sampling: it writes directly into typed contiguou
 and avoids the 100k per-event `NamedTuple`s (and per-event `mass` vectors) that
 `rand(d, (n,))` allocates.
 """
-sample_columns(d::ProductNamedTupleDistribution, n::Integer) =
+function sample_columns(d::ProductNamedTupleDistribution, n::Integer)
     map(component -> rand(component, n), d.dists)
+end
 
 # ╔═╡ 0feb8a65-c358-4449-828d-78198f26d18d
 md"""
@@ -218,7 +220,7 @@ begin
     # Rename internal columns to bilby conventions
     output_df = rename(samples, pairs(bilby_names)...)
     CSV.write(output_path, output_df; delim = ' ')
-    @info "wrote injection file" path = abspath(output_path) rows = nrow(output_df)
+    @info "wrote injection file" path=abspath(output_path) rows=nrow(output_df)
     output_path
 end
 
