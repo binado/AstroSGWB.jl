@@ -368,15 +368,11 @@ end
 begin
     n_draws = size(chain, 1)
     autocor_maxlag = min(100, max(1, n_draws - 1))
-    fig = FlexiChains.mautocorplot(chain; lags = 1:autocor_maxlag)
-    fig
+    FlexiChains.mautocorplot(chain; lags = 1:autocor_maxlag)
 end
 
 # ╔═╡ 2a6b5c4d-7e8f-4a9b-0c1d-2e3f4a5b6c7d
-begin
-    fig = FlexiChains.mtraceplot(chain)
-    fig
-end
+FlexiChains.mtraceplot(chain)
 
 # ╔═╡ Cell order:
 # ╟─8f3a2c1d-4e5b-4a6c-9d0e-1f2a3b4c5d6e
