@@ -22,7 +22,7 @@ struct Detector
     duty_factor::Float64
 end
 
-"""Directory bundled with ASGWB (`assets/detector`)."""
+"""Directory bundled with AstroSGWB (`assets/detector`)."""
 function default_detector_data_dir()::String
     return normpath(joinpath(@__DIR__, "..", "..", "assets", "detector"))
 end

@@ -1,7 +1,7 @@
 module InferenceImpl
 
-using ASGWB
-using ASGWB:
+using AstroSGWB
+using AstroSGWB:
              ImportanceSamplingProblem,
              ModelContext,
              PopulationModel,

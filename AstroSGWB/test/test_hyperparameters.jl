@@ -1,5 +1,5 @@
 using Test
-using ASGWB
+using AstroSGWB
 using Distributions: product_distribution, Normal, ProductNamedTupleDistribution
 
 if !@isdefined ParityBNSPopulation

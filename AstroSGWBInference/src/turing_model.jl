@@ -51,7 +51,7 @@ end
     return NamedTuple{order}(Tuple(values))
 end
 
-@model function asgwb_importance_turing_model(
+@model function astrosgwb_importance_turing_model(
         track::Bool,
         problem::ImportanceSamplingProblem,
         ::Val{C},
@@ -108,7 +108,7 @@ function build_turing_model(
 ) where {C <: AbstractCosmology}
     order = full_hyperparameters(C, problem.population_model)
     validate_hyperprior(order, prior)
-    return asgwb_importance_turing_model(
+    return astrosgwb_importance_turing_model(
         track,
         problem,
         Val(C),

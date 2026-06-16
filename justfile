@@ -2,8 +2,8 @@ fmt:
     julia -e 'using JuliaFormatter; format(".")'
 
 test:
-    julia --project=ASGWB -e 'using Pkg; Pkg.test()'
-    julia --project=ASGWBInference -e 'using Pkg; Pkg.test()'
+    julia --project=AstroSGWB -e 'using Pkg; Pkg.test()'
+    julia --project=AstroSGWBInference -e 'using Pkg; Pkg.test()'
     julia --project=CBCDistributions -e 'using Pkg; Pkg.test()'
 
 pluto threads='"auto"':
@@ -20,7 +20,7 @@ submit-mcmc config="config/mcmc/example.toml":
     mkdir -p logs
     sbatch scripts/submit_mcmc.sbatch {{config}}
 
-resolve package="ASGWB":
+resolve package="AstroSGWB":
     julia --project={{package}} -e 'using Pkg; Pkg.resolve()'
 
 repl project=".":

@@ -1,10 +1,10 @@
 # Test-only reference population implementing the PopulationModel contract.
 # The framework owns no concrete population types; callers define the concrete
 # model used by their notebooks or scripts.
-using ASGWB: PopulationModel, CosmologyCache, OrderedUniformSourceMassPair,
+using AstroSGWB: PopulationModel, CosmologyCache, OrderedUniformSourceMassPair,
              AlignedSpinChiSimple, redshift_prior, MadauDickinsonSourceFrame,
              BNS_LAMBDA_HIGH
-import ASGWB: hyperparameters, single_event_prior
+import AstroSGWB: hyperparameters, single_event_prior
 using Distributions: Uniform, product_distribution
 
 struct ParityBNSPopulation <: PopulationModel end

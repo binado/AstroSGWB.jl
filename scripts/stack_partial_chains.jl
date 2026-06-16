@@ -2,7 +2,7 @@
 # Stack JLD2-saved FlexiChains partial chains into one combined VNChain.
 #
 # Run from repo root:
-#   julia --project=ASGWBInference scripts/stack_partial_chains.jl
+#   julia --project=AstroSGWBInference scripts/stack_partial_chains.jl
 #
 # Example (from Julia):
 #   include("scripts/stack_partial_chains.jl")
@@ -10,8 +10,8 @@
 
 module StackPartialChainsCLI
 
-using ASGWB
-using ASGWBInference: atomic_save_chain
+using AstroSGWB
+using AstroSGWBInference: atomic_save_chain
 using AbstractMCMC: chainsstack
 using FlexiChains: VNChain
 using JLD2

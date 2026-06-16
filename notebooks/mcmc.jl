@@ -9,8 +9,8 @@ begin
     import Pkg
     Pkg.activate(@__DIR__)
     Pkg.instantiate()
-    using ASGWB
-    using ASGWB:
+    using AstroSGWB
+    using AstroSGWB:
                  build_model_context,
                  canonical_hyperparameters,
                  compute_importance_weights,
@@ -30,8 +30,8 @@ begin
                  stack_source_masses,
                  spectral_density,
                  Ωgw
-    using ASGWBInference: build_turing_model, condition_turing_model
-    using ASGWBInference.ChainIO: atomic_save_chain
+    using AstroSGWBInference: build_turing_model, condition_turing_model
+    using AstroSGWBInference.ChainIO: atomic_save_chain
     using Distributions: Uniform, product_distribution
     using Turing
     using AdvancedHMC
@@ -71,7 +71,7 @@ md"""
 
 Inference requires specifying a population model, parametrized by a vector ``\Lambda`` ,  which characterizes the distribution of the intrinsic parameters ``p(\theta | \Lambda)``.
 
-At the level of the code, the user must implement a concrete `PopulationModel` subtype (see `ASGWB/src/models/base.jl`), overriding the following two methods:
+At the level of the code, the user must implement a concrete `PopulationModel` subtype (see `AstroSGWB/src/models/base.jl`), overriding the following two methods:
 
 - **`hyperparameters`** — declares which population hyperparameters (beyond cosmology) enter the model. For instance, for a Madau-Dickinson like redshift distribution, that would be `:γ`, `:κ`, `:zpeak`.
 - **`single_event_prior`** — defines the per-event intrinsic prior as a `product_distribution` over mass, redshift, spin, and (for BNS) tidal parameters.
@@ -81,7 +81,7 @@ At the level of the code, the user must implement a concrete `PopulationModel` s
 
 # ╔═╡ 2c6d5e4f-7b8a-4d9c-0e3f-4a5b6c7d8e9f
 begin
-    import ASGWB: hyperparameters, single_event_prior
+    import AstroSGWB: hyperparameters, single_event_prior
 
     struct BNSPopulationModel <: PopulationModel end
 

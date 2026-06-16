@@ -1,9 +1,9 @@
-name = "ASGWBInference"
+name = "AstroSGWBInference"
 uuid = "17b6d0b6-80a1-4842-aa05-e7535ef3d247"
 version = "0.1.0"
 
 [deps]
-ASGWB = "6a24b920-6d62-45b7-87dc-84df6f794d62"
+AstroSGWB = "6a24b920-6d62-45b7-87dc-84df6f794d62"
 AbstractMCMC = "80f14c24-f653-4e6a-9b94-39d6b0f70001"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Bijectors = "76274a88-744f-5084-9051-94815aaf08c4"
@@ -31,7 +31,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 test = ["Test", "HDF5"]
 
 [sources]
-ASGWB = {path = "../ASGWB"}
+AstroSGWB = {path = "../AstroSGWB"}
 
 [compat]
 BenchmarkTools = "1.5"

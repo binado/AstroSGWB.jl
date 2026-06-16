@@ -1,4 +1,4 @@
-# Headless, config-driven NUTS runner for the ASGWB importance-sampling model.
+# Headless, config-driven NUTS runner for the AstroSGWB importance-sampling model.
 #
 # This mirrors the sampling cells of notebooks/mcmc_pluto.jl but takes run-specific
 # settings (catalog, detectors, fiducials, sampler, etc.) from a TOML config.
@@ -7,12 +7,12 @@
 # Run from the repository root, for example:
 #   julia --project=scripts/run -t auto scripts/run_mcmc.jl config/mcmc/example.toml
 
-module ASGWBRunMCMC
+module AstroSGWBRunMCMC
 
 const _REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
-using ASGWB
-using ASGWB:
+using AstroSGWB
+using AstroSGWB:
              build_model_context,
              canonical_hyperparameters,
              full_hyperparameters,
@@ -29,8 +29,8 @@ using ASGWB:
              MadauDickinsonSourceFrame,
              BNS_LAMBDA_HIGH,
              stack_source_masses
-import ASGWB: hyperparameters, single_event_prior
-using ASGWBInference: build_turing_model, condition_turing_model, atomic_save_chain
+import AstroSGWB: hyperparameters, single_event_prior
+using AstroSGWBInference: build_turing_model, condition_turing_model, atomic_save_chain
 using ADTypes: AutoForwardDiff
 using AdvancedHMC: DenseEuclideanMetric
 using Distributions: Uniform, product_distribution
@@ -280,10 +280,10 @@ function run_mcmc(config_file::String)
     return output_jld2
 end
 
-end # module ASGWBRunMCMC
+end # module AstroSGWBRunMCMC
 
 function (@main)(args::Vector{String})
     length(args) == 1 || throw(ArgumentError("usage: run_mcmc.jl <config.toml>"))
-    ASGWBRunMCMC.run_mcmc(args[1])
+    AstroSGWBRunMCMC.run_mcmc(args[1])
     return 0
 end

@@ -1,4 +1,4 @@
-module ASGWBInference
+module AstroSGWBInference
 
 include("InferenceImpl.jl")
 using .InferenceImpl:

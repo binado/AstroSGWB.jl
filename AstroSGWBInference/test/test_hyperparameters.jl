@@ -1,19 +1,19 @@
 using Test
 using Bijectors
 using Distributions: product_distribution, Uniform
-using ASGWB:
+using AstroSGWB:
              ModifiedPropagation,
              LambdaCDM, W0CDM, W0WaCDM,
              full_hyperparameters,
              canonical_hyperparameters,
              validate_hyperparameters
-using ASGWBInference: validate_hyperprior
+using AstroSGWBInference: validate_hyperprior
 
 if !@isdefined ParityBNSPopulation
-    include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "fixture_population.jl"))
+    include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "fixture_population.jl"))
 end
 if !@isdefined PARITY_PRIORS
-    include(joinpath(@__DIR__, "..", "..", "ASGWB", "test", "parity_fixtures.jl"))
+    include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"))
 end
 
 @testset "caller-defined population hyperparameter contract" begin

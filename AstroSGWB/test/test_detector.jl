@@ -1,5 +1,5 @@
-using ASGWB
-using ASGWB:
+using AstroSGWB
+using AstroSGWB:
              Detector,
              PowerSpectralDensity,
              effective_psd,

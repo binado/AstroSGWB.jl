@@ -1,4 +1,4 @@
-using ASGWB
+using AstroSGWB
 using CBCDistributions: SampleInterpolant
 using ForwardDiff
 using Test

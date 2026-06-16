@@ -2,7 +2,7 @@ using Test
 using JLD2
 using FlexiChains
 using FlexiChains: Extra, Parameter, VNChain, @varname
-using ASGWBInference: ChainIO
+using AstroSGWBInference: ChainIO
 
 function synthetic_chain(values; chain_indices = 1:size(values, 2),
         last_sampler_state = fill(missing, size(values, 2)))

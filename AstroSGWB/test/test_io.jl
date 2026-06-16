@@ -1,7 +1,7 @@
 using HDF5
 using Distributions: Uniform, logpdf
 using Test
-using ASGWB
+using AstroSGWB
 
 if !@isdefined parity_catalog_dir
     include(joinpath(@__DIR__, "parity_test_cache.jl"))

@@ -1,4 +1,4 @@
-using ASGWB: spectral_snr, spectral_snr_squared
+using AstroSGWB: spectral_snr, spectral_snr_squared
 using Test
 
 @testset "spectral_snr / spectral_snr_squared" begin
