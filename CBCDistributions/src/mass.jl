@@ -67,13 +67,12 @@ end
         α2::Real,
         m_break::Real,
         m_low::Real,
-        m_high::Real
+        m_high::Real,
+        log_norm::Real
 )
     (m_low <= m < m_high) || return -Inf
-    norm = _broken_power_normalizer(α1, α2, m_break, m_low, m_high)
-    norm > 0 || return -Inf
     α = m < m_break ? α1 : α2
-    return -α * log(m / m_break) - log(norm)
+    return -α * log(m / m_break) - log_norm
 end
 
 @inline function _left_truncated_normal_logpdf(m::Real, μ::Real, σ::Real, low::Real)
@@ -148,6 +147,7 @@ struct DefaultBBHPrimaryMass{T <: Real, N <: Real} <: ContinuousUnivariateDistri
     λ1::T
     λ2::T
     m_high::T
+    log_broken_power_norm::N
     log_norm::N
 end
 
@@ -174,13 +174,22 @@ function DefaultBBHPrimaryMass(;
     λ2 = one(T) - T(λ0) - T(λ1)
     primary = _unchecked_primary(
         T(α1), T(α2), T(m_break), T(μ1), T(σ1), T(μ2), T(σ2), T(m1_low),
-        T(δm1), T(λ0), T(λ1), λ2, T(m_high), zero(T))
+        T(δm1), T(λ0), T(λ1), λ2, T(m_high), zero(T), zero(T))
     _validate_primary(primary)
+    broken_power_norm = _broken_power_normalizer(
+        primary.α1, primary.α2, primary.m_break, primary.m1_low, primary.m_high)
+    broken_power_norm > 0 ||
+        throw(ArgumentError("broken power-law normalizer must be positive"))
+    log_broken_power_norm = log(broken_power_norm)
+    primary = _unchecked_primary(
+        primary.α1, primary.α2, primary.m_break, primary.μ1, primary.σ1, primary.μ2,
+        primary.σ2, primary.m1_low, primary.δm1, primary.λ0, primary.λ1, primary.λ2,
+        primary.m_high, log_broken_power_norm, zero(T))
     log_norm = log(_primary_normalizer(primary))
     return _unchecked_primary(
         primary.α1, primary.α2, primary.m_break, primary.μ1, primary.σ1, primary.μ2,
         primary.σ2, primary.m1_low, primary.δm1, primary.λ0, primary.λ1, primary.λ2,
-        primary.m_high, log_norm)
+        primary.m_high, primary.log_broken_power_norm, log_norm)
 end
 
 function _unchecked_primary(
@@ -197,11 +206,12 @@ function _unchecked_primary(
         λ1::T,
         λ2::T,
         m_high::T,
+        log_broken_power_norm::N,
         log_norm::N
 ) where {T <: Real, N <: Real}
     return DefaultBBHPrimaryMass{T, N}(
         α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2,
-        m_high, log_norm)
+        m_high, log_broken_power_norm, log_norm)
 end
 
 function _validate_primary(d::DefaultBBHPrimaryMass)
@@ -228,7 +238,8 @@ function Distributions.insupport(d::DefaultBBHPrimaryMass, value::Real)
 end
 
 @inline function _primary_log_untapered_mixture(d::DefaultBBHPrimaryMass, m::Real)
-    bp = _log_broken_power_pdf(m, d.α1, d.α2, d.m_break, d.m1_low, d.m_high)
+    bp = _log_broken_power_pdf(
+        m, d.α1, d.α2, d.m_break, d.m1_low, d.m_high, d.log_broken_power_norm)
     g1 = m < d.m_high ? _left_truncated_normal_logpdf(m, d.μ1, d.σ1, d.m1_low) : -Inf
     g2 = m < d.m_high ? _left_truncated_normal_logpdf(m, d.μ2, d.σ2, d.m1_low) : -Inf
     return _logsumexp3(

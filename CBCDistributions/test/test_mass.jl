@@ -78,6 +78,11 @@ end
 
     z, _ = quadgk(m -> pdf(d, m), minimum(d), maximum(d))
     @test z≈1.0 rtol=1e-8
+    @test isfinite(d.log_broken_power_norm)
+    expected_broken_power_norm = log(
+        CBCDistributions._broken_power_normalizer(
+        d.α1, d.α2, d.m_break, d.m1_low, d.m_high))
+    @test d.log_broken_power_norm≈expected_broken_power_norm rtol=1e-12
 
     tapered = DefaultBBHPrimaryMass(;
         α1 = 1.5,
