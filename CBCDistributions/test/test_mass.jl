@@ -27,14 +27,15 @@ function _default_bbh_pair(; kwargs...)
     return DefaultBBHMassPair(; params...)
 end
 
-@testset "Planck taper boundary behavior" begin
-    @test planck_taper(4.9, 5.0, 2.0) == 0.0
-    @test planck_taper(5.0, 5.0, 2.0) == 0.0
-    @test 0.0 < planck_taper(6.0, 5.0, 2.0) < 1.0
-    @test planck_taper(7.0, 5.0, 2.0) == 1.0
-    @test planck_taper(5.0, 5.0, 0.0) == 1.0
-    @test isfinite(planck_taper(5.0 + eps(), 5.0, 2.0))
-    @test isfinite(planck_taper(7.0 - eps(), 5.0, 2.0))
+@testset "Smootherstep taper boundary behavior" begin
+    @test smoothstep_taper(4.9, 5.0, 2.0) == 0.0
+    @test smoothstep_taper(5.0, 5.0, 2.0) == 0.0
+    @test 0.0 < smoothstep_taper(6.0, 5.0, 2.0) < 1.0
+    @test smoothstep_taper(6.0, 5.0, 2.0)≈0.5 atol=1e-12  # symmetric midpoint
+    @test smoothstep_taper(7.0, 5.0, 2.0) == 1.0
+    @test smoothstep_taper(5.0, 5.0, 0.0) == 1.0
+    @test isfinite(smoothstep_taper(5.0 + eps(), 5.0, 2.0))
+    @test isfinite(smoothstep_taper(7.0 - eps(), 5.0, 2.0))
 end
 
 @testset "DefaultBBHPrimaryMass normalization" begin
@@ -121,4 +122,29 @@ end
     d = _default_bbh_pair()
     grad = ForwardDiff.gradient(x -> logpdf(d, (35.0, x[1])), [25.0])
     @test all(isfinite, grad)
+
+    # A point inside the secondary taper band [m2_low, m2_low + δm2] exercises the
+    # smootherstep window itself, not just the flat region above it.
+    @test d.m2_low < 5.5 < d.m2_low + d.δm2
+    grad_band = ForwardDiff.gradient(x -> logpdf(d, (35.0, x[1])), [5.5])
+    @test all(isfinite, grad_band)
+end
+
+@testset "DefaultBBHMassPair _q_normalizer matches direct quadrature" begin
+    # The reference uses a tight rtol: the smootherstep integrand is only C² at the band
+    # joins, so quadgk's default √eps tolerance is looser than the agreement we expect from
+    # the closed form (which is exact to ~1e-15 against a BigFloat reference).
+    for βq in (1.2, 2.5, 0.0, -1.0, -2.0), m1 in (10.0, 35.0, 80.0)
+        d = _default_bbh_pair(βq = βq)
+        q_low = d.m2_low / m1
+        ref, _ = quadgk(
+            q -> q^βq * smoothstep_taper(q * m1, d.m2_low, d.δm2), q_low, 1.0; rtol = 1e-12)
+        @test CBCDistributions._q_normalizer(d, m1)≈ref rtol=1e-9
+    end
+
+    # Untapered limit reduces to the closed-form power integral.
+    d0 = _default_bbh_pair(δm2 = 0.0)
+    q_low = d0.m2_low / 35.0
+    ref0, _ = quadgk(q -> q^d0.βq, q_low, 1.0; rtol = 1e-12)
+    @test CBCDistributions._q_normalizer(d0, 35.0)≈ref0 rtol=1e-10
 end
