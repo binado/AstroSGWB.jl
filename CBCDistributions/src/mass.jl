@@ -2,17 +2,11 @@ using Distributions
 using QuadGK
 using Random
 
-export DefaultBBHPrimaryMass, DefaultBBHMassPair, smoothstep_taper
+export DefaultBBHPrimaryMass, DefaultBBHMassPair, planck_taper
 
 const DEFAULT_BBH_M_HIGH = 300.0
 const _SQRT_EPS_FLOAT64 = sqrt(eps(Float64))
-
-# Quintic smootherstep S(t) = 10t³ − 15t⁴ + 6t⁵ on t ∈ [0,1]: the analytic taper window.
-# `_smootherstep` is the value (Horner form); `_SMOOTHERSTEP_TERMS` are the (power, coeff)
-# pairs used to integrate it in closed form (see `_tapered_power_integral`). Keep the two in
-# sync — they are two views of the same polynomial.
-@inline _smootherstep(t::Real) = t^3 * (10 + t * (-15 + 6 * t))
-const _SMOOTHERSTEP_TERMS = ((3, 10.0), (4, -15.0), (5, 6.0))
+const _PLANCK_Q_GAUSS_16 = QuadGK.gauss(Float64, 16)
 
 @inline function _logaddexp(a::Real, b::Real)
     a == -Inf && return b
@@ -89,30 +83,55 @@ end
 end
 
 """
-    smoothstep_taper(m, low, δ)
+    planck_taper(m, low, δ)
 
-Quintic smootherstep taper used by the DEFAULT BBH mass model. It is zero at or below
-`low`, rises as `10t³ − 15t⁴ + 6t⁵` with `t = (m - low)/δ` over `(low, low + δ)`, and is
-one at or above `low + δ`. The window is `C²` at both joins (value, slope, and curvature
-match the flat regions), which makes every tapered moment integrate in closed form. `δ == 0`
-is treated as a hard step to one at `low`.
+Planck taper used by the DEFAULT BBH mass model. It is zero at or below `low`, rises as
+`1 / (1 + exp(1/t - 1/(1 - t)))` with `t = (m - low)/δ` over `(low, low + δ)`, and is one
+at or above `low + δ`. `δ == 0` is treated as a hard step to one at `low`.
 """
-function smoothstep_taper(m::Real, low::Real, δ::Real)
+function planck_taper(m::Real, low::Real, δ::Real)
     δ >= 0 || throw(ArgumentError("δ must be non-negative"))
     T = promote_type(typeof(m), typeof(low), typeof(δ))
     δ == 0 && return m < low ? zero(T) : one(T)
     m <= low && return zero(T)
     m >= low + δ && return one(T)
-    return T(_smootherstep((m - low) / δ))
+    return _planck_unit_taper((m - low) / δ)
 end
 
-@inline function _log_smoothstep_taper(m::Real, low::Real, δ::Real)
+@inline function _planck_unit_exponent(t::Real)
+    return inv(t) - inv(one(t) - t)
+end
+
+@inline function _planck_unit_taper(t::Real)
+    T = typeof(t)
+    t <= 0 && return zero(T)
+    t >= 1 && return one(T)
+    a = _planck_unit_exponent(t)
+    if a > 0
+        ea = exp(-a)
+        return ea / (one(ea) + ea)
+    end
+    return inv(one(a) + exp(a))
+end
+
+@inline function _log_planck_unit_taper(t::Real)
+    T = typeof(t)
+    t <= 0 && return T(-Inf)
+    t >= 1 && return zero(T)
+    a = _planck_unit_exponent(t)
+    if a > 0
+        return -a - log1p(exp(-a))
+    end
+    return -log1p(exp(a))
+end
+
+@inline function _log_planck_taper(m::Real, low::Real, δ::Real)
     δ >= 0 || throw(ArgumentError("δ must be non-negative"))
     T = promote_type(typeof(m), typeof(low), typeof(δ))
     δ == 0 && return m < low ? T(-Inf) : zero(T)
     m <= low && return T(-Inf)
     m >= low + δ && return zero(T)
-    return log(_smootherstep((m - low) / δ))
+    return _log_planck_unit_taper((m - low) / δ)
 end
 
 struct DefaultBBHPrimaryMass{T <: Real, N <: Real} <: ContinuousUnivariateDistribution
@@ -221,7 +240,7 @@ end
 
 @inline function _primary_log_unnormalized(d::DefaultBBHPrimaryMass, m::Real)
     insupport(d, m) || return -Inf
-    log_s = _log_smoothstep_taper(m, d.m1_low, d.δm1)
+    log_s = _log_planck_taper(m, d.m1_low, d.δm1)
     log_s == -Inf && return -Inf
     return _primary_log_untapered_mixture(d, m) + log_s
 end
@@ -308,33 +327,26 @@ function _q_power_integral(d::DefaultBBHMassPair, q_low::Real, q_high::Real)
     return _power_integral(q_low, q_high, d.βq)
 end
 
-"""
-    _tapered_power_integral(low, high, exponent, edge, δ)
+@inline _gauss_rule(::Val{16}) = _PLANCK_Q_GAUSS_16
+@inline _gauss_rule(::Val{N}) where {N} = QuadGK.gauss(Float64, N)
 
-Closed form of `∫_low^high xᵉ S((x − edge)/δ) dx` for the quintic smootherstep `S`, valid
-when `[low, high] ⊆ [edge, edge + δ]` (callers integrate the flat region separately).
-Expanding `S` and the binomials reduces the integral to a finite sum of `_power_integral`
-terms, so no quadrature is needed even for non-integer `exponent`.
-"""
-function _tapered_power_integral(
-        low::Real,
-        high::Real,
-        exponent::Real,
-        edge::Real,
-        δ::Real
-)
-    T = promote_type(typeof(low), typeof(high), typeof(exponent), typeof(edge), typeof(δ))
-    high > low || return zero(T)
+function _q_planck_taper_band_integral(
+        q_low::Real,
+        δq::Real,
+        βq::Real,
+        h::Real,
+        order::Val{N} = Val(16)
+) where {N}
+    T = promote_type(typeof(q_low), typeof(δq), typeof(βq), typeof(h))
+    h > 0 || return zero(T)
+    x, w = _gauss_rule(order)
+    scale = h / 2
     acc = zero(T)
-    for (k, c) in _SMOOTHERSTEP_TERMS
-        term = zero(T)
-        for j in 0:k
-            coeff = binomial(k, j) * (-edge)^(k - j)
-            term += coeff * _power_integral(low, high, exponent + j)
-        end
-        acc += (T(c) / δ^k) * term
+    @inbounds for i in eachindex(x, w)
+        t = scale * (x[i] + 1)
+        acc += w[i] * (q_low + δq * t)^βq * _planck_unit_taper(t)
     end
-    return acc
+    return δq * scale * acc
 end
 
 function _q_normalizer(d::DefaultBBHMassPair, m1::Real)
@@ -343,13 +355,14 @@ function _q_normalizer(d::DefaultBBHMassPair, m1::Real)
     d.δm2 == 0 && return _q_power_integral(d, q_low, one(q_low))
 
     # In q-space the taper has edge `q_low` and width `δq`, since
-    # S(q·m₁; m2_low, δm2) = S(q; q_low, δq) with δq = δm2/m₁. The conditional normalizer
-    # is then the tapered band integral plus the closed-form flat region above it.
+    # P(q·m₁; m2_low, δm2) = P((q - q_low) / δq). The conditional normalizer is the
+    # fixed-rule tapered band integral plus the closed-form flat region above it.
     δq = d.δm2 / m1
     q_taper_high = min(q_low + δq, one(q_low))
     z = zero(promote_type(typeof(q_low), typeof(d.βq), typeof(δq)))
     if q_taper_high > q_low
-        z += _tapered_power_integral(q_low, q_taper_high, d.βq, q_low, δq)
+        h = (q_taper_high - q_low) / δq
+        z += _q_planck_taper_band_integral(q_low, δq, d.βq, h)
     end
     if q_taper_high < 1
         z += _q_power_integral(d, q_taper_high, one(q_low))
@@ -361,7 +374,7 @@ function Distributions.logpdf(d::DefaultBBHMassPair, value::Tuple{<:Real, <:Real
     insupport(d, value) || return -Inf
     m1, m2 = value
     q = m2 / m1
-    log_s2 = _log_smoothstep_taper(m2, d.m2_low, d.δm2)
+    log_s2 = _log_planck_taper(m2, d.m2_low, d.δm2)
     log_s2 == -Inf && return -Inf
     zq = _q_normalizer(d, m1)
     zq > 0 || return -Inf
@@ -412,7 +425,7 @@ function Random.rand(rng::AbstractRNG, d::DefaultBBHPrimaryMass)
     while true
         m1 = _rand_primary_proposal(rng, d)
         m1 < d.m_high || continue
-        rand(rng) <= smoothstep_taper(m1, d.m1_low, d.δm1) && return m1
+        rand(rng) <= planck_taper(m1, d.m1_low, d.δm1) && return m1
     end
 end
 
@@ -430,7 +443,7 @@ function _rand_q(rng::AbstractRNG, d::DefaultBBHMassPair, m1::Real)
     q_low = d.m2_low / m1
     while true
         q = _rand_q_power(rng, d.βq, q_low)
-        rand(rng) <= smoothstep_taper(q * m1, d.m2_low, d.δm2) && return q
+        rand(rng) <= planck_taper(q * m1, d.m2_low, d.δm2) && return q
     end
 end
 
