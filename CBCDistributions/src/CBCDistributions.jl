@@ -14,6 +14,7 @@ export PopulationModel, single_event_prior,
 export CumulativeIntegral1D, interpolate, cdf, normalizer
 export stack_source_masses
 export MadauDickinsonSourceFrame, source_frame_distribution, redshift_prior, DEFAULT_Z_GRID
+export DefaultBBHPrimaryMass, DefaultBBHMassPair, planck_taper
 
 include("types.jl")
 include("cumulative_integral.jl")
@@ -21,6 +22,7 @@ include("cosmology.jl")
 include("priors.jl")
 include("redshift.jl")
 include("physical_model.jl")
+include("mass.jl")
 include("samples.jl")
 
 end # module
