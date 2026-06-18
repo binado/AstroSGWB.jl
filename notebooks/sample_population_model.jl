@@ -49,7 +49,8 @@ begin
 
     seed = 42
     n_samples = 100_000
-    source_model = :BNS
+    # Source model: BNS or BBH
+    source_model = :BBH
 
     # Cosmology family used to build the detector-frame redshift prior.
     C = LambdaCDM
@@ -67,7 +68,7 @@ md"""
 
 All we need to do to define a population model is to create a struct which subtypes `PopulationModel` and defines two methods:
 - a `hyperparameters(model)` method which returns a tuple of symbols of the hyperparameters of the model
-- a `single_event_prior(model, cosmology, Λ)` method which, for a given hyperparameter vector Λ, returns p(θ | Λ, cosmology)
+- a `single_event_prior(model, cosmology, Λ)` method which, for a given hyperparameter vector ``Λ``, returns ``p(\theta | \Lambda,~\textrm{cosmo})``
 """
 
 # ╔═╡ a1b2c3d4-0004-4e5f-9a0b-1c2d3e4f5a6b
@@ -163,18 +164,18 @@ begin
             γ = 2.7,
             κ = 3.0,
             zpeak = 2.0,
-            α1 = 4.0,
-            α2 = 4.0,
-            m_break = 35.0,
+            α1 = 1.5,
+            α2 = 5.4,
+            m_break = 37.5,
             μ1 = 12.5,
             σ1 = 5.0,
-            μ2 = 42.5,
-            σ2 = 5.0,
+            μ2 = 33,
+            σ2 = 3.1,
             m1_low = 6.5,
             δm1 = 5.0,
             λ0 = 1 / 3,
             λ1 = 1 / 3,
-            βq = 2.5,
+            βq = 1.0,
             m2_low = 4.75,
             δm2 = 5.0,
             m_high = 300.0,
