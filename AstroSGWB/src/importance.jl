@@ -114,9 +114,10 @@ function compute_importance_weights(
 ) where {C <: AbstractCosmology}
     Λ_fid = problem.fiducial_hyperparameters
     z = problem.samples.redshift
-    proposal_log_prob = _reconstruct_proposal_log_prob(
-        problem.samples, C, problem.population_model, Λ_fid)
-    dl_fid_sq = _reconstruct_dl_fid_sq(z, C, Λ_fid)
+    c_fid = cosmology(C, Λ_fid)
+    prior_fid = single_event_prior(problem.population_model, c_fid, Λ_fid)
+    proposal_log_prob = batched_logpdf(prior_fid, problem.samples)
+    dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
     redshift_grid = collect(Float64, DEFAULT_Z_GRID)
     interp = SampleInterpolant(z, redshift_grid)
 
