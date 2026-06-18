@@ -10,8 +10,10 @@ Fields:
 - `fluxes::Matrix{Float64}` — raw per-sample fluxes `|h₊|² + |h×|²` from the waveform
   catalog, *before* the fiducial `(D_L/D_gw)²` scaling, `(n_freq, n_samples)`.
 - `samples::NamedTuple` — restructured per-event parameters (struct-of-arrays). Keys must
-  match `keys(single_event_prior(...).dists)` so `batched_logpdf` lines up (e.g. `mass`,
-  `redshift`, `χ₁`, `χ₂`, `Λ₁`, `Λ₂`).
+  include every field of `single_event_prior(...).dists` (e.g. `mass`, `redshift`, `χ₁`,
+  `χ₂`, `Λ₁`, `Λ₂`); extra keys are allowed. Each field stores samples along its last
+  axis (vectors for univariate components, `(dim, n)` matrices for multivariate); see
+  [`validate_samples`](@ref).
 - `fiducial_hyperparameters::NamedTuple` — canonical fiducial hyperparameters; the
   cosmology + propagation + population state at which the proposal caches are built.
 

@@ -3,47 +3,6 @@ using Distributions: ProductNamedTupleDistribution
 
 # Batched log-pdf helpers consumed by likelihood and importance-sampling paths.
 
-function _component_batch_length(d::Distribution, samples::NamedTuple, key)
-    haskey(samples, key) ||
-        throw(ArgumentError("samples are missing population prior field $(repr(key))"))
-    return _component_batch_length_field(d, samples[key], key)
-end
-
-function _component_batch_length_field(d::UnivariateDistribution, field, key)
-    values = sample_values(field)
-    values isa AbstractVector || throw(
-        ArgumentError(
-        "population prior field $(repr(key)) must be a vector for univariate distribution $(typeof(d))",
-    ),
-    )
-    return length(values)
-end
-
-function _component_batch_length_field(d::MultivariateDistribution, field, key)
-    values = sample_values(field)
-    values isa AbstractMatrix || throw(
-        ArgumentError(
-        "population prior field $(repr(key)) must be a matrix for multivariate distribution $(typeof(d))",
-    ),
-    )
-    expected = length(d)
-    size(values, 1) == expected ||
-        throw(
-            ArgumentError(
-            "population prior field $(repr(key)) must have $expected rows, got $(size(values, 1))",
-        ),
-        )
-    return size(values, 2)
-end
-
-function _component_batch_length_field(d, field, key)
-    throw(
-        ArgumentError(
-        "unsupported batch layout for population prior field $(repr(key)) and distribution $(typeof(d))",
-    ),
-    )
-end
-
 function _batched_output_eltype(dists)
     isempty(dists) && return Float64
     return promote_type(map(eltype, values(dists))...)
@@ -90,8 +49,6 @@ function add_logpdfvec!(
         field
 )
     values = sample_values(field)
-    size(values, 1) == 2 ||
-        throw(ArgumentError("source-mass batch must have two rows"))
     @inbounds for i in eachindex(out)
         out[i] += logpdf(d, (values[1, i], values[2, i]))
     end
@@ -110,14 +67,10 @@ function batched_logpdf(
         d::ProductNamedTupleDistribution,
         samples::NamedTuple
 )
-    first_key = first(keys(d.dists))
-    n = _component_batch_length(d.dists[first_key], samples, first_key)
+    n = validate_samples(d, samples)
     T = _batched_output_eltype(d.dists)
     out = zeros(T, n)
     for key in keys(d.dists)
-        n_key = _component_batch_length(d.dists[key], samples, key)
-        n_key == n ||
-            throw(ArgumentError("population prior sample fields must have matching lengths"))
         add_logpdfvec!(out, d.dists[key], samples[key])
     end
     return out
@@ -145,13 +98,9 @@ function component_logpdfs(
         samples::NamedTuple
 )
     ks = keys(d.dists)
-    first_key = first(ks)
-    n = _component_batch_length(d.dists[first_key], samples, first_key)
+    n = validate_samples(d, samples)
     vals = map(ks) do key
         dk = d.dists[key]
-        n_key = _component_batch_length(dk, samples, key)
-        n_key == n ||
-            throw(ArgumentError("population prior sample fields must have matching lengths"))
         out = zeros(_batched_output_eltype((dk,)), n)
         add_logpdfvec!(out, dk, samples[key])
     end
@@ -227,14 +176,10 @@ function logprobdiff(
         throw(ArgumentError("proposal prior fields must match target prior fields $(ks)"))
     keys(proposal_logprob) == ks ||
         throw(ArgumentError("proposal logpdf fields must match target prior fields $(ks)"))
-    first_key = first(ks)
-    n = _component_batch_length(prior.dists[first_key], samples, first_key)
+    n = validate_samples(prior, samples)
     T = _batched_output_eltype(prior.dists)
     out = zeros(T, n)
     for key in ks
-        n_key = _component_batch_length(prior.dists[key], samples, key)
-        n_key == n ||
-            throw(ArgumentError("population prior sample fields must have matching lengths"))
         logprobdiff!(
             out, model, Val(key), prior.dists[key], proposal.dists[key],
             proposal_logprob[key], samples[key])
