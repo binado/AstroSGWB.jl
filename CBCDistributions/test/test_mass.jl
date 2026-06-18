@@ -60,6 +60,16 @@ end
     @test isfinite(planck_taper(prevfloat(7.0), 5.0, 2.0))
 end
 
+@testset "BoundedPowerLaw normalization and support" begin
+    d = CBCDistributions.BoundedPowerLaw(1.5, 5.0, 35.0, 35.0)
+    z, _ = quadgk(m -> pdf(d, m), minimum(d), maximum(d))
+
+    @test z≈1.0 rtol=1e-10
+    @test isfinite(logpdf(d, 10.0))
+    @test logpdf(d, 4.999) == -Inf
+    @test logpdf(d, 35.0) == -Inf
+end
+
 @testset "DefaultBBHPrimaryMass normalization" begin
     d = DefaultBBHPrimaryMass(;
         α1 = 1.0,
@@ -78,11 +88,7 @@ end
 
     z, _ = quadgk(m -> pdf(d, m), minimum(d), maximum(d))
     @test z≈1.0 rtol=1e-8
-    @test isfinite(d.log_broken_power_norm)
-    expected_broken_power_norm = log(
-        CBCDistributions._broken_power_normalizer(
-        d.α1, d.α2, d.m_break, d.m1_low, d.m_high))
-    @test d.log_broken_power_norm≈expected_broken_power_norm rtol=1e-12
+    @test logpdf(d, d.m_high) == -Inf
 
     tapered = DefaultBBHPrimaryMass(;
         α1 = 1.5,
@@ -100,6 +106,38 @@ end
     )
     z_tapered, _ = quadgk(m -> pdf(tapered, m), minimum(tapered), maximum(tapered))
     @test z_tapered≈1.0 rtol=1e-7
+end
+
+@testset "DefaultBBHPrimaryMass untapered mixture formula" begin
+    d = DefaultBBHPrimaryMass(;
+        α1 = 1.5,
+        α2 = 4.0,
+        m_break = 35.0,
+        μ1 = 10.0,
+        σ1 = 2.0,
+        μ2 = 35.0,
+        σ2 = 6.0,
+        m1_low = 5.0,
+        δm1 = 0.0,
+        λ0 = 0.55,
+        λ1 = 0.25,
+        m_high = 120.0
+    )
+
+    z1 = CBCDistributions._broken_power_integral(d.α1, d.m1_low, d.m_break, d.m_break)
+    z2 = CBCDistributions._broken_power_integral(d.α2, d.m_break, d.m_high, d.m_break)
+    z = z1 + z2
+    components = Vector{Distribution{Univariate, Continuous}}(undef, 4)
+    components[1] = CBCDistributions.BoundedPowerLaw(d.α1, d.m1_low, d.m_break, d.m_break)
+    components[2] = CBCDistributions.BoundedPowerLaw(d.α2, d.m_break, d.m_high, d.m_break)
+    components[3] = truncated(Normal(d.μ1, d.σ1), d.m1_low, d.m_high)
+    components[4] = truncated(Normal(d.μ2, d.σ2), d.m1_low, d.m_high)
+    weights = [d.λ0 * z1 / z, d.λ0 * z2 / z, d.λ1, d.λ2]
+    expected = MixtureModel(components, weights)
+
+    for m in (6.0, 15.0, 35.0, 75.0, 119.0)
+        @test logpdf(d, m)≈logpdf(expected, m) rtol=1e-10
+    end
 end
 
 @testset "DefaultBBHMassPair logpdf and conditional normalization" begin

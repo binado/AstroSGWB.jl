@@ -8,22 +8,6 @@ const DEFAULT_BBH_M_HIGH = 300.0
 const _SQRT_EPS_FLOAT64 = sqrt(eps(Float64))
 const _PLANCK_Q_GAUSS_16 = QuadGK.gauss(Float64, 16)
 
-@inline function _logaddexp(a::Real, b::Real)
-    a == -Inf && return b
-    b == -Inf && return a
-    m = max(a, b)
-    return m + log(exp(a - m) + exp(b - m))
-end
-
-@inline function _logsumexp3(a::Real, b::Real, c::Real)
-    return _logaddexp(_logaddexp(a, b), c)
-end
-
-@inline function _log_weighted(weight::Real, log_value::Real)
-    weight > 0 || return -Inf
-    return log(weight) + log_value
-end
-
 @inline function _power_integral(low::Real, high::Real, exponent::Real)
     high > low || return zero(promote_type(typeof(low), typeof(high), typeof(exponent)))
     T = promote_type(typeof(low), typeof(high), typeof(exponent))
@@ -50,35 +34,41 @@ end
     return m_break * ((high / m_break)^a - (low / m_break)^a) / a
 end
 
-function _broken_power_normalizer(
-        α1::Real,
-        α2::Real,
-        m_break::Real,
-        m_low::Real,
-        m_high::Real
-)
-    return _broken_power_integral(α1, m_low, m_break, m_break) +
-           _broken_power_integral(α2, m_break, m_high, m_break)
+struct BoundedPowerLaw{T <: Real} <: ContinuousUnivariateDistribution
+    α::T
+    low::T
+    high::T
+    scale::T
+    log_norm::T
 end
 
-@inline function _log_broken_power_pdf(
-        m::Real,
-        α1::Real,
-        α2::Real,
-        m_break::Real,
-        m_low::Real,
-        m_high::Real,
-        log_norm::Real
-)
-    (m_low <= m < m_high) || return -Inf
-    α = m < m_break ? α1 : α2
-    return -α * log(m / m_break) - log_norm
+function BoundedPowerLaw(α::Real, low::Real, high::Real, scale::Real)
+    T = promote_type(Float64, typeof(α), typeof(low), typeof(high), typeof(scale))
+    0 < low < high || throw(ArgumentError("power-law bounds must satisfy 0 < low < high"))
+    scale > 0 || throw(ArgumentError("power-law scale must be positive"))
+    norm = _broken_power_integral(T(α), T(low), T(high), T(scale))
+    norm > 0 || throw(ArgumentError("power-law normalizer must be positive"))
+    return BoundedPowerLaw{T}(T(α), T(low), T(high), T(scale), log(norm))
 end
 
-@inline function _left_truncated_normal_logpdf(m::Real, μ::Real, σ::Real, low::Real)
-    m >= low || return -Inf
-    normal = Normal(μ, σ)
-    return logpdf(normal, m) - logccdf(normal, low)
+Base.minimum(d::BoundedPowerLaw) = d.low
+Base.maximum(d::BoundedPowerLaw) = d.high
+Base.eltype(::Type{<:BoundedPowerLaw{T}}) where {T} = T
+Base.eltype(d::BoundedPowerLaw) = typeof(d.low)
+
+function Distributions.insupport(d::BoundedPowerLaw, value::Real)
+    return d.low <= value < d.high
+end
+
+function Distributions.logpdf(d::BoundedPowerLaw, value::Real)
+    insupport(d, value) || return -Inf
+    return -d.α * log(value / d.scale) - d.log_norm
+end
+
+Distributions.pdf(d::BoundedPowerLaw, value::Real) = exp(logpdf(d, value))
+
+function Random.rand(rng::AbstractRNG, d::BoundedPowerLaw)
+    return _rand_scaled_power(rng, d.low, d.high, -d.α)
 end
 
 """
@@ -133,7 +123,8 @@ end
     return _log_planck_unit_taper((m - low) / δ)
 end
 
-struct DefaultBBHPrimaryMass{T <: Real, N <: Real} <: ContinuousUnivariateDistribution
+struct DefaultBBHPrimaryMass{T <: Real, M <: MixtureModel, N <: Real} <:
+       ContinuousUnivariateDistribution
     α1::T
     α2::T
     m_break::T
@@ -147,8 +138,8 @@ struct DefaultBBHPrimaryMass{T <: Real, N <: Real} <: ContinuousUnivariateDistri
     λ1::T
     λ2::T
     m_high::T
-    log_broken_power_norm::N
-    log_norm::N
+    untapered::M
+    log_taper_norm::N
 end
 
 function DefaultBBHPrimaryMass(;
@@ -171,25 +162,29 @@ function DefaultBBHPrimaryMass(;
         typeof(μ2), typeof(σ2), typeof(m1_low), typeof(δm1), typeof(λ0),
         typeof(λ1), typeof(m_high)
     )
-    λ2 = one(T) - T(λ0) - T(λ1)
+    α1 = T(α1)
+    α2 = T(α2)
+    m_break = T(m_break)
+    μ1 = T(μ1)
+    σ1 = T(σ1)
+    μ2 = T(μ2)
+    σ2 = T(σ2)
+    m1_low = T(m1_low)
+    δm1 = T(δm1)
+    λ0 = T(λ0)
+    λ1 = T(λ1)
+    λ2 = one(T) - λ0 - λ1
+    m_high = T(m_high)
+    _validate_primary_parameters(m1_low, m_break, m_high, σ1, σ2, δm1, λ0, λ1, λ2)
+    untapered = _primary_untapered_mixture(
+        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, λ0, λ1, λ2, m_high)
     primary = _unchecked_primary(
-        T(α1), T(α2), T(m_break), T(μ1), T(σ1), T(μ2), T(σ2), T(m1_low),
-        T(δm1), T(λ0), T(λ1), λ2, T(m_high), zero(T), zero(T))
-    _validate_primary(primary)
-    broken_power_norm = _broken_power_normalizer(
-        primary.α1, primary.α2, primary.m_break, primary.m1_low, primary.m_high)
-    broken_power_norm > 0 ||
-        throw(ArgumentError("broken power-law normalizer must be positive"))
-    log_broken_power_norm = log(broken_power_norm)
-    primary = _unchecked_primary(
-        primary.α1, primary.α2, primary.m_break, primary.μ1, primary.σ1, primary.μ2,
-        primary.σ2, primary.m1_low, primary.δm1, primary.λ0, primary.λ1, primary.λ2,
-        primary.m_high, log_broken_power_norm, zero(T))
-    log_norm = log(_primary_normalizer(primary))
+        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2, m_high,
+        untapered, zero(T))
+    log_taper_norm = log(_primary_taper_normalizer(primary))
     return _unchecked_primary(
-        primary.α1, primary.α2, primary.m_break, primary.μ1, primary.σ1, primary.μ2,
-        primary.σ2, primary.m1_low, primary.δm1, primary.λ0, primary.λ1, primary.λ2,
-        primary.m_high, primary.log_broken_power_norm, log_norm)
+        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2, m_high,
+        untapered, log_taper_norm)
 end
 
 function _unchecked_primary(
@@ -206,24 +201,39 @@ function _unchecked_primary(
         λ1::T,
         λ2::T,
         m_high::T,
-        log_broken_power_norm::N,
-        log_norm::N
-) where {T <: Real, N <: Real}
-    return DefaultBBHPrimaryMass{T, N}(
+        untapered::M,
+        log_taper_norm::N
+) where {T <: Real, M <: MixtureModel, N <: Real}
+    return DefaultBBHPrimaryMass{T, M, N}(
         α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2,
-        m_high, log_broken_power_norm, log_norm)
+        m_high, untapered, log_taper_norm)
 end
 
 function _validate_primary(d::DefaultBBHPrimaryMass)
-    0 < d.m1_low < d.m_break < d.m_high ||
+    return _validate_primary_parameters(
+        d.m1_low, d.m_break, d.m_high, d.σ1, d.σ2, d.δm1, d.λ0, d.λ1, d.λ2)
+end
+
+function _validate_primary_parameters(
+        m1_low::Real,
+        m_break::Real,
+        m_high::Real,
+        σ1::Real,
+        σ2::Real,
+        δm1::Real,
+        λ0::Real,
+        λ1::Real,
+        λ2::Real
+)
+    0 < m1_low < m_break < m_high ||
         throw(ArgumentError("mass bounds must satisfy 0 < m1_low < m_break < m_high"))
-    d.σ1 > 0 || throw(ArgumentError("σ1 must be positive"))
-    d.σ2 > 0 || throw(ArgumentError("σ2 must be positive"))
-    d.δm1 >= 0 || throw(ArgumentError("δm1 must be non-negative"))
-    d.λ0 >= 0 || throw(ArgumentError("λ0 must be non-negative"))
-    d.λ1 >= 0 || throw(ArgumentError("λ1 must be non-negative"))
-    d.λ2 >= 0 || throw(ArgumentError("1 - λ0 - λ1 must be non-negative"))
-    d.λ0 + d.λ1 + d.λ2 > 0 ||
+    σ1 > 0 || throw(ArgumentError("σ1 must be positive"))
+    σ2 > 0 || throw(ArgumentError("σ2 must be positive"))
+    δm1 >= 0 || throw(ArgumentError("δm1 must be non-negative"))
+    λ0 >= 0 || throw(ArgumentError("λ0 must be non-negative"))
+    λ1 >= 0 || throw(ArgumentError("λ1 must be non-negative"))
+    λ2 >= 0 || throw(ArgumentError("1 - λ0 - λ1 must be non-negative"))
+    λ0 + λ1 + λ2 > 0 ||
         throw(ArgumentError("at least one mixture weight must be positive"))
     return nothing
 end
@@ -237,29 +247,47 @@ function Distributions.insupport(d::DefaultBBHPrimaryMass, value::Real)
     return d.m1_low <= value < d.m_high
 end
 
-@inline function _primary_log_untapered_mixture(d::DefaultBBHPrimaryMass, m::Real)
-    bp = _log_broken_power_pdf(
-        m, d.α1, d.α2, d.m_break, d.m1_low, d.m_high, d.log_broken_power_norm)
-    g1 = m < d.m_high ? _left_truncated_normal_logpdf(m, d.μ1, d.σ1, d.m1_low) : -Inf
-    g2 = m < d.m_high ? _left_truncated_normal_logpdf(m, d.μ2, d.σ2, d.m1_low) : -Inf
-    return _logsumexp3(
-        _log_weighted(d.λ0, bp),
-        _log_weighted(d.λ1, g1),
-        _log_weighted(d.λ2, g2)
-    )
+function _primary_untapered_mixture(
+        α1::Real,
+        α2::Real,
+        m_break::Real,
+        μ1::Real,
+        σ1::Real,
+        μ2::Real,
+        σ2::Real,
+        m1_low::Real,
+        λ0::Real,
+        λ1::Real,
+        λ2::Real,
+        m_high::Real
+)
+    z1 = _broken_power_integral(α1, m1_low, m_break, m_break)
+    z2 = _broken_power_integral(α2, m_break, m_high, m_break)
+    z = z1 + z2
+    z > 0 || throw(ArgumentError("broken power-law normalizer must be positive"))
+
+    components = Vector{Distribution{Univariate, Continuous}}(undef, 4)
+    components[1] = BoundedPowerLaw(α1, m1_low, m_break, m_break)
+    components[2] = BoundedPowerLaw(α2, m_break, m_high, m_break)
+    components[3] = truncated(Normal(μ1, σ1), m1_low, m_high)
+    components[4] = truncated(Normal(μ2, σ2), m1_low, m_high)
+    weights = [λ0 * z1 / z, λ0 * z2 / z, λ1, λ2]
+    return MixtureModel(components, weights)
 end
 
 @inline function _primary_log_unnormalized(d::DefaultBBHPrimaryMass, m::Real)
     insupport(d, m) || return -Inf
     log_s = _log_planck_taper(m, d.m1_low, d.δm1)
     log_s == -Inf && return -Inf
-    return _primary_log_untapered_mixture(d, m) + log_s
+    return logpdf(d.untapered, m) + log_s
 end
 
-function _primary_normalizer(d::DefaultBBHPrimaryMass)
+function _primary_taper_normalizer(d::DefaultBBHPrimaryMass)
+    d.δm1 == 0 && return one(promote_type(typeof(d.m1_low), typeof(d.log_taper_norm)))
+
     f = m -> exp(_primary_log_unnormalized(d, m))
     taper_high = min(d.m1_low + d.δm1, d.m_high)
-    z = zero(promote_type(typeof(d.m1_low), typeof(d.log_norm)))
+    z = zero(promote_type(typeof(d.m1_low), typeof(d.log_taper_norm)))
     if d.δm1 > 0 && taper_high > d.m1_low
         z += first(quadgk(f, d.m1_low, taper_high))
     end
@@ -272,7 +300,7 @@ end
 function Distributions.logpdf(d::DefaultBBHPrimaryMass, value::Real)
     logp = _primary_log_unnormalized(d, value)
     logp == -Inf && return -Inf
-    return logp - d.log_norm
+    return logp - d.log_taper_norm
 end
 
 Distributions.pdf(d::DefaultBBHPrimaryMass, value::Real) = exp(logpdf(d, value))
@@ -403,16 +431,6 @@ function Distributions.pdf(d::DefaultBBHMassPair, value::AbstractVector{<:Real})
     exp(logpdf(d, value))
 end
 
-function _rand_broken_power(rng::AbstractRNG, d::DefaultBBHPrimaryMass)
-    z1 = _broken_power_integral(d.α1, d.m1_low, d.m_break, d.m_break)
-    z2 = _broken_power_integral(d.α2, d.m_break, d.m_high, d.m_break)
-    target = rand(rng) * (z1 + z2)
-    if target <= z1
-        return _rand_scaled_power(rng, d.m1_low, d.m_break, -d.α1)
-    end
-    return _rand_scaled_power(rng, d.m_break, d.m_high, -d.α2)
-end
-
 function _rand_scaled_power(rng::AbstractRNG, low::Real, high::Real, exponent::Real)
     u = rand(rng)
     a = exponent + 1
@@ -423,13 +441,7 @@ function _rand_scaled_power(rng::AbstractRNG, low::Real, high::Real, exponent::R
 end
 
 function _rand_primary_proposal(rng::AbstractRNG, d::DefaultBBHPrimaryMass)
-    u = rand(rng)
-    if u < d.λ0
-        return _rand_broken_power(rng, d)
-    elseif u < d.λ0 + d.λ1
-        return rand(rng, truncated(Normal(d.μ1, d.σ1), d.m1_low, Inf))
-    end
-    return rand(rng, truncated(Normal(d.μ2, d.σ2), d.m1_low, Inf))
+    return rand(rng, d.untapered)
 end
 
 function Random.rand(rng::AbstractRNG, d::DefaultBBHPrimaryMass)
