@@ -127,9 +127,9 @@ end
         m_high = 120.0
     )
 
-    # Independent oracle: a single broken power law (one normalizer over the full
-    # support) plus the two truncated Gaussians, to check that splitting the broken
-    # power law into two reweighted sub-laws reproduces the original density.
+    # Independent oracle for the untapered density: the λ-weighted sum of a single
+    # broken power law (one normalizer over the full support) and the two truncated
+    # Gaussians, derived without reusing the implementation's mixture machinery.
     z1 = CBCDistributions._broken_power_integral(d.α1, d.m1_low, d.m_break, d.m_break)
     z2 = CBCDistributions._broken_power_integral(d.α2, d.m_break, d.m_high, d.m_break)
     z = z1 + z2
@@ -141,6 +141,28 @@ end
         expected = d.λ0 * broken_pdf(m) + d.λ1 * pdf(g1, m) + d.λ2 * pdf(g2, m)
         @test pdf(d, m)≈expected rtol=1e-10
     end
+end
+
+@testset "DefaultBBHPrimaryMass logpdf is type-stable" begin
+    d = DefaultBBHPrimaryMass(;
+        α1 = 1.5,
+        α2 = 4.0,
+        m_break = 35.0,
+        μ1 = 10.0,
+        σ1 = 2.0,
+        μ2 = 35.0,
+        σ2 = 6.0,
+        m1_low = 5.0,
+        δm1 = 0.0,
+        λ0 = 0.55,
+        λ1 = 0.25,
+        m_high = 120.0
+    )
+    # Concrete component fields keep the logpdf path inferrable; a heterogeneous
+    # MixtureModel field would degrade it to `Any` and propagate into the mass pair.
+    @test @inferred(logpdf(d, 30.0)) isa Float64
+    pair = _default_bbh_pair()
+    @test @inferred(logpdf(pair, (35.0, 25.0))) isa Float64
 end
 
 @testset "DefaultBBHMassPair logpdf and conditional normalization" begin

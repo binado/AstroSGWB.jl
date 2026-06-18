@@ -132,7 +132,7 @@ end
     return _log_planck_unit_taper((m - low) / δ)
 end
 
-struct DefaultBBHPrimaryMass{T <: Real, M <: MixtureModel, N <: Real} <:
+struct DefaultBBHPrimaryMass{T <: Real, B, G, N <: Real} <:
        ContinuousUnivariateDistribution
     α1::T
     α2::T
@@ -147,7 +147,9 @@ struct DefaultBBHPrimaryMass{T <: Real, M <: MixtureModel, N <: Real} <:
     λ1::T
     λ2::T
     m_high::T
-    untapered::M
+    broken::B   # untapered broken power law (weight λ0)
+    peak1::G    # truncated Gaussian peak (weight λ1)
+    peak2::G    # truncated Gaussian peak (weight λ2)
     log_taper_norm::N
 end
 
@@ -185,15 +187,15 @@ function DefaultBBHPrimaryMass(;
     λ2 = one(T) - λ0 - λ1
     m_high = T(m_high)
     _validate_primary_parameters(m1_low, m_break, m_high, σ1, σ2, δm1, λ0, λ1, λ2)
-    untapered = _primary_untapered_mixture(
-        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, λ0, λ1, λ2, m_high)
+    components = _primary_components(α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, m_high)
+    broken, peak1, peak2 = components
     primary = _unchecked_primary(
         α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2, m_high,
-        untapered, zero(T))
+        broken, peak1, peak2, zero(T))
     log_taper_norm = log(_primary_taper_normalizer(primary))
     return _unchecked_primary(
         α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2, m_high,
-        untapered, log_taper_norm)
+        broken, peak1, peak2, log_taper_norm)
 end
 
 function _unchecked_primary(
@@ -210,12 +212,14 @@ function _unchecked_primary(
         λ1::T,
         λ2::T,
         m_high::T,
-        untapered::M,
+        broken::B,
+        peak1::G,
+        peak2::G,
         log_taper_norm::N
-) where {T <: Real, M <: MixtureModel, N <: Real}
-    return DefaultBBHPrimaryMass{T, M, N}(
+) where {T <: Real, B, G, N <: Real}
+    return DefaultBBHPrimaryMass{T, B, G, N}(
         α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2,
-        m_high, untapered, log_taper_norm)
+        m_high, broken, peak1, peak2, log_taper_norm)
 end
 
 function _validate_primary_parameters(
@@ -251,7 +255,7 @@ function Distributions.insupport(d::DefaultBBHPrimaryMass, value::Real)
     return d.m1_low <= value < d.m_high
 end
 
-function _primary_untapered_mixture(
+function _primary_components(
         α1::Real,
         α2::Real,
         m_break::Real,
@@ -260,24 +264,36 @@ function _primary_untapered_mixture(
         μ2::Real,
         σ2::Real,
         m1_low::Real,
-        λ0::Real,
-        λ1::Real,
-        λ2::Real,
         m_high::Real
 )
-    components = Vector{Distribution{Univariate, Continuous}}(undef, 3)
-    components[1] = BrokenPowerLaw(α1, α2, m_break, m1_low, m_high)
-    components[2] = truncated(Normal(μ1, σ1), m1_low, m_high)
-    components[3] = truncated(Normal(μ2, σ2), m1_low, m_high)
-    weights = [λ0, λ1, λ2]
-    return MixtureModel(components, weights)
+    broken = BrokenPowerLaw(α1, α2, m_break, m1_low, m_high)
+    peak1 = truncated(Normal(μ1, σ1), m1_low, m_high)
+    peak2 = truncated(Normal(μ2, σ2), m1_low, m_high)
+    return broken, peak1, peak2
+end
+
+@inline function _logsumexp3(a, b, c)
+    m = max(a, b, c)
+    isfinite(m) || return m
+    return m + log(exp(a - m) + exp(b - m) + exp(c - m))
+end
+
+# Untapered log-density: the λ-weighted mixture of the broken power law and the two
+# truncated Gaussians. Kept as an explicit logsumexp over concretely-typed component
+# fields so the whole logpdf path stays type-stable and allocation-free (a heterogeneous
+# `MixtureModel` would infer to `Any` and box on every call in the likelihood hot path).
+@inline function _primary_log_untapered(d::DefaultBBHPrimaryMass, m::Real)
+    return _logsumexp3(
+        log(d.λ0) + logpdf(d.broken, m),
+        log(d.λ1) + logpdf(d.peak1, m),
+        log(d.λ2) + logpdf(d.peak2, m))
 end
 
 @inline function _primary_log_unnormalized(d::DefaultBBHPrimaryMass, m::Real)
     insupport(d, m) || return -Inf
     log_s = _log_planck_taper(m, d.m1_low, d.δm1)
     log_s == -Inf && return -Inf
-    return logpdf(d.untapered, m) + log_s
+    return _primary_log_untapered(d, m) + log_s
 end
 
 function _primary_taper_normalizer(d::DefaultBBHPrimaryMass)
@@ -439,7 +455,10 @@ function _rand_scaled_power(rng::AbstractRNG, low::Real, high::Real, exponent::R
 end
 
 function _rand_primary_proposal(rng::AbstractRNG, d::DefaultBBHPrimaryMass)
-    return rand(rng, d.untapered)
+    u = rand(rng) * (d.λ0 + d.λ1 + d.λ2)
+    u < d.λ0 && return rand(rng, d.broken)
+    u < d.λ0 + d.λ1 && return rand(rng, d.peak1)
+    return rand(rng, d.peak2)
 end
 
 function Random.rand(rng::AbstractRNG, d::DefaultBBHPrimaryMass)
