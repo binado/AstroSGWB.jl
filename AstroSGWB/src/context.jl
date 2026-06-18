@@ -1,31 +1,3 @@
-# --- private fiducial-cache reconstruction (relocated from reconstruction.jl) -------------
-# `ModelContext` itself is defined in inference_types.jl so it precedes the importance.jl
-# method signatures that dispatch on it.
-
-# Per-sample squared EM luminosity distance at the fiducial cosmology. The (Ξ₀, Ξₙ)
-# propagation factor is *not* applied here: the full distance correction is carried live in
-# the importance weights as `dl_fid_sq / (D_L,θ² · Ξ_θ²)`.
-function _reconstruct_dl_fid_sq(
-        z::AbstractVector{<:Real},
-        ::Type{C},
-        Λ::NamedTuple
-)::Vector{Float64} where {C <: AbstractCosmology}
-    c = cosmology(C, Λ)
-    return Float64.(luminosity_distance.(z, c) .^ 2)
-end
-
-# Proposal log-density per sample: single-event prior logpdf at the fiducial point.
-function _reconstruct_proposal_log_prob(
-        samples::NamedTuple,
-        ::Type{C},
-        population::M,
-        Λ::NamedTuple
-)::Vector{Float64} where {C <: AbstractCosmology, M <: PopulationModel}
-    c = cosmology(C, Λ)
-    prior = single_event_prior(population, c, Λ)
-    return batched_logpdf(prior, samples)
-end
-
 """
     build_model_context(problem, C, grid, detectors, observation_time_yr, local_merger_rate; z_grid) -> ModelContext
 
@@ -83,7 +55,10 @@ function build_model_context(
     det_vec = Vector{Detector}(collect(detectors))
     observation = build_observation_context(all_freq, det_vec, mask, obs_sec, obs_yr)
 
-    dl_fid_sq = _reconstruct_dl_fid_sq(z, C, Λ_fid)
+    c_fid = cosmology(C, Λ_fid)
+    # Per-sample squared EM luminosity distance at the fiducial cosmology. The (Ξ₀, Ξₙ)
+    # propagation factor is applied live in the importance weights as `dl_fid_sq / (D_L,θ² · Ξ_θ²)`.
+    dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
 
     redshift_grid = collect(Float64, z_grid)
     interp = SampleInterpolant(z, redshift_grid)
@@ -92,7 +67,7 @@ function build_model_context(
     # Fiducial proposal prior and its per-component log-densities, computed with the same
     # interpolant the hot path uses for the target redshift logpdf, so the redshift
     # log-ratio at Λ_fid is exactly zero (bitwise-identical arithmetic on both sides).
-    cosmology_cache_fid = CosmologyCache(cosmology(C, Λ_fid), redshift_grid)
+    cosmology_cache_fid = CosmologyCache(c_fid, redshift_grid)
     proposal_prior = single_event_prior(
         problem.population_model, cosmology_cache_fid, Λ_fid)
     samples = _with_redshift_interpolant(problem.samples, interp)
