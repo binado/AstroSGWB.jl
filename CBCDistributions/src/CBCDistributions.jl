@@ -22,7 +22,7 @@ include("cumulative_integral.jl")
 include("cosmology.jl")
 include("priors.jl")
 include("redshift.jl")
-include("mass.jl")
+include("mass/broken_power_law_plus_two_peaks.jl")
 include("physical_model.jl")
 include("samples.jl")
 
