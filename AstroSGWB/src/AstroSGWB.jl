@@ -144,7 +144,7 @@ export compute_importance_weights,
        Ωgw
 
 # Diagnostics
-export normalized_ess, max_normalized_weight, log_ratio_variance
+export normalized_ess
 
 # Posterior
 export loglikelihood,
