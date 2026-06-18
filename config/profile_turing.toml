@@ -5,7 +5,7 @@ catalog_path = "../catalog.h5"
 detectors = ["H1", "L1"]
 seed = 1
 local_merger_rate = 1e-7
-observation_time_yr = 1e-6
+observation_time = 1e-6
 
 [priors.H0]
 low = 20.0

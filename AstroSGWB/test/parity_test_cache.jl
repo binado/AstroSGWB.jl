@@ -149,9 +149,9 @@ const _PARITY_CATALOG_DIRS = Dict{Symbol, String}()
 
 function parity_observation_kwargs(variant::Symbol)
     if variant == :posterior || variant == :full_intrinsic
-        return (local_merger_rate = 1e-7, observation_time_yr = 1e-6)
+        return (local_merger_rate = 1e-7, observation_time = 1e-6)
     else
-        return (local_merger_rate = 161.0, observation_time_yr = 1.0)
+        return (local_merger_rate = 161.0, observation_time = 1.0)
     end
 end
 
@@ -200,7 +200,7 @@ function parity_problem_context(variant::Symbol, detectors)
         C,
         loaded.metadata.grid,
         detectors,
-        kw.observation_time_yr,
+        kw.observation_time,
         kw.local_merger_rate
     )
     return (; problem = problem, cosmology_type = C, ctx = ctx)

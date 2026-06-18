@@ -1,7 +1,9 @@
 """
-    build_model_context(problem, C, grid, detectors, observation_time_yr, local_merger_rate; z_grid) -> ModelContext
+    build_model_context(problem, C, grid, detectors, observation_time, local_merger_rate; z_grid) -> ModelContext
 
 Build the `Λ`-independent [`ModelContext`](@ref) for `problem` at cosmology family `C`.
+
+`observation_time` is the observation duration in years (Julian year).
 
 `grid` is the catalog [`FrequencyGrid`](@ref) (supplies the frequency axis and analysis-band
 mask). `detectors` must contain at least two [`Detector`](@ref)s; the network effective PSD
@@ -16,7 +18,7 @@ function build_model_context(
         ::Type{C},
         grid::FrequencyGrid,
         detectors::AbstractVector{D},
-        observation_time_yr::Real,
+        observation_time::Real,
         local_merger_rate::Real;
         z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
 )::ModelContext where {C <: AbstractCosmology, D <: Detector}
@@ -50,10 +52,9 @@ function build_model_context(
     ),
     )
 
-    obs_yr = Float64(observation_time_yr)
-    obs_sec = obs_yr * 365.25 * 24 * 3600.0
+    obs_time = Float64(observation_time)
     det_vec = Vector{Detector}(collect(detectors))
-    observation = build_observation_context(all_freq, det_vec, mask, obs_sec, obs_yr)
+    observation = build_observation_context(all_freq, det_vec, mask, obs_time)
 
     c_fid = cosmology(C, Λ_fid)
     # Per-sample squared EM luminosity distance at the fiducial cosmology. The (Ξ₀, Ξₙ)

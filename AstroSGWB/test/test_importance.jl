@@ -30,7 +30,7 @@ function _importance_type_test_fixture(n::Integer)
     z_grid = collect(Float64, DEFAULT_Z_GRID)
     interp = SampleInterpolant(samples.redshift, z_grid)
     obs = ObservationContext(
-        [1.0, 2.0], [1.0, 1.0], [1.0, 1.0], BitVector([true, true]), 1.0, 1.0)
+        [1.0, 2.0], [1.0, 1.0], [1.0, 1.0], BitVector([true, true]), 1.0)
     cache_fid = CosmologyCache(cosmology(_IMP_C, Λ), z_grid)
     proposal_prior = single_event_prior(_IMP_POP, cache_fid, Λ)
     samples_with_interp = merge(samples, (;
@@ -56,8 +56,7 @@ end
     rate_naive = merger_rate(
         problem, C, theta,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr,
-        ctx.observation.observation_time_sec
+        ctx.observation.observation_time
     )
     @test isfinite(rate_cached)
     @test rate_cached ≈ rate_naive
@@ -77,8 +76,7 @@ end
     rate_fid = merger_rate(
         ctx.proposal_prior,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr,
-        ctx.observation.observation_time_sec
+        ctx.observation.observation_time
     )
     if Λ_fid.Ξ₀ != 1.0
         @test !(spectral_density(problem.fluxes, rate_fid) ≈ Sh_fid)
@@ -123,8 +121,7 @@ end
     rate_fid = merger_rate(
         ctx.proposal_prior,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr,
-        ctx.observation.observation_time_sec
+        ctx.observation.observation_time
     )
     @test !(spectral_density(problem.fluxes, rate_fid) ≈ Sh_fid)
 end

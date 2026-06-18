@@ -4,7 +4,7 @@
 Detector-side SGWB observation layout: frequency grid, per-bin effective strain PSD
 amplitude from the detector network (ORFs and tabulated PSDs; square matches network
 variance), Gaussian bin scales for the likelihood, analysis band mask, and observation
-time metadata. The in-band Gaussian scale is precomputed for the likelihood hot path.
+time metadata (`observation_time`, in years). The in-band Gaussian scale is precomputed for the likelihood hot path.
 
 The observed spectral density is intentionally *not* part of this object; callers pass it
 explicitly to [`loglikelihood`](@ref) or let [`build_turing_model`](@ref) synthesize it
@@ -15,8 +15,7 @@ struct ObservationContext
     effective_psd::Vector{Float64}
     sgwb_scale::Vector{Float64}
     in_band_mask::BitVector
-    observation_time_sec::Float64
-    observation_time_yr::Float64
+    observation_time::Float64
     sgwb_scale_in_band::Vector{Float64}
 end
 
@@ -25,16 +24,14 @@ function ObservationContext(
         effective_psd::Vector{Float64},
         sgwb_scale::Vector{Float64},
         in_band_mask::BitVector,
-        observation_time_sec::Float64,
-        observation_time_yr::Float64
+        observation_time::Float64
 )
     return ObservationContext(
         frequencies,
         effective_psd,
         sgwb_scale,
         in_band_mask,
-        observation_time_sec,
-        observation_time_yr,
+        observation_time,
         sgwb_scale[in_band_mask]
     )
 end

@@ -2,7 +2,7 @@
     merger_rate(problem, C, Λ, ctx::ModelContext) -> Float64
 
 Detector-frame merger rate in events/sec at hyperparameters `Λ` (cosmology family `C`),
-reading the local rate and observation times from `ctx`.
+reading the local rate and observation time from `ctx`.
 """
 function merger_rate(
         problem::ImportanceSamplingProblem,
@@ -15,49 +15,49 @@ function merger_rate(
         C,
         Λ,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr,
-        ctx.observation.observation_time_sec
+        ctx.observation.observation_time
     )
 end
 
 """
-    merger_rate(problem, C, Λ, local_merger_rate, observation_time_yr, observation_time_sec) -> Float64
+    merger_rate(problem, C, Λ, local_merger_rate, observation_time) -> Float64
 
 Detector-frame merger rate in events/sec from explicit observation arguments (no
 `ModelContext` required). Doubles as the ctx-free oracle for the cached method above.
+
+`observation_time` is the observation duration in years (Julian year).
 """
 function merger_rate(
         problem::ImportanceSamplingProblem,
         ::Type{C},
         Λ::NamedTuple,
         local_merger_rate::Real,
-        observation_time_yr::Real,
-        observation_time_sec::Real
+        observation_time::Real
 ) where {C <: AbstractCosmology}
     c = cosmology(C, Λ)
     prior = single_event_prior(problem.population_model, c, Λ)
-    return merger_rate(prior, local_merger_rate, observation_time_yr, observation_time_sec)
+    return merger_rate(prior, local_merger_rate, observation_time)
 end
 
 """
-    merger_rate(prior, local_merger_rate, observation_time_yr, observation_time_sec) -> Float64
+    merger_rate(prior, local_merger_rate, observation_time) -> Float64
 
 Detector-frame merger rate in events/sec from an already-built `single_event_prior`. The
 hot path constructs the prior once and shares it with `compute_importance_weights`, so this
 is the form the forward model calls directly (no cosmology/prior rebuild). The redshift
 `.dists.redshift.prior` reach-through stays here rather than at every call site.
+
+`observation_time` is the observation duration in years (Julian year).
 """
 function merger_rate(
         prior::ProductNamedTupleDistribution,
         local_merger_rate::Real,
-        observation_time_yr::Real,
-        observation_time_sec::Real
+        observation_time::Real
 )
     return merger_rate_per_sec(
         prior.dists.redshift.prior,
         local_merger_rate,
-        observation_time_yr,
-        observation_time_sec
+        observation_time
     )
 end
 
@@ -86,8 +86,7 @@ function loglikelihood(
     rate = merger_rate(
         prior,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr,
-        ctx.observation.observation_time_sec
+        ctx.observation.observation_time
     )
     Sh = spectral_density(problem.fluxes, rate; weights = weights)
 

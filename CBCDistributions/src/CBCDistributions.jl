@@ -16,10 +16,12 @@ export CumulativeIntegral1D, interpolate, cdf, normalizer
 export stack_source_masses, validate_samples
 export MadauDickinsonSourceFrame, source_frame_distribution, redshift_prior, DEFAULT_Z_GRID
 export DefaultBBHPrimaryMass, DefaultBBHMassPair, planck_taper
+export JULIAN_YEAR_SEC, year_to_second, second_to_year
 
 include("types.jl")
 include("cumulative_integral.jl")
 include("cosmology.jl")
+include("utils.jl")
 include("mass/uniform.jl")
 include("mass/broken_power_law_plus_two_peaks.jl")
 include("spins/aligned.jl")

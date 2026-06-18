@@ -28,6 +28,7 @@ begin
                      MadauDickinsonSourceFrame,
                      stack_source_masses,
                      spectral_density,
+                     year_to_second,
                      Ωgw
     using AstroSGWBInference: build_turing_model, condition_turing_model
     using AstroSGWBInference.ChainIO: atomic_save_chain
@@ -147,7 +148,7 @@ begin
     Random.seed!(seed)
 
     local_merger_rate = 161.0 # Matches COBA simulations
-    observation_time_yr = 1.0
+    observation_time = 1.0
 
     output_dir = joinpath(_repo_root, "chains")
     output_prefix = "chains"
@@ -214,7 +215,7 @@ begin
         C,
         loaded.metadata.grid,
         detectors,
-        observation_time_yr,
+        observation_time,
         local_merger_rate
     )
     order = full_hyperparameters(C, pop)
@@ -252,7 +253,7 @@ function plot_fiducial_omega_gw(problem, C, fiducials, ctx)
     snr = spectral_snr(
         Sh0,
         ctx.observation.effective_psd,
-        ctx.observation.observation_time_sec,
+        year_to_second(ctx.observation.observation_time),
         df
     )
 

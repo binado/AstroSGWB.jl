@@ -270,7 +270,7 @@ function _run(;
         seed::Union{Nothing, Int},
         observed_spectral_density_csv::Union{Nothing, String},
         local_merger_rate::Float64,
-        observation_time_yr::Float64,
+        observation_time::Float64,
         seconds::Float64,
         profile_samples::Int,
         do_alloc::Bool,
@@ -291,7 +291,7 @@ function _run(;
         C,
         loaded.metadata.grid,
         detectors,
-        observation_time_yr,
+        observation_time,
         local_merger_rate
     )
     @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
@@ -382,8 +382,7 @@ function _run(;
     suite["stage"]["rate"] = @benchmarkable merger_rate_per_sec(
         $redshift_prior0,
         $(ctx.local_merger_rate),
-        $(ctx.observation.observation_time_yr),
-        $(ctx.observation.observation_time_sec)
+        $(ctx.observation.observation_time)
     )
     suite["stage"]["spectral"] = @benchmarkable spectral_density(
         $(problem.fluxes),
@@ -573,7 +572,7 @@ function profile_turing(;
         observed_csv = String(observed_csv)
     end
     local_merger_rate = Float64(_require(cfg, "local_merger_rate"))
-    observation_time_yr = Float64(_require(cfg, "observation_time_yr"))
+    observation_time = Float64(_require(cfg, "observation_time"))
 
     priors_tbl = _require_table(cfg, "priors")
     init_tbl = _require_table(cfg, "init")
@@ -591,7 +590,7 @@ function profile_turing(;
         seed,
         observed_spectral_density_csv = observed_csv,
         local_merger_rate,
-        observation_time_yr,
+        observation_time,
         seconds,
         profile_samples,
         do_alloc = alloc,

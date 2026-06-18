@@ -152,4 +152,9 @@ export loglikelihood,
        fiducial_hyperparameters,
        fiducial_spectral_density
 
+# Time conversions
+export JULIAN_YEAR_SEC,
+       year_to_second,
+       second_to_year
+
 end

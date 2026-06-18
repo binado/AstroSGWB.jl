@@ -13,7 +13,7 @@ sample_only = ["H0"]
 
 seed = 42
 local_merger_rate = 161.0   # matches COBA simulations
-observation_time_yr = 1.0
+observation_time = 1.0
 
 output_dir = "chains"
 output_prefix = "chains"

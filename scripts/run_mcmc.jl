@@ -182,7 +182,7 @@ function run_mcmc(config_file::String)
     detectors = [Detector(n) for n in _require_string_array(cfg, "detectors")]
     seed = Int(_require(cfg, "seed"))
     local_merger_rate = Float64(_require(cfg, "local_merger_rate"))
-    observation_time_yr = Float64(_require(cfg, "observation_time_yr"))
+    observation_time = Float64(_require(cfg, "observation_time"))
     output_dir = joinpath(_REPO_ROOT, String(get(cfg, "output_dir", "chains")))
     output_prefix = String(get(cfg, "output_prefix", "chains"))
 
@@ -219,7 +219,7 @@ function run_mcmc(config_file::String)
         C,
         loaded.metadata.grid,
         detectors,
-        observation_time_yr,
+        observation_time,
         local_merger_rate
     )
     @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(
