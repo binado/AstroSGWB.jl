@@ -2,11 +2,11 @@ using Test
 using Bijectors
 using Distributions: product_distribution, Uniform
 using AstroSGWB:
-             ModifiedPropagation,
-             LambdaCDM, W0CDM, W0WaCDM,
-             full_hyperparameters,
-             canonical_hyperparameters,
-             validate_hyperparameters
+                 ModifiedPropagation,
+                 LambdaCDM, W0CDM, W0WaCDM,
+                 full_hyperparameters,
+                 canonical_hyperparameters,
+                 validate_hyperparameters
 using AstroSGWBInference: validate_hyperprior
 
 if !@isdefined ParityBNSPopulation

@@ -2,7 +2,8 @@
 # Catalog fixtures are materialized on demand via `parity_catalog_dir` (see `parity_test_cache.jl`).
 # Included from test files that need `PARITY_THETA` (not from `runtests.jl`).
 
-using AstroSGWB: canonical_hyperparameters, full_hyperparameters, ModifiedPropagation, LambdaCDM
+using AstroSGWB: canonical_hyperparameters, full_hyperparameters, ModifiedPropagation,
+                 LambdaCDM
 using Distributions: Uniform, product_distribution
 
 if !@isdefined ParityBNSPopulation
@@ -32,7 +33,7 @@ const PARITY_PRIORS = product_distribution(merge(
         H0 = Uniform(20.0, 140.0),
         Ωm = Uniform(0.05, 0.95),
         Ξ₀ = Uniform(0.5, 5.0),
-        Ξₙ = Uniform(0.05, 3.0),
+        Ξₙ = Uniform(0.05, 3.0)
     ),
-    parity_population_hyperprior().dists,
+    parity_population_hyperprior().dists
 ))
