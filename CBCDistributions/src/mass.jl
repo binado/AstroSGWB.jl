@@ -475,16 +475,3 @@ function Distributions._rand!(
     x[2] = sample[2]
     return x
 end
-
-function _add_component_logpdf!(
-        out::AbstractVector,
-        d::DefaultBBHMassPair,
-        field::AbstractMatrix
-)
-    size(field, 1) == 2 ||
-        throw(ArgumentError("DEFAULT BBH source-mass batch must have two rows"))
-    @inbounds for i in eachindex(out)
-        out[i] += logpdf(d, (field[1, i], field[2, i]))
-    end
-    return out
-end

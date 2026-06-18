@@ -33,6 +33,10 @@ redshift(s::NamedTuple) = s.redshift
 
 redshift(problem::ImportanceSamplingProblem) = redshift(problem.samples)
 
+function _with_redshift_interpolant(samples::NamedTuple, interp::SampleInterpolant)
+    return merge(samples, (; redshift = SampleField(samples.redshift, interp)))
+end
+
 """
     ModelContext
 

@@ -115,19 +115,43 @@ function _component_batch_length(d::Distribution, samples::NamedTuple, key)
     return _component_batch_length(d, samples[key], key)
 end
 
-function _component_batch_length(d::UnivariateDistribution, field::AbstractVector, key)
-    return length(field)
+function _component_batch_length(d::UnivariateDistribution, samples::NamedTuple, key)
+    haskey(samples, key) ||
+        throw(ArgumentError("samples are missing population prior field $(repr(key))"))
+    return _component_batch_length(d, samples[key], key)
 end
 
-function _component_batch_length(d::MultivariateDistribution, field::AbstractMatrix, key)
+function _component_batch_length(d::MultivariateDistribution, samples::NamedTuple, key)
+    haskey(samples, key) ||
+        throw(ArgumentError("samples are missing population prior field $(repr(key))"))
+    return _component_batch_length(d, samples[key], key)
+end
+
+function _component_batch_length(d::UnivariateDistribution, field, key)
+    values = sample_values(field)
+    values isa AbstractVector || throw(
+        ArgumentError(
+        "population prior field $(repr(key)) must be a vector for univariate distribution $(typeof(d))",
+    ),
+    )
+    return length(values)
+end
+
+function _component_batch_length(d::MultivariateDistribution, field, key)
+    values = sample_values(field)
+    values isa AbstractMatrix || throw(
+        ArgumentError(
+        "population prior field $(repr(key)) must be a matrix for multivariate distribution $(typeof(d))",
+    ),
+    )
     expected = length(d)
-    size(field, 1) == expected ||
+    size(values, 1) == expected ||
         throw(
             ArgumentError(
-            "population prior field $(repr(key)) must have $expected rows, got $(size(field, 1))",
+            "population prior field $(repr(key)) must have $expected rows, got $(size(values, 1))",
         ),
         )
-    return size(field, 2)
+    return size(values, 2)
 end
 
 function _component_batch_length(d, field, key)
@@ -143,68 +167,80 @@ function _batched_output_eltype(dists)
     return promote_type(map(eltype, values(dists))...)
 end
 
-function _add_component_logpdf!(
+"""
+    add_logpdfvec!(out, d, field) -> out
+
+Accumulate a component distribution's batched log-density into `out`.
+Implementations own the per-sample loop and add `logpdf(d, sample_i)` to
+`out[i]`. `field` may be a raw batched field or a [`SampleField`](@ref) carrying
+metadata for specialized fast paths.
+"""
+function add_logpdfvec!(
         out::AbstractVector,
         d::UnivariateDistribution,
-        field::AbstractVector
+        field
 )
-    @inbounds for i in eachindex(out, field)
-        out[i] += logpdf(d, field[i])
+    values = sample_values(field)
+    @inbounds for i in eachindex(out, values)
+        out[i] += logpdf(d, values[i])
     end
     return out
 end
 
-function _add_component_logpdf!(
+function add_logpdfvec!(
         out::AbstractVector,
         d::MultivariateDistribution,
-        field::AbstractMatrix
+        field
 )
-    values = logpdf(d, field)
-    length(values) == length(out) ||
+    field_values = sample_values(field)
+    logpdf_values = logpdf(d, field_values)
+    length(logpdf_values) == length(out) ||
         throw(ArgumentError("component logpdf length must match output length"))
-    @inbounds for i in eachindex(out, values)
-        out[i] += values[i]
+    @inbounds for i in eachindex(out, logpdf_values)
+        out[i] += logpdf_values[i]
     end
     return out
 end
 
-function _add_component_logpdf!(
+function add_logpdfvec!(
         out::AbstractVector,
         d::OrderedUniformSourceMassPair,
-        field::AbstractMatrix
+        field
 )
-    size(field, 1) == 2 ||
+    values = sample_values(field)
+    size(values, 1) == 2 ||
         throw(ArgumentError("ordered source-mass batch must have two rows"))
     @inbounds for i in eachindex(out)
-        out[i] += logpdf(d, (field[1, i], field[2, i]))
+        out[i] += logpdf(d, (values[1, i], values[2, i]))
     end
     return out
 end
 
-# Optional precomputed-interpolant hook. A distribution that can exploit a
-# `SampleInterpolant` for a fixed set of sample points overrides the 4-arg form
-# (see `RedshiftInterpolatedDistribution` in redshift.jl). Every other component —
-# and a `nothing` interpolant — falls back to the per-sample scalar loops above,
-# so `batched_logpdf` needs no knowledge of which distributions are interpolated.
-function _add_component_logpdf!(out::AbstractVector, d, field, interp)
-    return _add_component_logpdf!(out, d, field)
+function add_logpdfvec!(
+        out::AbstractVector,
+        d::DefaultBBHMassPair,
+        field
+)
+    values = sample_values(field)
+    size(values, 1) == 2 ||
+        throw(ArgumentError("DEFAULT BBH source-mass batch must have two rows"))
+    @inbounds for i in eachindex(out)
+        out[i] += logpdf(d, (values[1, i], values[2, i]))
+    end
+    return out
 end
 
 """
-    batched_logpdf(d::ProductNamedTupleDistribution, samples::NamedTuple, sample_interps=nothing) -> Vector
+    batched_logpdf(d::ProductNamedTupleDistribution, samples::NamedTuple) -> Vector
 
 Per-sample log-density of `d` evaluated against a struct-of-arrays `samples`.
 Each field of `d.dists` is matched to the same field in `samples`.
-
-`sample_interps`, when supplied, is a `NamedTuple` of precomputed `SampleInterpolant`s
-keyed by field name. A component whose distribution implements the 4-arg
-`_add_component_logpdf!` (e.g. grid-interpolated priors) uses its interpolant to
-skip the per-sample grid search; every other component ignores it.
+Individual fields may be wrapped in [`SampleField`](@ref) to carry metadata for
+specialized component methods.
 """
 function batched_logpdf(
         d::ProductNamedTupleDistribution,
-        samples::NamedTuple,
-        sample_interps = nothing
+        samples::NamedTuple
 )
     first_key = first(keys(d.dists))
     n = _component_batch_length(d.dists[first_key], samples, first_key)
@@ -214,8 +250,7 @@ function batched_logpdf(
         n_key = _component_batch_length(d.dists[key], samples, key)
         n_key == n ||
             throw(ArgumentError("population prior sample fields must have matching lengths"))
-        interp = sample_interps === nothing ? nothing : get(sample_interps, key, nothing)
-        _add_component_logpdf!(out, d.dists[key], samples[key], interp)
+        add_logpdfvec!(out, d.dists[key], samples[key])
     end
     return out
 end
@@ -230,7 +265,7 @@ function batched_logpdf(d::Distribution, samples)
 end
 
 """
-    component_logpdfs(d::ProductNamedTupleDistribution, samples, sample_interps=nothing) -> NamedTuple
+    component_logpdfs(d::ProductNamedTupleDistribution, samples) -> NamedTuple
 
 Per-component batched log-densities of `d` against a struct-of-arrays `samples`: one
 vector per field of `d.dists`, keyed like [`batched_logpdf`](@ref) (whose output is the
@@ -239,8 +274,7 @@ sum of these). Used to cache the fiducial proposal log-densities per component s
 """
 function component_logpdfs(
         d::ProductNamedTupleDistribution,
-        samples::NamedTuple,
-        sample_interps = nothing
+        samples::NamedTuple
 )
     ks = keys(d.dists)
     first_key = first(ks)
@@ -251,14 +285,13 @@ function component_logpdfs(
         n_key == n ||
             throw(ArgumentError("population prior sample fields must have matching lengths"))
         out = zeros(_batched_output_eltype((dk,)), n)
-        interp = sample_interps === nothing ? nothing : get(sample_interps, key, nothing)
-        _add_component_logpdf!(out, dk, samples[key], interp)
+        add_logpdfvec!(out, dk, samples[key])
     end
     return NamedTuple{ks}(vals)
 end
 
 """
-    logprobdiff!(out, model, ::Val{key}, d_target, d_proposal, proposal_logprob, x, interp=nothing)
+    logprobdiff!(out, model, ::Val{key}, d_target, d_proposal, proposal_logprob, x)
 
 Accumulate into `out` the per-sample log-density difference
 `logpdf(d_target, xᵢ) − proposal_logprob[i]` for one component `key` of the
@@ -286,8 +319,7 @@ function logprobdiff!(
         d_target,
         d_proposal,
         proposal_logprob::AbstractVector{<:Real},
-        x,
-        interp = nothing
+        x
 ) where {key}
     if d_target === d_proposal && all(isfinite, proposal_logprob)
         return out
@@ -297,7 +329,7 @@ function logprobdiff!(
         "proposal logpdf length must match batch size for population prior field $(repr(key))",
     ),
     )
-    _add_component_logpdf!(out, d_target, x, interp)
+    add_logpdfvec!(out, d_target, x)
     @inbounds for i in eachindex(out, proposal_logprob)
         out[i] -= proposal_logprob[i]
     end
@@ -305,7 +337,7 @@ function logprobdiff!(
 end
 
 """
-    logprobdiff(model, prior, proposal, proposal_logprob::NamedTuple, samples, sample_interps=nothing) -> Vector
+    logprobdiff(model, prior, proposal, proposal_logprob::NamedTuple, samples) -> Vector
 
 Per-sample log-density ratio `log p_target − log p_proposal` between the target
 single-event `prior` (built at live hyperparameters `Λ`) and the fiducial `proposal`,
@@ -314,16 +346,13 @@ with the proposal's per-component log-densities supplied precomputed in
 [`logprobdiff!`](@ref), so egal components (identical between target and proposal,
 i.e. `Λ`-independent) are skipped exactly, and population models can overload the
 per-component method for custom cancellations.
-
-`sample_interps` is forwarded per component as in [`batched_logpdf`](@ref).
 """
 function logprobdiff(
         model::PopulationModel,
         prior::ProductNamedTupleDistribution,
         proposal::ProductNamedTupleDistribution,
         proposal_logprob::NamedTuple,
-        samples::NamedTuple,
-        sample_interps = nothing
+        samples::NamedTuple
 )
     ks = keys(prior.dists)
     keys(proposal.dists) == ks ||
@@ -338,16 +367,15 @@ function logprobdiff(
         n_key = _component_batch_length(prior.dists[key], samples, key)
         n_key == n ||
             throw(ArgumentError("population prior sample fields must have matching lengths"))
-        interp = sample_interps === nothing ? nothing : get(sample_interps, key, nothing)
         logprobdiff!(
             out, model, Val(key), prior.dists[key], proposal.dists[key],
-            proposal_logprob[key], samples[key], interp)
+            proposal_logprob[key], samples[key])
     end
     return out
 end
 
 """
-    logprobdiff(model, prior, proposal, samples, sample_interps=nothing) -> Vector
+    logprobdiff(model, prior, proposal, samples) -> Vector
 
 Convenience wrapper that computes the proposal's per-component log-densities on the
 fly via [`component_logpdfs`](@ref) and delegates to the cached form. Hot paths
@@ -358,9 +386,8 @@ function logprobdiff(
         model::PopulationModel,
         prior::ProductNamedTupleDistribution,
         proposal::ProductNamedTupleDistribution,
-        samples::NamedTuple,
-        sample_interps = nothing
+        samples::NamedTuple
 )
-    proposal_logprob = component_logpdfs(proposal, samples, sample_interps)
-    return logprobdiff(model, prior, proposal, proposal_logprob, samples, sample_interps)
+    proposal_logprob = component_logpdfs(proposal, samples)
+    return logprobdiff(model, prior, proposal, proposal_logprob, samples)
 end

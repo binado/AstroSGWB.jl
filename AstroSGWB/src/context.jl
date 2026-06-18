@@ -97,8 +97,8 @@ function build_model_context(
     cosmology_cache_fid = CosmologyCache(cosmology(C, Λ_fid), redshift_grid)
     proposal_prior = single_event_prior(
         problem.population_model, cosmology_cache_fid, Λ_fid)
-    proposal_log_prob = component_logpdfs(
-        proposal_prior, problem.samples, (; redshift = interp))
+    samples = _with_redshift_interpolant(problem.samples, interp)
+    proposal_log_prob = component_logpdfs(proposal_prior, samples)
 
     # Fiducial spectral density: weights → rate → Sₕ at Λ_fid, through the same kernels the
     # likelihood uses, so the stored observed data matches the live forward model exactly.
@@ -108,8 +108,7 @@ function build_model_context(
             proposal_prior,
             proposal_prior,
             proposal_log_prob,
-            problem.samples,
-            (; redshift = interp)
+            samples
         )
         weights_fid = _importance_weights_core(
             log_ratio_fid,
