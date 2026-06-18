@@ -6,7 +6,9 @@ export OrderedUniformSourceMassPair, BNS_MASS_LOW, BNS_MASS_HIGH
 const BNS_MASS_LOW = 1.1
 const BNS_MASS_HIGH = 2.5
 
-struct OrderedUniformSourceMassPair{T <: Real} <: ContinuousMultivariateDistribution
+abstract type SourceMassPairDistribution <: ContinuousMultivariateDistribution end
+
+struct OrderedUniformSourceMassPair{T <: Real} <: SourceMassPairDistribution
     low::T
     high::T
 end

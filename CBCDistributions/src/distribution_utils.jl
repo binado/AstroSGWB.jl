@@ -6,22 +6,10 @@ using Distributions: ProductNamedTupleDistribution
 function _component_batch_length(d::Distribution, samples::NamedTuple, key)
     haskey(samples, key) ||
         throw(ArgumentError("samples are missing population prior field $(repr(key))"))
-    return _component_batch_length(d, samples[key], key)
+    return _component_batch_length_field(d, samples[key], key)
 end
 
-function _component_batch_length(d::UnivariateDistribution, samples::NamedTuple, key)
-    haskey(samples, key) ||
-        throw(ArgumentError("samples are missing population prior field $(repr(key))"))
-    return _component_batch_length(d, samples[key], key)
-end
-
-function _component_batch_length(d::MultivariateDistribution, samples::NamedTuple, key)
-    haskey(samples, key) ||
-        throw(ArgumentError("samples are missing population prior field $(repr(key))"))
-    return _component_batch_length(d, samples[key], key)
-end
-
-function _component_batch_length(d::UnivariateDistribution, field, key)
+function _component_batch_length_field(d::UnivariateDistribution, field, key)
     values = sample_values(field)
     values isa AbstractVector || throw(
         ArgumentError(
@@ -31,7 +19,7 @@ function _component_batch_length(d::UnivariateDistribution, field, key)
     return length(values)
 end
 
-function _component_batch_length(d::MultivariateDistribution, field, key)
+function _component_batch_length_field(d::MultivariateDistribution, field, key)
     values = sample_values(field)
     values isa AbstractMatrix || throw(
         ArgumentError(
@@ -48,7 +36,7 @@ function _component_batch_length(d::MultivariateDistribution, field, key)
     return size(values, 2)
 end
 
-function _component_batch_length(d, field, key)
+function _component_batch_length_field(d, field, key)
     throw(
         ArgumentError(
         "unsupported batch layout for population prior field $(repr(key)) and distribution $(typeof(d))",
@@ -98,26 +86,12 @@ end
 
 function add_logpdfvec!(
         out::AbstractVector,
-        d::OrderedUniformSourceMassPair,
+        d::SourceMassPairDistribution,
         field
 )
     values = sample_values(field)
     size(values, 1) == 2 ||
-        throw(ArgumentError("ordered source-mass batch must have two rows"))
-    @inbounds for i in eachindex(out)
-        out[i] += logpdf(d, (values[1, i], values[2, i]))
-    end
-    return out
-end
-
-function add_logpdfvec!(
-        out::AbstractVector,
-        d::DefaultBBHMassPair,
-        field
-)
-    values = sample_values(field)
-    size(values, 1) == 2 ||
-        throw(ArgumentError("DEFAULT BBH source-mass batch must have two rows"))
+        throw(ArgumentError("source-mass batch must have two rows"))
     @inbounds for i in eachindex(out)
         out[i] += logpdf(d, (values[1, i], values[2, i]))
     end

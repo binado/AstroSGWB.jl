@@ -134,13 +134,6 @@ end
 
 struct DefaultBBHPrimaryMass{T <: Real, B, G, N <: Real} <:
        ContinuousUnivariateDistribution
-    α1::T
-    α2::T
-    m_break::T
-    μ1::T
-    σ1::T
-    μ2::T
-    σ2::T
     m1_low::T
     δm1::T
     λ0::T
@@ -187,39 +180,14 @@ function DefaultBBHPrimaryMass(;
     λ2 = one(T) - λ0 - λ1
     m_high = T(m_high)
     _validate_primary_parameters(m1_low, m_break, m_high, σ1, σ2, δm1, λ0, λ1, λ2)
-    components = _primary_components(α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, m_high)
-    broken, peak1, peak2 = components
-    primary = _unchecked_primary(
-        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2, m_high,
-        broken, peak1, peak2, zero(T))
+    broken, peak1,
+    peak2 = _primary_components(
+        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, m_high)
+    primary = DefaultBBHPrimaryMass{T, typeof(broken), typeof(peak1), T}(
+        m1_low, δm1, λ0, λ1, λ2, m_high, broken, peak1, peak2, zero(T))
     log_taper_norm = log(_primary_taper_normalizer(primary))
-    return _unchecked_primary(
-        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2, m_high,
-        broken, peak1, peak2, log_taper_norm)
-end
-
-function _unchecked_primary(
-        α1::T,
-        α2::T,
-        m_break::T,
-        μ1::T,
-        σ1::T,
-        μ2::T,
-        σ2::T,
-        m1_low::T,
-        δm1::T,
-        λ0::T,
-        λ1::T,
-        λ2::T,
-        m_high::T,
-        broken::B,
-        peak1::G,
-        peak2::G,
-        log_taper_norm::N
-) where {T <: Real, B, G, N <: Real}
-    return DefaultBBHPrimaryMass{T, B, G, N}(
-        α1, α2, m_break, μ1, σ1, μ2, σ2, m1_low, δm1, λ0, λ1, λ2,
-        m_high, broken, peak1, peak2, log_taper_norm)
+    return DefaultBBHPrimaryMass{T, typeof(broken), typeof(peak1), T}(
+        m1_low, δm1, λ0, λ1, λ2, m_high, broken, peak1, peak2, log_taper_norm)
 end
 
 function _validate_primary_parameters(
@@ -320,7 +288,7 @@ end
 Distributions.pdf(d::DefaultBBHPrimaryMass, value::Real) = exp(logpdf(d, value))
 
 struct DefaultBBHMassPair{P <: DefaultBBHPrimaryMass, T <: Real} <:
-       ContinuousMultivariateDistribution
+       SourceMassPairDistribution
     primary::P
     βq::T
     m2_low::T
