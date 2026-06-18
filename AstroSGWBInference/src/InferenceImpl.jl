@@ -19,7 +19,8 @@ using AstroSGWB:
                  validate_subset,
                  normalized_ess,
                  spectral_snr_squared,
-                 frequency_bin_width
+                 frequency_bin_width,
+                 year_to_second
 using Distributions: MvNormal, ProductNamedTupleDistribution, logpdf
 using LinearAlgebra: Diagonal
 using Turing

@@ -382,8 +382,7 @@ function _run(;
     suite["stage"]["rate"] = @benchmarkable merger_rate_per_sec(
         $redshift_prior0,
         $(ctx.local_merger_rate),
-        $(ctx.observation.observation_time_yr),
-        $(ctx.observation.observation_time_sec)
+        $(ctx.observation.observation_time_yr)
     )
     suite["stage"]["spectral"] = @benchmarkable spectral_density(
         $(problem.fluxes),

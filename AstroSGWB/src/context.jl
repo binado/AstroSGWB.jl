@@ -51,9 +51,8 @@ function build_model_context(
     )
 
     obs_yr = Float64(observation_time_yr)
-    obs_sec = obs_yr * 365.25 * 24 * 3600.0
     det_vec = Vector{Detector}(collect(detectors))
-    observation = build_observation_context(all_freq, det_vec, mask, obs_sec, obs_yr)
+    observation = build_observation_context(all_freq, det_vec, mask, obs_yr)
 
     c_fid = cosmology(C, Λ_fid)
     # Per-sample squared EM luminosity distance at the fiducial cosmology. The (Ξ₀, Ξₙ)

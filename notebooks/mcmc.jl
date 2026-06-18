@@ -28,6 +28,7 @@ begin
                      MadauDickinsonSourceFrame,
                      stack_source_masses,
                      spectral_density,
+                     year_to_second,
                      Ωgw
     using AstroSGWBInference: build_turing_model, condition_turing_model
     using AstroSGWBInference.ChainIO: atomic_save_chain
@@ -252,7 +253,7 @@ function plot_fiducial_omega_gw(problem, C, fiducials, ctx)
     snr = spectral_snr(
         Sh0,
         ctx.observation.effective_psd,
-        ctx.observation.observation_time_sec,
+        year_to_second(ctx.observation.observation_time_yr),
         df
     )
 

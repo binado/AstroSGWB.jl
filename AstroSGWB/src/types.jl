@@ -15,7 +15,6 @@ struct ObservationContext
     effective_psd::Vector{Float64}
     sgwb_scale::Vector{Float64}
     in_band_mask::BitVector
-    observation_time_sec::Float64
     observation_time_yr::Float64
     sgwb_scale_in_band::Vector{Float64}
 end
@@ -25,7 +24,6 @@ function ObservationContext(
         effective_psd::Vector{Float64},
         sgwb_scale::Vector{Float64},
         in_band_mask::BitVector,
-        observation_time_sec::Float64,
         observation_time_yr::Float64
 )
     return ObservationContext(
@@ -33,7 +31,6 @@ function ObservationContext(
         effective_psd,
         sgwb_scale,
         in_band_mask,
-        observation_time_sec,
         observation_time_yr,
         sgwb_scale[in_band_mask]
     )

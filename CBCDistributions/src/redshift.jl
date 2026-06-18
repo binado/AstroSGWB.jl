@@ -58,28 +58,23 @@ function expected_number_of_events(
 end
 
 """
-    merger_rate_per_sec(
-        prior, local_merger_rate_gpc3_yr, observation_time_yr, observation_time_sec,
-    ) -> Float64
+    merger_rate_per_sec(prior, local_merger_rate_gpc3_yr, observation_time_yr) -> Float64
 
 Detector-frame merger rate in events/sec:
 `expected_number_of_events(local_rate, redshift_integral(prior), observation_time_yr) /
-observation_time_sec`. `observation_time_yr` sets the events count, `observation_time_sec`
-converts to per-second units; they are taken independently rather than assuming a fixed
-seconds-per-year so the cache's stored pair of times round-trips exactly.
+year_to_second(observation_time_yr)`.
 """
 function merger_rate_per_sec(
         prior::RedshiftPrior,
         local_merger_rate_gpc3_yr::Real,
-        observation_time_yr::Real,
-        observation_time_sec::Real
+        observation_time_yr::Real
 )
     n_events = expected_number_of_events(
         local_merger_rate_gpc3_yr,
         redshift_integral(prior),
         observation_time_yr
     )
-    return n_events / observation_time_sec
+    return n_events / year_to_second(observation_time_yr)
 end
 
 """
