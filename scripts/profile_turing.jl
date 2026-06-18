@@ -24,6 +24,7 @@ using AstroSGWB:
                  merger_rate,
                  merger_rate_per_sec,
                  spectral_density,
+                 fiducial_spectral_density,
                  single_event_prior,
                  PopulationModel,
                  AbstractCosmology,
@@ -296,13 +297,13 @@ function _run(;
     @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
 
     observed = if observed_spectral_density_csv === nothing
-        @info "using fiducial in-band spectrum from catalog as observed data"
-        ctx.fiducial_spectral_density
+        @info "using fiducial spectrum from catalog as observed data"
+        fiducial_spectral_density(problem, C, ctx)
     else
         @info "loading observed spectrum from CSV" path = observed_spectral_density_csv
         _load_observed_spectral_density(
             observed_spectral_density_csv,
-            length(ctx.fiducial_spectral_density)
+            length(ctx.observation.frequencies)
         )
     end
 
@@ -344,7 +345,7 @@ function _run(;
     @info "warming up (JIT + AD compile)"
     LogDensityProblems.logdensity(lf, z0_turing)
     LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
-    logposterior(h, problem, C, ctx, priors; observed = observed)
+    logposterior(h, problem, C, ctx, priors, observed)
 
     # ------------------------------------------------------------------
     # BenchmarkTools suite
@@ -363,8 +364,8 @@ function _run(;
         $problem,
         $C,
         $ctx,
-        $priors;
-        observed = $observed
+        $priors,
+        $observed
     )
 
     suite["gradient"] = BenchmarkGroup()

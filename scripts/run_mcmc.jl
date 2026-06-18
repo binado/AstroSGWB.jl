@@ -226,9 +226,6 @@ function run_mcmc(config_file::String)
         problem.samples.redshift,
     )
 
-    @info "using fiducial in-band spectrum from cache as observed data"
-    observed = ctx.fiducial_spectral_density
-
     mkpath(output_dir)
     timestamp = format(now(), "yyyymmdd-HHMMSS")
     det_suffix = join((d.name for d in detectors), ",")
@@ -243,8 +240,7 @@ function run_mcmc(config_file::String)
         C,
         ctx,
         HYPERPRIOR;
-        track = true,
-        observed = observed
+        track = true
     )
     conditioned = condition_turing_model(
         turing_model,

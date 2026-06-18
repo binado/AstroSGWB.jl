@@ -38,8 +38,6 @@ and Gaussian bin scales are computed from tabulated PSDs and overlap-reduction f
 The proposal caches (`proposal_prior`, the per-component `proposal_log_prob`, `dl_fid_sq`)
 are recomputed at the fiducial cosmology `cosmology(C, Λ_fid)`, so stale on-disk values are
 never trusted. The raw catalog `fluxes` are used directly (no `(D_L/D_gw)²` pre-scaling).
-The `fiducial_spectral_density` is produced by running the inline `weights → rate → Sₕ`
-sequence at the fiducial point.
 """
 function build_model_context(
         problem::ImportanceSamplingProblem,
@@ -100,36 +98,6 @@ function build_model_context(
     samples = _with_redshift_interpolant(problem.samples, interp)
     proposal_log_prob = component_logpdfs(proposal_prior, samples)
 
-    # Fiducial spectral density: weights → rate → Sₕ at Λ_fid, through the same kernels the
-    # likelihood uses, so the stored observed data matches the live forward model exactly.
-    fs = try
-        log_ratio_fid = logprobdiff(
-            problem.population_model,
-            proposal_prior,
-            proposal_prior,
-            proposal_log_prob,
-            samples
-        )
-        weights_fid = _importance_weights_core(
-            log_ratio_fid,
-            dl_fid_sq,
-            z,
-            redshift_grid,
-            interp,
-            cosmology_cache_fid
-        )
-        rate_fid = merger_rate_per_sec(
-            proposal_prior.dists.redshift.prior, local_rate, obs_yr, obs_sec)
-        spectral_density(problem.fluxes, rate_fid; weights = weights_fid)
-    catch err
-        throw(
-            ArgumentError(
-            "fiducial_spectral_density computation failed while building model context; " *
-            "underlying error: " * sprint(showerror, err),
-        ),
-        )
-    end
-
     return ModelContext(
         proposal_prior,
         proposal_log_prob,
@@ -137,7 +105,6 @@ function build_model_context(
         redshift_grid,
         interp,
         observation,
-        local_rate,
-        fs
+        local_rate
     )
 end

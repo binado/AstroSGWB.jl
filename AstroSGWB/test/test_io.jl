@@ -111,14 +111,16 @@ end
     @test ctx.observation.observation_time_sec ≈ 365.25 * 24 * 3600
     @test ctx.local_merger_rate == 161.0
 
-    @test all(isfinite, ctx.fiducial_spectral_density)
-    @test length(ctx.fiducial_spectral_density) == length(ctx.observation.frequencies)
+    fs = fiducial_spectral_density(problem, C, ctx)
+    @test all(isfinite, fs)
+    @test length(fs) == length(ctx.observation.frequencies)
 end
 
 @testset "fiducial spectral density differs across cosmologies" begin
     loaded_w0 = _load_variant(:w0cdm)
     @test loaded_w0.cosmology_type === ModifiedPropagation{W0CDM}
-    fs_w0 = loaded_w0.ctx.fiducial_spectral_density
+    ctx_w0 = loaded_w0.ctx
+    fs_w0 = fiducial_spectral_density(loaded_w0.problem, loaded_w0.cosmology_type, ctx_w0)
     @test all(isfinite, fs_w0)
 
     # Build a LambdaCDM context from the same raw inputs and confirm the fiducial spectrum
@@ -133,5 +135,12 @@ end
     grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
     ctx_lcdm = build_model_context(
         p_lcdm, C_lcdm, grid, _TEST_LOAD_DETS, 1.0, 161.0)
-    @test !(fs_w0 ≈ ctx_lcdm.fiducial_spectral_density)
+    rate_lcdm = merger_rate(
+        ctx_lcdm.proposal_prior,
+        ctx_lcdm.local_merger_rate,
+        ctx_lcdm.observation.observation_time_yr,
+        ctx_lcdm.observation.observation_time_sec
+    )
+    @test !(fs_w0 ≈ spectral_density(p_lcdm.fluxes, rate_lcdm))
+    @test !(fs_w0 ≈ fiducial_spectral_density(p_lcdm, C_lcdm, ctx_lcdm))
 end

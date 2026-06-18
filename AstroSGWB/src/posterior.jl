@@ -62,20 +62,23 @@ function merger_rate(
 end
 
 """
-    loglikelihood(Λ, problem, C, ctx; observed = ctx.fiducial_spectral_density)
+    loglikelihood(Λ, problem, C, ctx, observed)
 
 Gaussian in-band log-likelihood of the SGWB spectral density at `Λ`. Inlines the
 `weights → rate → Sₕ` sequence using the cached atomics and `ctx` masks/scales. Builds the
 redshift `CosmologyCache` once and shares it between `single_event_prior` and
 `compute_importance_weights`, so its cumulative cosmology integral is not rebuilt per
 ForwardDiff gradient step.
+
+`observed` is the full-length strain spectral density vector (one entry per frequency bin
+in `ctx.observation.frequencies`).
 """
 function loglikelihood(
         Λ::NamedTuple,
         problem::ImportanceSamplingProblem,
         ::Type{C},
-        ctx::ModelContext;
-        observed::AbstractVector{<:Real} = ctx.fiducial_spectral_density
+        ctx::ModelContext,
+        observed::AbstractVector{<:Real}
 ) where {C <: AbstractCosmology}
     cache = CosmologyCache(cosmology(C, Λ), ctx.redshift_grid)
     prior = single_event_prior(problem.population_model, cache, Λ)
@@ -97,4 +100,23 @@ end
 
 function fiducial_hyperparameters(problem::ImportanceSamplingProblem)
     problem.fiducial_hyperparameters
+end
+
+"""
+    fiducial_spectral_density(problem, C, ctx) -> Vector
+
+Synthesize the default observed strain spectral density from catalog fluxes at the
+problem's fiducial hyperparameters, using the same importance-weighted forward model
+as [`loglikelihood`](@ref). Callers that omit `observed` in [`build_turing_model`](@ref)
+should use this spectrum so modified-propagation factors `Ξ(z)` are applied consistently.
+"""
+function fiducial_spectral_density(
+        problem::ImportanceSamplingProblem,
+        ::Type{C},
+        ctx::ModelContext
+) where {C <: AbstractCosmology}
+    Λ_fid = problem.fiducial_hyperparameters
+    weights = compute_importance_weights(problem, C, Λ_fid, ctx)
+    rate = merger_rate(problem, C, Λ_fid, ctx)
+    return spectral_density(problem.fluxes, rate; weights = weights)
 end

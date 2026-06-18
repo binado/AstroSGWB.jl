@@ -225,10 +225,6 @@ begin
         problem.samples.redshift,
     )
 
-    @info "using fiducial in-band spectrum from cache as observed data"
-    observed = ctx.fiducial_spectral_density
-
-
     mkpath(output_dir)
     timestamp = format(now(), "yyyymmdd-HHMMSS")
     det_suffix = join((d.name for d in detectors), ",")
@@ -309,8 +305,7 @@ begin
             C,
             ctx,
             hyperprior;
-            track = false,
-            observed = observed
+            track = false
         )
         conditioned = condition_turing_model(
             turing_model,

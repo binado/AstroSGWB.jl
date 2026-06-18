@@ -20,9 +20,9 @@ Fields:
 The raw `fluxes` are used directly in the spectral-density contraction; the full distance
 correction `(D_L,fid/D_L,θ)²·(1/Ξ_θ²)` lives in the importance weights, not in the fluxes.
 All derived/`Λ`-independent caches (`dl_fid_sq`, proposal log-prob, redshift
-interpolant, detector PSDs, fiducial spectral density) live in [`ModelContext`](@ref),
-built by [`build_model_context`](@ref). The cosmology family `C` is passed as a call
-argument, never stored here.
+interpolant, detector PSDs) live in [`ModelContext`](@ref), built by
+[`build_model_context`](@ref). The cosmology family `C` is passed as a call argument,
+never stored here.
 """
 struct ImportanceSamplingProblem{M <: PopulationModel}
     population_model::M
@@ -50,9 +50,8 @@ built once by [`build_model_context`](@ref) and reused by every likelihood/model
   skip), `proposal_log_prob` (a `NamedTuple` of per-component log-density vectors),
   and `dl_fid_sq` (squared EM luminosity distance at the fiducial cosmology),
 - redshift state: `redshift_grid` and the proposal `sample_interpolant`,
-- detector/observation state grouped in [`ObservationContext`](@ref),
-- `local_merger_rate` (events Gpc⁻³ yr⁻¹), and
-- `fiducial_spectral_density`, the default observed data of this context.
+- detector/observation state grouped in [`ObservationContext`](@ref), and
+- `local_merger_rate` (events Gpc⁻³ yr⁻¹).
 
 A `ModelContext` is built for a specific cosmology family `C`; calling cached atomics with
 a different `C` would silently mix mismatched caches. Coherence is guaranteed by
@@ -67,5 +66,4 @@ struct ModelContext{P <: ProductNamedTupleDistribution, L <: NamedTuple}
     sample_interpolant::SampleInterpolant
     observation::ObservationContext
     local_merger_rate::Float64
-    fiducial_spectral_density::Vector{Float64}
 end

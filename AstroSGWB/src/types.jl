@@ -6,8 +6,9 @@ amplitude from the detector network (ORFs and tabulated PSDs; square matches net
 variance), Gaussian bin scales for the likelihood, analysis band mask, and observation
 time metadata. The in-band Gaussian scale is precomputed for the likelihood hot path.
 
-The observed/fiducial spectral density is intentionally *not* part of this object; it is
-the default observed data of a built [`ModelContext`](@ref) and lives there.
+The observed spectral density is intentionally *not* part of this object; callers pass it
+explicitly to [`loglikelihood`](@ref) or let [`build_turing_model`](@ref) synthesize it
+via [`fiducial_spectral_density`](@ref) when `observed` is omitted.
 """
 struct ObservationContext
     frequencies::Vector{Float64}

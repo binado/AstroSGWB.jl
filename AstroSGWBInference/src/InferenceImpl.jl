@@ -13,6 +13,7 @@ using AstroSGWB:
                  compute_importance_weights,
                  merger_rate,
                  spectral_density,
+                 fiducial_spectral_density,
                  canonical_hyperparameters,
                  full_hyperparameters,
                  validate_subset,
