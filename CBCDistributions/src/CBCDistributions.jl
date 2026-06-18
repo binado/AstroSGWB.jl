@@ -23,7 +23,8 @@ include("cosmology.jl")
 include("priors.jl")
 include("redshift.jl")
 include("mass/broken_power_law_plus_two_peaks.jl")
-include("physical_model.jl")
+include("population_model.jl")
+include("distribution_utils.jl")
 include("samples.jl")
 
 end # module
