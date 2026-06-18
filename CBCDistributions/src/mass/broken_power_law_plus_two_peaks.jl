@@ -34,41 +34,50 @@ end
     return m_break * ((high / m_break)^a - (low / m_break)^a) / a
 end
 
-struct BoundedPowerLaw{T <: Real} <: ContinuousUnivariateDistribution
-    α::T
+struct BrokenPowerLaw{T <: Real} <: ContinuousUnivariateDistribution
+    α1::T          # slope below the break
+    α2::T          # slope above the break
+    m_break::T     # break location and shared pivot
     low::T
     high::T
-    scale::T
-    log_norm::T
+    low_weight::T  # z1 / (z1 + z2): P(a draw lands below the break)
+    log_norm::T    # log(z1 + z2)
 end
 
-function BoundedPowerLaw(α::Real, low::Real, high::Real, scale::Real)
-    T = promote_type(Float64, typeof(α), typeof(low), typeof(high), typeof(scale))
-    0 < low < high || throw(ArgumentError("power-law bounds must satisfy 0 < low < high"))
-    scale > 0 || throw(ArgumentError("power-law scale must be positive"))
-    norm = _broken_power_integral(T(α), T(low), T(high), T(scale))
-    norm > 0 || throw(ArgumentError("power-law normalizer must be positive"))
-    return BoundedPowerLaw{T}(T(α), T(low), T(high), T(scale), log(norm))
+function BrokenPowerLaw(α1::Real, α2::Real, m_break::Real, low::Real, high::Real)
+    T = promote_type(
+        Float64, typeof(α1), typeof(α2), typeof(m_break), typeof(low), typeof(high))
+    0 < low < m_break < high ||
+        throw(ArgumentError("broken power-law bounds must satisfy 0 < low < m_break < high"))
+    z1 = _broken_power_integral(T(α1), T(low), T(m_break), T(m_break))
+    z2 = _broken_power_integral(T(α2), T(m_break), T(high), T(m_break))
+    z = z1 + z2
+    z > 0 || throw(ArgumentError("broken power-law normalizer must be positive"))
+    return BrokenPowerLaw{T}(T(α1), T(α2), T(m_break), T(low), T(high), z1 / z, log(z))
 end
 
-Base.minimum(d::BoundedPowerLaw) = d.low
-Base.maximum(d::BoundedPowerLaw) = d.high
-Base.eltype(::Type{<:BoundedPowerLaw{T}}) where {T} = T
-Base.eltype(d::BoundedPowerLaw) = typeof(d.low)
+Base.minimum(d::BrokenPowerLaw) = d.low
+Base.maximum(d::BrokenPowerLaw) = d.high
+Base.eltype(::Type{<:BrokenPowerLaw{T}}) where {T} = T
+Base.eltype(d::BrokenPowerLaw) = typeof(d.low)
 
-function Distributions.insupport(d::BoundedPowerLaw, value::Real)
+function Distributions.insupport(d::BrokenPowerLaw, value::Real)
     return d.low <= value < d.high
 end
 
-function Distributions.logpdf(d::BoundedPowerLaw, value::Real)
+function Distributions.logpdf(d::BrokenPowerLaw, value::Real)
     insupport(d, value) || return -Inf
-    return -d.α * log(value / d.scale) - d.log_norm
+    α = value < d.m_break ? d.α1 : d.α2
+    return -α * log(value / d.m_break) - d.log_norm
 end
 
-Distributions.pdf(d::BoundedPowerLaw, value::Real) = exp(logpdf(d, value))
+Distributions.pdf(d::BrokenPowerLaw, value::Real) = exp(logpdf(d, value))
 
-function Random.rand(rng::AbstractRNG, d::BoundedPowerLaw)
-    return _rand_scaled_power(rng, d.low, d.high, -d.α)
+function Random.rand(rng::AbstractRNG, d::BrokenPowerLaw)
+    if rand(rng) <= d.low_weight
+        return _rand_scaled_power(rng, d.low, d.m_break, -d.α1)
+    end
+    return _rand_scaled_power(rng, d.m_break, d.high, -d.α2)
 end
 
 """
@@ -209,11 +218,6 @@ function _unchecked_primary(
         m_high, untapered, log_taper_norm)
 end
 
-function _validate_primary(d::DefaultBBHPrimaryMass)
-    return _validate_primary_parameters(
-        d.m1_low, d.m_break, d.m_high, d.σ1, d.σ2, d.δm1, d.λ0, d.λ1, d.λ2)
-end
-
 function _validate_primary_parameters(
         m1_low::Real,
         m_break::Real,
@@ -261,17 +265,11 @@ function _primary_untapered_mixture(
         λ2::Real,
         m_high::Real
 )
-    z1 = _broken_power_integral(α1, m1_low, m_break, m_break)
-    z2 = _broken_power_integral(α2, m_break, m_high, m_break)
-    z = z1 + z2
-    z > 0 || throw(ArgumentError("broken power-law normalizer must be positive"))
-
-    components = Vector{Distribution{Univariate, Continuous}}(undef, 4)
-    components[1] = BoundedPowerLaw(α1, m1_low, m_break, m_break)
-    components[2] = BoundedPowerLaw(α2, m_break, m_high, m_break)
-    components[3] = truncated(Normal(μ1, σ1), m1_low, m_high)
-    components[4] = truncated(Normal(μ2, σ2), m1_low, m_high)
-    weights = [λ0 * z1 / z, λ0 * z2 / z, λ1, λ2]
+    components = Vector{Distribution{Univariate, Continuous}}(undef, 3)
+    components[1] = BrokenPowerLaw(α1, α2, m_break, m1_low, m_high)
+    components[2] = truncated(Normal(μ1, σ1), m1_low, m_high)
+    components[3] = truncated(Normal(μ2, σ2), m1_low, m_high)
+    weights = [λ0, λ1, λ2]
     return MixtureModel(components, weights)
 end
 
@@ -288,7 +286,7 @@ function _primary_taper_normalizer(d::DefaultBBHPrimaryMass)
     f = m -> exp(_primary_log_unnormalized(d, m))
     taper_high = min(d.m1_low + d.δm1, d.m_high)
     z = zero(promote_type(typeof(d.m1_low), typeof(d.log_taper_norm)))
-    if d.δm1 > 0 && taper_high > d.m1_low
+    if taper_high > d.m1_low
         z += first(quadgk(f, d.m1_low, taper_high))
     end
     if taper_high < d.m_high

@@ -60,14 +60,17 @@ end
     @test isfinite(planck_taper(prevfloat(7.0), 5.0, 2.0))
 end
 
-@testset "BoundedPowerLaw normalization and support" begin
-    d = CBCDistributions.BoundedPowerLaw(1.5, 5.0, 35.0, 35.0)
+@testset "BrokenPowerLaw normalization and support" begin
+    d = CBCDistributions.BrokenPowerLaw(1.5, 4.0, 35.0, 5.0, 120.0)
     z, _ = quadgk(m -> pdf(d, m), minimum(d), maximum(d))
 
-    @test z≈1.0 rtol=1e-10
-    @test isfinite(logpdf(d, 10.0))
+    @test z≈1.0 rtol=1e-8
+    @test isfinite(logpdf(d, 10.0))   # below the break
+    @test isfinite(logpdf(d, 75.0))   # above the break
     @test logpdf(d, 4.999) == -Inf
-    @test logpdf(d, 35.0) == -Inf
+    @test logpdf(d, 120.0) == -Inf
+    # The two slopes share the m_break pivot, so the density is continuous there.
+    @test pdf(d, prevfloat(35.0))≈pdf(d, 35.0) rtol=1e-10
 end
 
 @testset "DefaultBBHPrimaryMass normalization" begin
@@ -124,19 +127,19 @@ end
         m_high = 120.0
     )
 
+    # Independent oracle: a single broken power law (one normalizer over the full
+    # support) plus the two truncated Gaussians, to check that splitting the broken
+    # power law into two reweighted sub-laws reproduces the original density.
     z1 = CBCDistributions._broken_power_integral(d.α1, d.m1_low, d.m_break, d.m_break)
     z2 = CBCDistributions._broken_power_integral(d.α2, d.m_break, d.m_high, d.m_break)
     z = z1 + z2
-    components = Vector{Distribution{Univariate, Continuous}}(undef, 4)
-    components[1] = CBCDistributions.BoundedPowerLaw(d.α1, d.m1_low, d.m_break, d.m_break)
-    components[2] = CBCDistributions.BoundedPowerLaw(d.α2, d.m_break, d.m_high, d.m_break)
-    components[3] = truncated(Normal(d.μ1, d.σ1), d.m1_low, d.m_high)
-    components[4] = truncated(Normal(d.μ2, d.σ2), d.m1_low, d.m_high)
-    weights = [d.λ0 * z1 / z, d.λ0 * z2 / z, d.λ1, d.λ2]
-    expected = MixtureModel(components, weights)
+    g1 = truncated(Normal(d.μ1, d.σ1), d.m1_low, d.m_high)
+    g2 = truncated(Normal(d.μ2, d.σ2), d.m1_low, d.m_high)
+    broken_pdf(m) = (m / d.m_break)^(-(m < d.m_break ? d.α1 : d.α2)) / z
 
     for m in (6.0, 15.0, 35.0, 75.0, 119.0)
-        @test logpdf(d, m)≈logpdf(expected, m) rtol=1e-10
+        expected = d.λ0 * broken_pdf(m) + d.λ1 * pdf(g1, m) + d.λ2 * pdf(g2, m)
+        @test pdf(d, m)≈expected rtol=1e-10
     end
 end
 
