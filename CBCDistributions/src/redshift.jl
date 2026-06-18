@@ -49,32 +49,41 @@ function detector_frame_merger_rate_density(
     return 4π * differential_comoving_volume * source_frame_distribution / (1 + z)
 end
 
+"""
+    expected_number_of_events(local_merger_rate_gpc3_yr, redshift_integral_mpc3, observation_time) -> Real
+
+Expected number of detected events over the observation.
+
+`observation_time` is the observation duration in years (Julian year).
+"""
 function expected_number_of_events(
         local_merger_rate_gpc3_yr::Real,
         redshift_integral_mpc3::Real,
-        observation_time_yr::Real
+        observation_time::Real
 )
-    return 1e-9 * local_merger_rate_gpc3_yr * redshift_integral_mpc3 * observation_time_yr
+    return 1e-9 * local_merger_rate_gpc3_yr * redshift_integral_mpc3 * observation_time
 end
 
 """
-    merger_rate_per_sec(prior, local_merger_rate_gpc3_yr, observation_time_yr) -> Float64
+    merger_rate_per_sec(prior, local_merger_rate_gpc3_yr, observation_time) -> Float64
 
 Detector-frame merger rate in events/sec:
-`expected_number_of_events(local_rate, redshift_integral(prior), observation_time_yr) /
-year_to_second(observation_time_yr)`.
+`expected_number_of_events(local_rate, redshift_integral(prior), observation_time) /
+year_to_second(observation_time)`.
+
+`observation_time` is the observation duration in years (Julian year).
 """
 function merger_rate_per_sec(
         prior::RedshiftPrior,
         local_merger_rate_gpc3_yr::Real,
-        observation_time_yr::Real
+        observation_time::Real
 )
     n_events = expected_number_of_events(
         local_merger_rate_gpc3_yr,
         redshift_integral(prior),
-        observation_time_yr
+        observation_time
     )
-    return n_events / year_to_second(observation_time_yr)
+    return n_events / year_to_second(observation_time)
 end
 
 """

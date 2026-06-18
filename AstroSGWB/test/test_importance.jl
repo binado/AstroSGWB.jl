@@ -56,7 +56,7 @@ end
     rate_naive = merger_rate(
         problem, C, theta,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr
+        ctx.observation.observation_time
     )
     @test isfinite(rate_cached)
     @test rate_cached ≈ rate_naive
@@ -76,7 +76,7 @@ end
     rate_fid = merger_rate(
         ctx.proposal_prior,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr
+        ctx.observation.observation_time
     )
     if Λ_fid.Ξ₀ != 1.0
         @test !(spectral_density(problem.fluxes, rate_fid) ≈ Sh_fid)
@@ -121,7 +121,7 @@ end
     rate_fid = merger_rate(
         ctx.proposal_prior,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr
+        ctx.observation.observation_time
     )
     @test !(spectral_density(problem.fluxes, rate_fid) ≈ Sh_fid)
 end

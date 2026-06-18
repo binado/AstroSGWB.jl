@@ -107,8 +107,8 @@ end
     @test length(ctx.observation.effective_psd) == length(ctx.observation.frequencies)
     @test ctx.observation.sgwb_scale_in_band ≈
           ctx.observation.sgwb_scale[ctx.observation.in_band_mask]
-    @test ctx.observation.observation_time_yr == 1.0
-    @test year_to_second(ctx.observation.observation_time_yr) ≈ 365.25 * 24 * 3600
+    @test ctx.observation.observation_time == 1.0
+    @test year_to_second(ctx.observation.observation_time) ≈ 365.25 * 24 * 3600
     @test ctx.local_merger_rate == 161.0
 
     fs = fiducial_spectral_density(problem, C, ctx)
@@ -138,7 +138,7 @@ end
     rate_lcdm = merger_rate(
         ctx_lcdm.proposal_prior,
         ctx_lcdm.local_merger_rate,
-        ctx_lcdm.observation.observation_time_yr
+        ctx_lcdm.observation.observation_time
     )
     @test !(fs_w0 ≈ spectral_density(p_lcdm.fluxes, rate_lcdm))
     @test !(fs_w0 ≈ fiducial_spectral_density(p_lcdm, C_lcdm, ctx_lcdm))

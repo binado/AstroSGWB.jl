@@ -73,7 +73,7 @@ end
     rate = merger_rate(
         event_prior,
         ctx.local_merger_rate,
-        ctx.observation.observation_time_yr
+        ctx.observation.observation_time
     )
     Sh = spectral_density(problem.fluxes, rate; weights = weights)
 
@@ -86,7 +86,7 @@ end
     track || return nothing
     m = obs.in_band_mask
     df = frequency_bin_width(obs.frequencies)
-    obs_sec = year_to_second(obs.observation_time_yr)
+    obs_sec = year_to_second(obs.observation_time)
     snr_sq = spectral_snr_squared(
         Sh[m], obs.effective_psd[m], obs_sec, df)
     return (;
