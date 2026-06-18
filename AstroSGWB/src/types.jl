@@ -8,7 +8,7 @@ time metadata. The in-band Gaussian scale is precomputed for the likelihood hot 
 
 The observed spectral density is intentionally *not* part of this object; callers pass it
 explicitly to [`loglikelihood`](@ref) or let [`build_turing_model`](@ref) synthesize it
-from catalog fluxes when `observed` is omitted.
+via [`fiducial_spectral_density`](@ref) when `observed` is omitted.
 """
 struct ObservationContext
     frequencies::Vector{Float64}

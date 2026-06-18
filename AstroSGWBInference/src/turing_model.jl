@@ -108,14 +108,7 @@ function build_turing_model(
     order = full_hyperparameters(C, problem.population_model)
     validate_hyperprior(order, prior)
     observed_data = if observed === nothing
-        # Catalog fluxes were generated at the fiducial cosmology: uniform averaging suffices.
-        rate_fid = merger_rate(
-            ctx.proposal_prior,
-            ctx.local_merger_rate,
-            ctx.observation.observation_time_yr,
-            ctx.observation.observation_time_sec
-        )
-        spectral_density(problem.fluxes, rate_fid)
+        fiducial_spectral_density(problem, C, ctx)
     else
         observed
     end

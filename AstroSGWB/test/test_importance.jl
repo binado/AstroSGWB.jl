@@ -67,6 +67,22 @@ end
     Sh_naive = spectral_density(problem.fluxes, rate_naive; weights = weights_naive)
     @test all(isfinite, Sh_cached)
     @test Sh_cached ≈ Sh_naive
+
+    Λ_fid = fiducial_hyperparameters(problem)
+    weights_fid = compute_importance_weights(problem, C, Λ_fid, ctx)
+    rate_fid_ctx = merger_rate(problem, C, Λ_fid, ctx)
+    Sh_fid = spectral_density(problem.fluxes, rate_fid_ctx; weights = weights_fid)
+    @test fiducial_spectral_density(problem, C, ctx) ≈ Sh_fid
+
+    rate_fid = merger_rate(
+        ctx.proposal_prior,
+        ctx.local_merger_rate,
+        ctx.observation.observation_time_yr,
+        ctx.observation.observation_time_sec
+    )
+    if Λ_fid.Ξ₀ != 1.0
+        @test !(spectral_density(problem.fluxes, rate_fid) ≈ Sh_fid)
+    end
 end
 
 @testset "empty importance weights preserve AD element types" begin
@@ -91,4 +107,24 @@ end
     @test isempty(empty_weights)
     @test all(isfinite, populated_weights)
     @test eltype(populated_weights) <: ForwardDiff.Dual
+end
+
+@testset "fiducial observed spectrum applies modified-propagation weights" begin
+    loaded = parity_problem_context(:importance_context, [Detector("H1"), Detector("L1")])
+    C = loaded.cosmology_type
+    problem = loaded.problem
+    Λ_fid = merge(fiducial_hyperparameters(problem), (Ξ₀ = 1.2,))
+    problem = ImportanceSamplingProblem(
+        problem.population_model, problem.fluxes, problem.samples, Λ_fid)
+    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
+    ctx = build_model_context(
+        problem, C, grid, [Detector("H1"), Detector("L1")], 1.0, 161.0)
+    Sh_fid = fiducial_spectral_density(problem, C, ctx)
+    rate_fid = merger_rate(
+        ctx.proposal_prior,
+        ctx.local_merger_rate,
+        ctx.observation.observation_time_yr,
+        ctx.observation.observation_time_sec
+    )
+    @test !(spectral_density(problem.fluxes, rate_fid) ≈ Sh_fid)
 end

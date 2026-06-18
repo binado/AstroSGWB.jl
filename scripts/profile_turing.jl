@@ -24,6 +24,7 @@ using AstroSGWB:
                  merger_rate,
                  merger_rate_per_sec,
                  spectral_density,
+                 fiducial_spectral_density,
                  single_event_prior,
                  PopulationModel,
                  AbstractCosmology,
@@ -297,13 +298,7 @@ function _run(;
 
     observed = if observed_spectral_density_csv === nothing
         @info "using fiducial spectrum from catalog as observed data"
-        rate_fid = merger_rate(
-            ctx.proposal_prior,
-            ctx.local_merger_rate,
-            ctx.observation.observation_time_yr,
-            ctx.observation.observation_time_sec
-        )
-        spectral_density(problem.fluxes, rate_fid)
+        fiducial_spectral_density(problem, C, ctx)
     else
         @info "loading observed spectrum from CSV" path = observed_spectral_density_csv
         _load_observed_spectral_density(

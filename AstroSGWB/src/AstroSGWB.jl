@@ -149,6 +149,7 @@ export normalized_ess, max_normalized_weight, log_ratio_variance
 # Posterior
 export loglikelihood,
        merger_rate,
-       fiducial_hyperparameters
+       fiducial_hyperparameters,
+       fiducial_spectral_density
 
 end

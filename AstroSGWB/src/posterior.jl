@@ -101,3 +101,22 @@ end
 function fiducial_hyperparameters(problem::ImportanceSamplingProblem)
     problem.fiducial_hyperparameters
 end
+
+"""
+    fiducial_spectral_density(problem, C, ctx) -> Vector
+
+Synthesize the default observed strain spectral density from catalog fluxes at the
+problem's fiducial hyperparameters, using the same importance-weighted forward model
+as [`loglikelihood`](@ref). Callers that omit `observed` in [`build_turing_model`](@ref)
+should use this spectrum so modified-propagation factors `Ξ(z)` are applied consistently.
+"""
+function fiducial_spectral_density(
+        problem::ImportanceSamplingProblem,
+        ::Type{C},
+        ctx::ModelContext
+) where {C <: AbstractCosmology}
+    Λ_fid = problem.fiducial_hyperparameters
+    weights = compute_importance_weights(problem, C, Λ_fid, ctx)
+    rate = merger_rate(problem, C, Λ_fid, ctx)
+    return spectral_density(problem.fluxes, rate; weights = weights)
+end

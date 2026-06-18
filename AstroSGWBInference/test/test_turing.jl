@@ -22,13 +22,12 @@ include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"
         order = _PARITY_ORDER
 
         model = build_turing_model(cache, C, ctx, priors; track = false)
-        rate_fid = merger_rate(
-            ctx.proposal_prior,
-            ctx.local_merger_rate,
-            ctx.observation.observation_time_yr,
-            ctx.observation.observation_time_sec
-        )
-        observed = spectral_density(cache.fluxes, rate_fid)
+        observed = fiducial_spectral_density(cache, C, ctx)
+        Λ_fid = canonical_hyperparameters(order, fiducial_hyperparameters(cache))
+        weights_fid = compute_importance_weights(cache, C, Λ_fid, ctx)
+        rate_fid = merger_rate(cache, C, Λ_fid, ctx)
+        Sh_fid = spectral_density(cache.fluxes, rate_fid; weights = weights_fid)
+        @test observed ≈ Sh_fid
         @test Turing.logjoint(model, theta0) ≈
               logposterior(theta0, cache, C, ctx, priors, observed) rtol = 1e-6
         @test condition_turing_model(
