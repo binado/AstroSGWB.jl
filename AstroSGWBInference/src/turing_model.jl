@@ -15,11 +15,10 @@ function logposterior(
         problem::ImportanceSamplingProblem,
         ::Type{C},
         ctx::ModelContext,
-        prior::ProductNamedTupleDistribution;
-        observed::AbstractVector{<:Real} = ctx.fiducial_spectral_density
+        prior::ProductNamedTupleDistribution,
+        observed::AbstractVector{<:Real}
 ) where {C <: AbstractCosmology}
-    return logpdf(prior, Λ) +
-           loglikelihood(Λ, problem, C, ctx; observed = observed)
+    return logpdf(prior, Λ) + loglikelihood(Λ, problem, C, ctx, observed)
 end
 
 function condition_turing_model(
@@ -104,16 +103,28 @@ function build_turing_model(
         ctx::ModelContext,
         prior::ProductNamedTupleDistribution;
         track::Bool = false,
-        observed::AbstractVector{<:Real} = ctx.fiducial_spectral_density
+        observed::Union{Nothing, AbstractVector{<:Real}} = nothing
 ) where {C <: AbstractCosmology}
     order = full_hyperparameters(C, problem.population_model)
     validate_hyperprior(order, prior)
+    observed_data = if observed === nothing
+        # Catalog fluxes were generated at the fiducial cosmology: uniform averaging suffices.
+        rate_fid = merger_rate(
+            ctx.proposal_prior,
+            ctx.local_merger_rate,
+            ctx.observation.observation_time_yr,
+            ctx.observation.observation_time_sec
+        )
+        spectral_density(problem.fluxes, rate_fid)
+    else
+        observed
+    end
     return astrosgwb_importance_turing_model(
         track,
         problem,
         Val(C),
         ctx,
         prior,
-        observed[ctx.observation.in_band_mask]
+        observed_data[ctx.observation.in_band_mask]
     )
 end

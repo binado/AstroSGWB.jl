@@ -22,8 +22,15 @@ include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"
         order = _PARITY_ORDER
 
         model = build_turing_model(cache, C, ctx, priors; track = false)
+        rate_fid = merger_rate(
+            ctx.proposal_prior,
+            ctx.local_merger_rate,
+            ctx.observation.observation_time_yr,
+            ctx.observation.observation_time_sec
+        )
+        observed = spectral_density(cache.fluxes, rate_fid)
         @test Turing.logjoint(model, theta0) ≈
-              logposterior(theta0, cache, C, ctx, priors) rtol = 1e-6
+              logposterior(theta0, cache, C, ctx, priors, observed) rtol = 1e-6
         @test condition_turing_model(
             model, theta0, priors, nothing; order = order) ===
               model

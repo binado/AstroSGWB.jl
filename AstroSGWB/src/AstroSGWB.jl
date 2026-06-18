@@ -12,9 +12,8 @@ fiducial `(D_L/D_gw)²` factor).
 
 Callers define their population model, fiducial hyperparameters, and catalog sample
 adapter in Julia, then construct a pure [`ImportanceSamplingProblem`](@ref). Derived
-`Λ`-independent caches (rescaled fluxes, proposal log-prob, redshift interpolant,
-detector PSDs, fiducial spectral density) are built into a [`ModelContext`](@ref) by
-[`build_model_context`](@ref).
+`Λ`-independent caches (proposal log-prob, redshift interpolant, detector PSDs) are built
+into a [`ModelContext`](@ref) by [`build_model_context`](@ref).
 
 Inference state is a flat hyperparameter `NamedTuple` validated against the
 [`PopulationModel`](@ref) contract; the cosmology family `C` is threaded through atomic

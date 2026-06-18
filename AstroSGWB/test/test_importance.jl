@@ -37,7 +37,7 @@ function _importance_type_test_fixture(n::Integer)
         redshift = SampleField(samples.redshift, interp)))
     proposal_log_prob = component_logpdfs(proposal_prior, samples_with_interp)
     ctx = ModelContext(
-        proposal_prior, proposal_log_prob, ones(n), z_grid, interp, obs, 1.0, [0.0, 0.0])
+        proposal_prior, proposal_log_prob, ones(n), z_grid, interp, obs, 1.0)
     return problem, ctx, Λ
 end
 
