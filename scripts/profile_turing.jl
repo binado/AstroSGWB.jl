@@ -20,31 +20,30 @@ using Distributions: logpdf, product_distribution, Uniform
 using AstroSGWB
 using AstroSGWBInference: build_turing_model, logposterior, validate_hyperprior
 using AstroSGWB:
-             compute_importance_weights,
-             merger_rate,
-             merger_rate_per_sec,
-             spectral_density,
-             single_event_prior,
-             PopulationModel,
-             AbstractCosmology,
-             OrderedUniformSourceMassPair,
-             AlignedSpinChiSimple,
-             redshift_prior,
-             MadauDickinsonSourceFrame,
-             BNS_LAMBDA_HIGH,
-             stack_source_masses,
-             CosmologyCache,
-             redshift,
-             canonical_hyperparameters,
-             full_hyperparameters,
-             cosmology,
-             luminosity_distance,
-             load_catalog,
-             build_model_context,
-             ImportanceSamplingProblem,
-             ModifiedPropagation,
-             LambdaCDM,
-             Detector
+                 compute_importance_weights,
+                 merger_rate,
+                 merger_rate_per_sec,
+                 spectral_density,
+                 single_event_prior,
+                 PopulationModel,
+                 AbstractCosmology,
+                 OrderedUniformSourceMassPair,
+                 AlignedSpinChiSimple,
+                 redshift_prior,
+                 MadauDickinsonSourceFrame,
+                 stack_source_masses,
+                 CosmologyCache,
+                 redshift,
+                 canonical_hyperparameters,
+                 full_hyperparameters,
+                 cosmology,
+                 luminosity_distance,
+                 load_catalog,
+                 build_model_context,
+                 ImportanceSamplingProblem,
+                 ModifiedPropagation,
+                 LambdaCDM,
+                 Detector
 import AstroSGWB: hyperparameters, single_event_prior
 using BenchmarkTools
 using DelimitedFiles
@@ -70,8 +69,8 @@ function single_event_prior(::BNSPopulationModel, cache::CosmologyCache, Λ::Nam
         redshift = z_d,
         χ₁ = spin,
         χ₂ = spin,
-        Λ₁ = Uniform(0.0, BNS_LAMBDA_HIGH),
-        Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
+        Λ₁ = Uniform(0.0, 5000.0),
+        Λ₂ = Uniform(0.0, 5000.0)
     ))
 end
 

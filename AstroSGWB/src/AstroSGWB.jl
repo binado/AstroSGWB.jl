@@ -124,7 +124,6 @@ export madau_dickinson_source_frame_distribution,
 # Priors
 export OrderedUniformSourceMassPair,
        AlignedSpinChiSimple,
-       BNS_LAMBDA_HIGH,
        RedshiftInterpolatedDistribution,
        SampleField,
        sample_values,

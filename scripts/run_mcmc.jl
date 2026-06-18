@@ -13,22 +13,21 @@ const _REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 using AstroSGWB
 using AstroSGWB:
-             build_model_context,
-             canonical_hyperparameters,
-             full_hyperparameters,
-             load_catalog,
-             AbstractCosmology,
-             PopulationModel,
-             ImportanceSamplingProblem,
-             ModifiedPropagation,
-             W0CDM,
-             Detector,
-             OrderedUniformSourceMassPair,
-             AlignedSpinChiSimple,
-             redshift_prior,
-             MadauDickinsonSourceFrame,
-             BNS_LAMBDA_HIGH,
-             stack_source_masses
+                 build_model_context,
+                 canonical_hyperparameters,
+                 full_hyperparameters,
+                 load_catalog,
+                 AbstractCosmology,
+                 PopulationModel,
+                 ImportanceSamplingProblem,
+                 ModifiedPropagation,
+                 W0CDM,
+                 Detector,
+                 OrderedUniformSourceMassPair,
+                 AlignedSpinChiSimple,
+                 redshift_prior,
+                 MadauDickinsonSourceFrame,
+                 stack_source_masses
 import AstroSGWB: hyperparameters, single_event_prior
 using AstroSGWBInference: build_turing_model, condition_turing_model, atomic_save_chain
 using ADTypes: AutoForwardDiff
@@ -58,8 +57,8 @@ function single_event_prior(::BNSPopulationModel, cosmo::AbstractCosmology, Λ::
         redshift = z_d,
         χ₁ = spin,
         χ₂ = spin,
-        Λ₁ = Uniform(0.0, BNS_LAMBDA_HIGH),
-        Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
+        Λ₁ = Uniform(0.0, 5000.0),
+        Λ₂ = Uniform(0.0, 5000.0)
     ))
 end
 
