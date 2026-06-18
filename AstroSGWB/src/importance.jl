@@ -80,13 +80,13 @@ function compute_importance_weights(
     # proposal's (Λ-independent factors cancel exactly), and the redshift component reuses
     # the precomputed per-sample grid locations to skip the grid search every gradient
     # evaluation.
+    samples = _with_redshift_interpolant(problem.samples, ctx.sample_interpolant)
     log_ratio = logprobdiff(
         problem.population_model,
         prior,
         ctx.proposal_prior,
         ctx.proposal_log_prob,
-        problem.samples,
-        (; redshift = ctx.sample_interpolant)
+        samples
     )
     return _importance_weights_core(
         log_ratio,

@@ -11,25 +11,24 @@ begin
     Pkg.instantiate()
     using AstroSGWB
     using AstroSGWB:
-                 build_model_context,
-                 canonical_hyperparameters,
-                 compute_importance_weights,
-                 cosmology_type,
-                 Detector,
-                 full_hyperparameters,
-                 PopulationModel,
-                 AbstractCosmology,
-                 ImportanceSamplingProblem,
-                 load_catalog,
-                 merger_rate,
-                 OrderedUniformSourceMassPair,
-                 AlignedSpinChiSimple,
-                 redshift_prior,
-                 MadauDickinsonSourceFrame,
-                 BNS_LAMBDA_HIGH,
-                 stack_source_masses,
-                 spectral_density,
-                 Ωgw
+                     build_model_context,
+                     canonical_hyperparameters,
+                     compute_importance_weights,
+                     cosmology_type,
+                     Detector,
+                     full_hyperparameters,
+                     PopulationModel,
+                     AbstractCosmology,
+                     ImportanceSamplingProblem,
+                     load_catalog,
+                     merger_rate,
+                     OrderedUniformSourceMassPair,
+                     AlignedSpinChiSimple,
+                     redshift_prior,
+                     MadauDickinsonSourceFrame,
+                     stack_source_masses,
+                     spectral_density,
+                     Ωgw
     using AstroSGWBInference: build_turing_model, condition_turing_model
     using AstroSGWBInference.ChainIO: atomic_save_chain
     using Distributions: Uniform, product_distribution
@@ -96,8 +95,8 @@ begin
             redshift = z_d,
             χ₁ = spin,
             χ₂ = spin,
-            Λ₁ = Uniform(0.0, BNS_LAMBDA_HIGH),
-            Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
+            Λ₁ = Uniform(0.0, 5000.0),
+            Λ₂ = Uniform(0.0, 5000.0)
         ))
     end
 
@@ -206,7 +205,7 @@ begin
     @info "loading catalog" catalog_path detectors = join((d.name for d in detectors), ",")
     loaded = load_catalog(catalog_path)
     catalog = loaded.catalog
-    
+
     @info hyperparameters(C)
     samples = bns_samples_from_catalog(catalog.samples)
     problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
@@ -255,12 +254,12 @@ function plot_fiducial_omega_gw(problem, C, fiducials, ctx)
     f = ctx.observation.frequencies
     df = frequency_bin_width(f)
     snr = spectral_snr(
-        Sh0, 
+        Sh0,
         ctx.observation.effective_psd,
         ctx.observation.observation_time_sec,
         df
     )
-    
+
     Ωgw_plot = Ωgw(Sh0, f, fiducials.H0)
     mask = Ωgw_plot .> 0.0
     fm = f[mask]

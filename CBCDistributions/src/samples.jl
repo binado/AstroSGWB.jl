@@ -1,3 +1,43 @@
+using Distributions: ProductNamedTupleDistribution
+
+function _batch_length(field)
+    values = sample_values(field)
+    return size(values, ndims(values))
+end
+
+"""
+    validate_samples(prior::ProductNamedTupleDistribution, samples::NamedTuple) -> Int
+
+Verify that `samples` contains every field in `prior.dists` and that all fields
+share the same batch length (size along the last axis). Returns that length `n`.
+
+Sample layout contract:
+- univariate fields: `Vector` of length `n`
+- multivariate fields: `Matrix` of shape `(length(d), n)`
+
+Fields may be wrapped in [`SampleField`](@ref); metadata is ignored.
+Extra keys in `samples` beyond those required by `prior` are allowed.
+"""
+function validate_samples(
+        prior::ProductNamedTupleDistribution,
+        samples::NamedTuple
+)::Int
+    ks = keys(prior.dists)
+    isempty(ks) && return 0
+    first_key = first(ks)
+    haskey(samples, first_key) ||
+        throw(ArgumentError("samples are missing population prior field $(repr(first_key))"))
+    n = _batch_length(samples[first_key])
+    for key in ks
+        haskey(samples, key) ||
+            throw(ArgumentError("samples are missing population prior field $(repr(key))"))
+        n_key = _batch_length(samples[key])
+        n_key == n ||
+            throw(ArgumentError("population prior sample fields must have matching lengths"))
+    end
+    return n
+end
+
 """
     stack_source_masses(mass_1_source, mass_2_source) -> Matrix{Float64}
 

@@ -2,8 +2,7 @@
 # The framework owns no concrete population types; callers define the concrete
 # model used by their notebooks or scripts.
 using AstroSGWB: PopulationModel, CosmologyCache, OrderedUniformSourceMassPair,
-             AlignedSpinChiSimple, redshift_prior, MadauDickinsonSourceFrame,
-             BNS_LAMBDA_HIGH
+                 AlignedSpinChiSimple, redshift_prior, MadauDickinsonSourceFrame
 import AstroSGWB: hyperparameters, single_event_prior
 using Distributions: Uniform, product_distribution
 
@@ -27,7 +26,7 @@ function single_event_prior(::ParityBNSPopulation, cache::CosmologyCache, Λ::Na
         redshift = z_d,
         χ₁ = spin,
         χ₂ = spin,
-        Λ₁ = Uniform(0.0, BNS_LAMBDA_HIGH),
-        Λ₂ = Uniform(0.0, BNS_LAMBDA_HIGH)
+        Λ₁ = Uniform(0.0, 5000.0),
+        Λ₂ = Uniform(0.0, 5000.0)
     ))
 end
