@@ -27,6 +27,7 @@ const SAMPLE_ONLY_SETS = (
     "w0" => [:H0, :w0],
     "modified-propagation" => [:Ξ₀, :Ξₙ],
     "H0-MD" => [:H0, :γ, :κ, :zpeak],
+    "H0-peak" => [:H0, :zpeak],
     "Xi_0-MD" => [:Ξ₀, :γ, :κ, :zpeak]
 )
 
