@@ -253,8 +253,7 @@ begin
         Dict{Symbol, Float64}(k => Float64(v) for (k, v) in pairs(fiducials)),
         sample_only_tup === nothing ? nothing : collect(Symbol, sample_only_tup),
         output_dir,
-        output_prefix,
-        chain_input_jld2
+        output_prefix
     )
 
     nothing

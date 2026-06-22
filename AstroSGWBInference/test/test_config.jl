@@ -2,7 +2,7 @@ using Test
 using AstroSGWBInference: MCMCConfig, SamplerConfig, load_config, save_config,
                           validate_fiducials
 
-function example_config(; sample_only = [:H0], chain_input_jld2 = nothing)
+function example_config(; sample_only = [:H0])
     sampler = SamplerConfig(3000, 3000, 0.9, "ForwardDiff", 0)
     fiducials = Dict{Symbol, Float64}(
         :H0 => 67.66,
@@ -25,8 +25,7 @@ function example_config(; sample_only = [:H0], chain_input_jld2 = nothing)
         fiducials,
         sample_only,
         "chains",
-        "chains",
-        chain_input_jld2
+        "chains"
     )
 end
 
@@ -100,30 +99,27 @@ end
     end
 end
 
-@testset "optional fields: nothing is omitted and decoded" begin
-    cfg = example_config(; sample_only = nothing, chain_input_jld2 = nothing)
+@testset "sample_only: nothing is omitted and decoded" begin
+    cfg = example_config(; sample_only = nothing)
     mktempdir() do dir
         path = joinpath(dir, "run.toml")
         save_config(cfg, path)
 
         contents = read(path, String)
         @test !occursin("sample_only", contents)
-        @test !occursin("chain_input_jld2", contents)
 
         loaded = load_config(path)
         @test loaded.sample_only === nothing
-        @test loaded.chain_input_jld2 === nothing
         @test loaded == cfg
     end
 
     # Set values must round-trip too.
-    cfg2 = example_config(; sample_only = [:H0, :Ωm], chain_input_jld2 = "in.jld2")
+    cfg2 = example_config(; sample_only = [:H0, :Ωm])
     mktempdir() do dir
         path = joinpath(dir, "run.toml")
         save_config(cfg2, path)
         loaded = load_config(path)
         @test loaded.sample_only == [:H0, :Ωm]
-        @test loaded.chain_input_jld2 == "in.jld2"
         @test loaded == cfg2
     end
 end
@@ -161,8 +157,7 @@ end
     cfg_typo = MCMCConfig(
         cfg.version, cfg.catalog_path, cfg.detectors, cfg.seed,
         cfg.observation_time, cfg.local_merger_rate, cfg.sampler,
-        typo_fiducials, cfg.sample_only, cfg.output_dir, cfg.output_prefix,
-        cfg.chain_input_jld2
+        typo_fiducials, cfg.sample_only, cfg.output_dir, cfg.output_prefix
     )
     @test_throws ArgumentError validate_fiducials(cfg_typo, order)
 end

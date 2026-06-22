@@ -40,8 +40,8 @@ the run script", not the TOML alone.
 `detectors` are stored as plain name strings (e.g. `"S1"`); the caller
 materializes them with `Detector.(cfg.detectors)`. `fiducials` is a flat
 `Symbol => Float64` map matching the flat-NamedTuple hyperparameter convention.
-`sample_only` and `chain_input_jld2` are optional: an absent TOML key decodes to
-`nothing` (TOML has no null), and `nothing` is omitted on write.
+`sample_only` is optional: an absent TOML key decodes to `nothing` (TOML has no
+null), and `nothing` is omitted on write.
 
 Construct from a parsed dict via `MCMCConfig(d)` or from a file via
 [`load_config`](@ref); serialize with [`save_config`](@ref).
@@ -58,7 +58,6 @@ struct MCMCConfig
     sample_only::Union{Nothing, Vector{Symbol}}
     output_dir::String
     output_prefix::String
-    chain_input_jld2::Union{Nothing, String}
 end
 
 # Field-wise equality and hashing so round-trip tests and "did the config drift?"
@@ -129,9 +128,6 @@ function MCMCConfig(d::AbstractDict)
     sample_only = sample_only_raw === nothing ? nothing :
                   Vector{Symbol}(Symbol.(sample_only_raw))
 
-    chain_input_raw = get(d, "chain_input_jld2", nothing)
-    chain_input_jld2 = chain_input_raw === nothing ? nothing : String(chain_input_raw)
-
     return MCMCConfig(
         version,
         String(d["catalog_path"]),
@@ -143,8 +139,7 @@ function MCMCConfig(d::AbstractDict)
         fiducials,
         sample_only,
         String(d["output_dir"]),
-        String(d["output_prefix"]),
-        chain_input_jld2
+        String(d["output_prefix"])
     )
 end
 
@@ -184,9 +179,6 @@ function save_config(cfg::MCMCConfig, path::AbstractString)
     )
     if cfg.sample_only !== nothing
         d["sample_only"] = String.(cfg.sample_only)
-    end
-    if cfg.chain_input_jld2 !== nothing
-        d["chain_input_jld2"] = cfg.chain_input_jld2
     end
 
     tmp = path * ".tmp"
