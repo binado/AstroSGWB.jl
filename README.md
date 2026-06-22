@@ -84,16 +84,26 @@ julia --project=scripts/run -t auto scripts/run_mcmc.jl config/mcmc/my_run.toml
 
 `sampler.num_chains` defaults to `0`, which uses `Base.Threads.nthreads()`. If set explicitly, it must equal the thread count passed to `-t` (or `SLURM_CPUS_PER_TASK` on a cluster). The runner currently supports `ad_backend = "ForwardDiff"` only. Chains are written as JLD2 under `output_dir` (default `chains/`).
 
-**Submit on SLURM** from the repository root (pre-instantiate on the login node with `just setup-run`; the batch script does not run `Pkg.instantiate()` on compute nodes):
+**Submit on SLURM** from the repository root (pre-instantiate on the login node with `just setup-run`; the batch scripts do not run `Pkg.instantiate()` on compute nodes):
 
 ```bash
 just submit-mcmc config/mcmc/my_run.toml
 # or
 mkdir -p logs
-sbatch scripts/submit_mcmc.sbatch config/mcmc/my_run.toml
+sbatch scripts/submit_mcmc_single.sbatch config/mcmc/my_run.toml
 ```
 
-Set `#SBATCH --cpus-per-task` in [`scripts/submit_mcmc.sbatch`](scripts/submit_mcmc.sbatch) to the number of chains you want; adjust the Julia module load line for your cluster.
+Set `#SBATCH --cpus-per-task` in [`scripts/submit_mcmc_single.sbatch`](scripts/submit_mcmc_single.sbatch) to the number of chains you want; adjust the Julia module load line for your cluster.
+
+For sweeps, put one TOML config per run in a directory and submit a SLURM job array:
+
+```bash
+just submit-mcmc-array config/mcmc/sweep 8
+# or
+scripts/submit_mcmc_array.sh config/mcmc/sweep 8
+```
+
+The array launcher submits all `*.toml` files directly under the config directory, sorted by path. The optional second argument is the maximum number of array tasks to run at once.
 
 ### Profiling the log-density
 
