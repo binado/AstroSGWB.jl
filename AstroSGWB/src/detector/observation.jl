@@ -15,7 +15,7 @@ end
 function gaussian_bin_variance(;
         effective_psd::AbstractVector{<:Real},
         frequencies::AbstractVector{<:Real},
-        in_band_mask::BitVector,
+        in_band_mask::AbstractVector{Bool},
         observation_time_sec::Real
 )
     df = frequency_bin_width(frequencies)
@@ -27,7 +27,7 @@ end
 function gaussian_bin_scale(;
         effective_psd::AbstractVector{<:Real},
         frequencies::AbstractVector{<:Real},
-        in_band_mask::BitVector,
+        in_band_mask::AbstractVector{Bool},
         observation_time_sec::Real
 )
     return sqrt.(
@@ -41,9 +41,9 @@ function gaussian_bin_scale(;
 end
 
 function _sgwb_scale_vector(
-        effective_psd::AbstractVector{Float64},
-        frequencies::AbstractVector{Float64},
-        observation_time_sec::Float64
+        effective_psd::AbstractVector{<:Real},
+        frequencies::AbstractVector{<:Real},
+        observation_time_sec::Real
 )
     df = frequency_bin_width(frequencies)
     # √(variance / (2 T Δf)) with variance = effective_psd^2
@@ -60,10 +60,10 @@ Build an [`ObservationContext`](@ref) from a detector network and tabulated PSDs
 `observation_time` is the observation duration in years (Julian year).
 """
 function build_observation_context(
-        frequencies::Vector{Float64},
+        frequencies::AbstractVector{<:Real},
         detectors::AbstractVector{Detector},
-        in_band_mask::BitVector,
-        observation_time::Float64
+        in_band_mask::AbstractVector{Bool},
+        observation_time::Real
 )
     eff = effective_psd(frequencies, detectors)
     obs_sec = year_to_second(observation_time)

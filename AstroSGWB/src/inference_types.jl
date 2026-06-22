@@ -7,7 +7,7 @@ forward model, with no derived arrays, no cosmology, and no detector state.
 Fields:
 - `population_model::M` — the [`PopulationModel`](@ref) whose `single_event_prior` is the
   importance-sampling target / proposal density.
-- `fluxes::Matrix{Float64}` — raw per-sample fluxes `|h₊|² + |h×|²` from the waveform
+- `fluxes::AbstractMatrix{<:Real}` — raw per-sample fluxes `|h₊|² + |h×|²` from the waveform
   catalog, *before* the fiducial `(D_L/D_gw)²` scaling, `(nfreq, nsamples)`.
 - `samples::NamedTuple` — restructured per-event parameters (struct-of-arrays). Keys must
   include every field of `single_event_prior(...).dists` (e.g. `mass`, `redshift`, `χ₁`,
@@ -24,11 +24,16 @@ interpolant, detector PSDs) live in [`ModelContext`](@ref), built by
 [`build_model_context`](@ref). The cosmology family `C` is passed as a call argument,
 never stored here.
 """
-struct ImportanceSamplingProblem{M <: PopulationModel}
+struct ImportanceSamplingProblem{
+    M <: PopulationModel,
+    F <: AbstractMatrix{<:Real},
+    S <: NamedTuple,
+    H <: NamedTuple
+}
     population_model::M
-    fluxes::Matrix{Float64}
-    samples::NamedTuple
-    fiducial_hyperparameters::NamedTuple
+    fluxes::F
+    samples::S
+    fiducial_hyperparameters::H
 end
 
 redshift(s::NamedTuple) = s.redshift
@@ -58,12 +63,20 @@ a different `C` would silently mix mismatched caches. Coherence is guaranteed by
 construction: `build_model_context` and the model that uses it close over a single literal
 `C`.
 """
-struct ModelContext{P <: ProductNamedTupleDistribution, L <: NamedTuple}
+struct ModelContext{
+    P <: ProductNamedTupleDistribution,
+    L <: NamedTuple,
+    D <: AbstractVector{<:Real},
+    Z <: AbstractVector{<:Real},
+    I <: SampleInterpolant,
+    O <: ObservationContext,
+    R <: Real
+}
     proposal_prior::P
     proposal_log_prob::L
-    dl_fid_sq::Vector{Float64}
-    redshift_grid::Vector{Float64}
-    sample_interpolant::SampleInterpolant
-    observation::ObservationContext
-    local_merger_rate::Float64
+    dl_fid_sq::D
+    redshift_grid::Z
+    sample_interpolant::I
+    observation::O
+    local_merger_rate::R
 end

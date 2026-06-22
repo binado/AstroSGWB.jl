@@ -167,9 +167,9 @@ Per-sample interpolation metadata for proposal redshifts on the fixed redshift
 grid. `bin_idx[i]` is the lower grid cell index for sample `i`; `t[i]` is the
 within-cell fraction.
 """
-struct SampleInterpolant
-    bin_idx::Vector{Int}
-    t::Vector{Float64}
+struct SampleInterpolant{B <: AbstractVector{<:Integer}, T <: AbstractVector{<:Real}}
+    bin_idx::B
+    t::T
 end
 
 """
@@ -301,8 +301,8 @@ end
 # per-sample grid cell (`interp.bin_idx`/`interp.t`) is reused every gradient step. This
 # replaces the scalar-index `map` with gathers (`cumulative[bin_idx]`, `y[bin_idx]`, ...)
 # plus a fused broadcast of `_linear_cell_integral`, with the cell width `dx` derived
-# inline rather than precomputed. The gather + broadcast form contains no scalar indexing,
-# so it dispatches unchanged on device arrays.
+# inline rather than precomputed. The plain gather + broadcast form contains no scalar
+# indexing, so it dispatches unchanged on device arrays.
 function _cdf_at_samples(
         cumulative::AbstractVector,
         y::AbstractVector,
@@ -311,11 +311,11 @@ function _cdf_at_samples(
 )
     b = interp.bin_idx
     t = interp.t
-    z_lo = @view z_grid[b]
-    dx = @view(z_grid[b .+ 1]) .- z_lo
-    y_lo = @view y[b]
-    y_hi = @view y[b .+ 1]
-    cum = @view cumulative[b]
+    z_lo = z_grid[b]
+    dx = z_grid[b .+ 1] .- z_lo
+    y_lo = y[b]
+    y_hi = y[b .+ 1]
+    cum = cumulative[b]
     return _linear_cell_integral.(cum, y_lo, y_hi, dx, t)
 end
 

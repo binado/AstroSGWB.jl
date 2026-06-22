@@ -10,21 +10,28 @@ The observed spectral density is intentionally *not* part of this object; caller
 explicitly to [`loglikelihood`](@ref) or let [`build_turing_model`](@ref) synthesize it
 via [`fiducial_spectral_density`](@ref) when `observed` is omitted.
 """
-struct ObservationContext
-    frequencies::Vector{Float64}
-    effective_psd::Vector{Float64}
-    sgwb_scale::Vector{Float64}
-    in_band_mask::BitVector
-    observation_time::Float64
-    sgwb_scale_in_band::Vector{Float64}
+struct ObservationContext{
+    F <: AbstractVector{<:Real},
+    E <: AbstractVector{<:Real},
+    S <: AbstractVector{<:Real},
+    M <: AbstractVector{Bool},
+    T <: Real,
+    B <: AbstractVector{<:Real}
+}
+    frequencies::F
+    effective_psd::E
+    sgwb_scale::S
+    in_band_mask::M
+    observation_time::T
+    sgwb_scale_in_band::B
 end
 
 function ObservationContext(
-        frequencies::Vector{Float64},
-        effective_psd::Vector{Float64},
-        sgwb_scale::Vector{Float64},
-        in_band_mask::BitVector,
-        observation_time::Float64
+        frequencies::AbstractVector{<:Real},
+        effective_psd::AbstractVector{<:Real},
+        sgwb_scale::AbstractVector{<:Real},
+        in_band_mask::AbstractVector{Bool},
+        observation_time::Real
 )
     return ObservationContext(
         frequencies,

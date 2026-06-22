@@ -107,6 +107,56 @@ end
     @test eltype(populated_weights) <: ForwardDiff.Dual
 end
 
+@testset "model containers accept abstract array storage" begin
+    problem, ctx, _ = _importance_type_test_fixture(2)
+
+    flux_parent = zeros(2, 3)
+    flux_parent[:, 1:2] .= problem.fluxes
+    fluxes = @view flux_parent[:, 1:2]
+    problem_view = ImportanceSamplingProblem(
+        problem.population_model,
+        fluxes,
+        problem.samples,
+        problem.fiducial_hyperparameters
+    )
+    @test problem_view.fluxes === fluxes
+
+    dl_parent = vcat(ctx.dl_fid_sq, 0.0)
+    z_grid_parent = copy(ctx.redshift_grid)
+    bin_parent = copy(ctx.sample_interpolant.bin_idx)
+    t_parent = copy(ctx.sample_interpolant.t)
+    obs_freq_parent = [1.0, 2.0, 3.0]
+    obs_eff_parent = [1.0, 1.0, 9.0]
+    obs_scale_parent = [0.5, 0.5, 9.0]
+    obs_mask_parent = [true, true, false]
+
+    dl_fid_sq = @view dl_parent[1:2]
+    redshift_grid = @view z_grid_parent[:]
+    interp = SampleInterpolant(@view(bin_parent[:]), @view(t_parent[:]))
+    obs = ObservationContext(
+        @view(obs_freq_parent[1:2]),
+        @view(obs_eff_parent[1:2]),
+        @view(obs_scale_parent[1:2]),
+        @view(obs_mask_parent[1:2]),
+        ctx.observation.observation_time
+    )
+    ctx_view = ModelContext(
+        ctx.proposal_prior,
+        ctx.proposal_log_prob,
+        dl_fid_sq,
+        redshift_grid,
+        interp,
+        obs,
+        ctx.local_merger_rate
+    )
+
+    @test ctx_view.dl_fid_sq === dl_fid_sq
+    @test ctx_view.redshift_grid === redshift_grid
+    @test ctx_view.sample_interpolant === interp
+    @test ctx_view.observation === obs
+    @test obs.sgwb_scale_in_band == [0.5, 0.5]
+end
+
 @testset "fiducial observed spectrum applies modified-propagation weights" begin
     loaded = parity_problem_context(:importance_context, [Detector("H1"), Detector("L1")])
     C = loaded.cosmology_type
