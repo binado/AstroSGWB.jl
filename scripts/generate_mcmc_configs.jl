@@ -10,6 +10,7 @@ using AstroSGWBInference: MCMCConfig, SamplerConfig, save_config
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_OUTPUT_DIR = "config/mcmc/sweep"
+const CATALOG_PATH = "catalog.h5"
 
 const DETECTOR_NETWORKS = (
     "ET-triangular" => ["E1", "E2", "E3"],
@@ -55,7 +56,7 @@ end
 function _config(detectors::Vector{String}, sample_only::Vector{Symbol})
     return MCMCConfig(
         1,
-        "catalog.h5",
+        CATALOG_PATH,
         copy(detectors),
         42,
         1.0,
