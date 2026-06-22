@@ -48,7 +48,7 @@ begin
     # ---- All configuration is inlined here, immediately after the imports ----
 
     seed = 42
-    n_samples = 100_000
+    nsamples = 100_000
     # Source model: BNS or BBH
     source_model = :BBH
 
@@ -273,10 +273,10 @@ begin
     cosmo = cosmology(C, Λ)
     prior = single_event_prior(pop, cosmo, Λ)
 
-    @info "drawing prior samples" n_samples seed model = nameof(typeof(pop))
+    @info "drawing prior samples" nsamples seed model = nameof(typeof(pop))
     # `cols` is a NamedTuple keyed like the prior: `mass` is a (2, n) matrix
     # (rows m1 ≥ m2, source frame); the rest are length-n vectors.
-    cols = sample_columns(prior, n_samples)
+    cols = sample_columns(prior, nsamples)
     redshift = cols.redshift
 
     # Columns are keyed by the notebook's internal names (renamed to bilby on save).

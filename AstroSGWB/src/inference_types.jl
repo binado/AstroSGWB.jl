@@ -8,7 +8,7 @@ Fields:
 - `population_model::M` — the [`PopulationModel`](@ref) whose `single_event_prior` is the
   importance-sampling target / proposal density.
 - `fluxes::Matrix{Float64}` — raw per-sample fluxes `|h₊|² + |h×|²` from the waveform
-  catalog, *before* the fiducial `(D_L/D_gw)²` scaling, `(n_freq, n_samples)`.
+  catalog, *before* the fiducial `(D_L/D_gw)²` scaling, `(nfreq, nsamples)`.
 - `samples::NamedTuple` — restructured per-event parameters (struct-of-arrays). Keys must
   include every field of `single_event_prior(...).dists` (e.g. `mass`, `redshift`, `χ₁`,
   `χ₂`, `Λ₁`, `Λ₂`); extra keys are allowed. Each field stores samples along its last

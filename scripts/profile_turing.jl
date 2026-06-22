@@ -477,7 +477,7 @@ function _run(;
         end
         allocs_snap = Profile.Allocs.fetch()
         total_bytes = sum(a.size for a in allocs_snap.allocs; init = 0)
-        @info "allocation snapshot" n_samples=length(allocs_snap.allocs) total_bytes_sampled=_fmt_bytes(total_bytes)
+        @info "allocation snapshot" nsamples=length(allocs_snap.allocs) total_bytes_sampled=_fmt_bytes(total_bytes)
 
         # Top N allocation types
         counts = Dict{Type, Tuple{Int, Int}}()

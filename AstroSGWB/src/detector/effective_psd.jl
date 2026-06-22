@@ -4,12 +4,12 @@ function _orf_psd_pairwise_weight(
 )
     # orf[i,j,f], psds[f, i] matches Python stacking on axis=-1
     # Returns g(f) such that network variance V(f)=1/g(f) and effective_psd(f)=sqrt(V(f)).
-    n_freq = size(orf, 3)
+    nfreq = size(orf, 3)
     n_det = size(orf, 1)
-    size(psds, 1) == n_freq || throw(DimensionMismatch("psds row count"))
+    size(psds, 1) == nfreq || throw(DimensionMismatch("psds row count"))
     size(psds, 2) == n_det || throw(DimensionMismatch("psds column count"))
-    out = Vector{Float64}(undef, n_freq)
-    @inbounds for f in 1:n_freq
+    out = Vector{Float64}(undef, nfreq)
+    @inbounds for f in 1:nfreq
         acc = 0.0
         for i in 1:n_det
             si = 1.0 / psds[f, i]
@@ -43,7 +43,7 @@ function effective_psd(
     f = Float64.(collect(frequencies))
     orf = pairwise_overlap_reduction_function(f, detectors)
     psd_vecs = [det.psd(f) for det in detectors]
-    psds = Matrix(reduce(hcat, psd_vecs)) # n_freq × n_det
+    psds = Matrix(reduce(hcat, psd_vecs)) # nfreq × n_det
     denom = _orf_psd_pairwise_weight(orf, psds)
     eff = similar(denom)
     @inbounds for i in eachindex(eff)
