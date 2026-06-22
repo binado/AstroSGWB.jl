@@ -4,8 +4,8 @@ using Random
 export RedshiftPrior, redshift_integral, redshift_log_prob, merger_rate_per_sec,
        detector_frame_merger_rate_density, expected_number_of_events,
        madau_dickinson_source_frame_distribution,
-       SampleInterpolant, _interpolate_at_sample, _cdf_at_sample,
-       luminosity_distance_at_sample,
+       SampleInterpolant, _interpolate_at_sample, _cdf_at_sample, _cdf_at_samples,
+       luminosity_distance_at_sample, luminosity_distance_at_samples,
        build_redshift_prior,
        RedshiftInterpolatedDistribution, _normalized_log_density,
        redshift_logpdf_eltype,
@@ -295,6 +295,51 @@ function luminosity_distance_at_sample(
         sample_index
     )
     return (1 + z) * cache.d_h * integral
+end
+
+# Vectorized counterpart of `_cdf_at_sample`: the proposal redshifts are fixed, so the
+# per-sample grid cell (`interp.bin_idx`/`interp.t`) is reused every gradient step. This
+# replaces the scalar-index `map` with gathers (`cumulative[bin_idx]`, `y[bin_idx]`, ...)
+# plus a fused broadcast of `_linear_cell_integral`, with the cell width `dx` derived
+# inline rather than precomputed. The gather + broadcast form contains no scalar indexing,
+# so it dispatches unchanged on device arrays.
+function _cdf_at_samples(
+        cumulative::AbstractVector,
+        y::AbstractVector,
+        interp::SampleInterpolant,
+        z_grid::AbstractVector{<:Real}
+)
+    b = interp.bin_idx
+    t = interp.t
+    z_lo = @view z_grid[b]
+    dx = @view(z_grid[b .+ 1]) .- z_lo
+    y_lo = @view y[b]
+    y_hi = @view y[b .+ 1]
+    cum = @view cumulative[b]
+    return _linear_cell_integral.(cum, y_lo, y_hi, dx, t)
+end
+
+"""
+    luminosity_distance_at_samples(cache, interp, z_grid, z_samples) -> AbstractVector
+
+Batched EM luminosity distance for every proposal sample, the vectorized form of
+[`luminosity_distance_at_sample`](@ref). Uses the precomputed per-sample grid cells in
+`interp` so the cumulative cosmology integral is gathered (not re-searched) per evaluation,
+then broadcasts `(1 + z) * d_h * integral`.
+"""
+function luminosity_distance_at_samples(
+        cache::CosmologyCache,
+        interp::SampleInterpolant,
+        z_grid::AbstractVector{<:Real},
+        z_samples::AbstractVector{<:Real}
+)
+    integral = _cdf_at_samples(
+        cache.inv_E_integral.cumulative,
+        cache.inv_E_integral.y,
+        interp,
+        z_grid
+    )
+    return (1 .+ z_samples) .* cache.d_h .* integral
 end
 
 struct RedshiftInterpolatedDistribution{P <: RedshiftPrior} <:

@@ -250,6 +250,14 @@ gw_em_distance_ratio(z::Real, Ξ₀::Real, Ξₙ::Real) = Ξ₀ + (1 - Ξ₀) / 
 gw_em_distance_ratio(z::Real, ::AbstractCosmology) = one(z)
 gw_em_distance_ratio(z::Real, c::ModifiedPropagation) = gw_em_distance_ratio(z, c.Ξ₀, c.Ξₙ)
 
+# Batched propagation factor. Selecting the cosmology dispatch once (rather than inside a
+# per-element broadcast over `Ref(c)`) keeps the device kernel branch-free: standard FLRW
+# is a `one`-valued vector, `ModifiedPropagation` a single fused broadcast of the formula.
+gw_em_distance_ratio(z::AbstractVector{<:Real}, ::AbstractCosmology) = one.(z)
+function gw_em_distance_ratio(z::AbstractVector{<:Real}, c::ModifiedPropagation)
+    return gw_em_distance_ratio.(z, c.Ξ₀, c.Ξₙ)
+end
+
 function gravitational_wave_distance(
         z::Real,
         luminosity_distance::Real,
