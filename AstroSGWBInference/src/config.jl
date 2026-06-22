@@ -5,7 +5,7 @@ using TOML
 export MCMCConfig, SamplerConfig, load_config, save_config, validate_fiducials
 
 """Current config schema version. Bump on any breaking layout change."""
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 1
 
 """AD backends the notebook knows how to resolve (mirrors `resolve_adtype`)."""
 const SUPPORTED_AD_BACKENDS = ("ForwardDiff",)

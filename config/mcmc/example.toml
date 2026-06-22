@@ -3,7 +3,7 @@
 # Cosmology family and population are fixed in the script
 # (ModifiedPropagation{W0CDM} + BNSPopulationModel).
 
-version = 2
+version = 1
 
 # Catalog path is relative to the repo root unless absolute.
 catalog_path = "catalog.h5"

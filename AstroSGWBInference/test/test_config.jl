@@ -15,7 +15,7 @@ function example_config(; sample_only = [:H0])
         :zpeak => 2.0
     )
     return MCMCConfig(
-        2,
+        1,
         "catalog.h5",
         ["S1", "R1", "C1"],
         42,
@@ -33,7 +33,7 @@ end
 # validating constructor directly.
 function example_dict()
     return Dict{String, Any}(
-        "version" => 2,
+        "version" => 1,
         "catalog_path" => "catalog.h5",
         "detectors" => ["S1", "R1", "C1"],
         "seed" => 42,
