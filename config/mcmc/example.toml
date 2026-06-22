@@ -1,7 +1,9 @@
 # Example MCMC run config for scripts/run_mcmc.jl.
-# Copy this file per experiment; the runner never edits notebooks/mcmc_pluto.jl.
+# Copy this file per experiment; the runner never edits notebooks/mcmc.jl.
 # Cosmology family and population are fixed in the script
 # (ModifiedPropagation{W0CDM} + BNSPopulationModel).
+
+version = 1
 
 # Catalog path is relative to the repo root unless absolute.
 catalog_path = "catalog.h5"
@@ -19,19 +21,20 @@ output_dir = "chains"
 output_prefix = "chains"
 
 [sampler]
-n_samples = 3000
-n_adapts = 3000
+nsamples = 3000
+nadapts = 3000
 target_acceptance = 0.9
 ad_backend = "ForwardDiff"
-num_chains = 0               # 0 -> use Base.Threads.nthreads(); if set, must match nthreads()
+nchains = 0                 # 0 -> use Base.Threads.nthreads(); if set, must match nthreads()
 
-# Fiducial point (also the importance-sampling reference).
+# Fiducial point (also the importance-sampling reference). Keys are the canonical
+# Unicode hyperparameter names; non-ASCII keys must be quoted (TOML requirement).
 [fiducials]
 H0 = 67.66
-Omega_m = 0.3096
+"Ωm" = 0.3096
 w0 = -1.0
-Xi_0 = 1.0
-Xi_n = 1.91
-gamma = 2.7
-kappa = 5.7
-z_peak = 2.0
+"Ξ₀" = 1.0
+"Ξₙ" = 1.91
+"γ" = 2.7
+"κ" = 5.7
+zpeak = 2.0

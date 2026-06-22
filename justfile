@@ -18,7 +18,10 @@ setup-run:
 
 submit-mcmc config="config/mcmc/example.toml":
     mkdir -p logs
-    sbatch scripts/submit_mcmc.sbatch {{config}}
+    sbatch scripts/submit_mcmc_single.sbatch {{config}}
+
+submit-mcmc-array config_dir="config/mcmc/sweep" max_parallel="8":
+    scripts/submit_mcmc_array.sh {{config_dir}} {{max_parallel}}
 
 resolve package="AstroSGWB":
     julia --project={{package}} -e 'using Pkg; Pkg.resolve()'

@@ -40,7 +40,7 @@ julia --project=AstroSGWBInference -e 'using Pkg; Pkg.test()'
 
 ### Data and model assembly
 
-1. Provide a waveform **catalog** HDF5 file (`catalog.h5`) at the repo root or set `catalog_path` in the notebook. Catalogs store per-sample intrinsic parameters and a `(n_freq, n_samples)` flux matrix `|h₊|² + |h×|²` (before fiducial `(D_L/D_gw)²` scaling). Use [`AstroSGWB.load_catalog`](AstroSGWB/src/catalog/io.jl) / [`AstroSGWB.save_catalog`](AstroSGWB/src/catalog/io.jl).
+1. Provide a waveform **catalog** HDF5 file (`catalog.h5`) at the repo root or set `catalog_path` in the notebook. Catalogs store per-sample intrinsic parameters and a `(nfreq, nsamples)` flux matrix `|h₊|² + |h×|²` (before fiducial `(D_L/D_gw)²` scaling). Use [`AstroSGWB.load_catalog`](AstroSGWB/src/catalog/io.jl) / [`AstroSGWB.save_catalog`](AstroSGWB/src/catalog/io.jl).
 2. Define a concrete [`PopulationModel`](CBCDistributions/src/population_model.jl) subtype in Julia (`hyperparameters`, `single_event_prior`) and build hyperparameter priors with `product_distribution(...)` (see the notebook cells).
 3. Restructure catalog columns into the `NamedTuple` expected by `single_event_prior` (see `bns_samples_from_catalog` in the notebook).
 4. Build [`ImportanceSamplingProblem`](AstroSGWB/src/inference_types.jl) with fiducial hyperparameters, then [`build_model_context`](AstroSGWB/src/context.jl) for detector PSDs and fiducial caches.
@@ -82,18 +82,28 @@ just run-mcmc config/mcmc/my_run.toml
 julia --project=scripts/run -t auto scripts/run_mcmc.jl config/mcmc/my_run.toml
 ```
 
-`sampler.num_chains` defaults to `0`, which uses `Base.Threads.nthreads()`. If set explicitly, it must equal the thread count passed to `-t` (or `SLURM_CPUS_PER_TASK` on a cluster). The runner currently supports `ad_backend = "ForwardDiff"` only. Chains are written as JLD2 under `output_dir` (default `chains/`).
+`sampler.num_chains` defaults to `0`, which uses `Base.Threads.nthreads()`. If set explicitly, it must equal the thread count passed to `-t` (or `SLURM_CPUS_PER_TASK` on a cluster). The runner currently supports `ad_backend = "ForwardDiff"` only. Chains are written as JLD2 under `output_dir` (default `chains/`); generated filenames include the config basename so array outputs can be traced back to their input TOML.
 
-**Submit on SLURM** from the repository root (pre-instantiate on the login node with `just setup-run`; the batch script does not run `Pkg.instantiate()` on compute nodes):
+**Submit on SLURM** from the repository root (pre-instantiate on the login node with `just setup-run`; the batch scripts do not run `Pkg.instantiate()` on compute nodes):
 
 ```bash
 just submit-mcmc config/mcmc/my_run.toml
 # or
 mkdir -p logs
-sbatch scripts/submit_mcmc.sbatch config/mcmc/my_run.toml
+sbatch scripts/submit_mcmc_single.sbatch config/mcmc/my_run.toml
 ```
 
-Set `#SBATCH --cpus-per-task` in [`scripts/submit_mcmc.sbatch`](scripts/submit_mcmc.sbatch) to the number of chains you want; adjust the Julia module load line for your cluster.
+Set `#SBATCH --cpus-per-task` in [`scripts/submit_mcmc_single.sbatch`](scripts/submit_mcmc_single.sbatch) to the number of chains you want; adjust the Julia module load line for your cluster.
+
+For sweeps, put one TOML config per run in a directory and submit a SLURM job array:
+
+```bash
+just submit-mcmc-array config/mcmc/sweep 8
+# or
+scripts/submit_mcmc_array.sh config/mcmc/sweep 8
+```
+
+The array launcher submits all `*.toml` files directly under the config directory, sorted by path. The optional second argument is the maximum number of array tasks to run at once.
 
 ### Profiling the log-density
 

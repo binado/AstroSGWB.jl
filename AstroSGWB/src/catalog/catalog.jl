@@ -12,7 +12,7 @@ per-frequency fluxes `|h_+|² + |h_×|²` (before the fiducial `(D_L/D_gw)²` sc
 
 `samples` is a NamedTuple whose keys are the parameter column names (e.g.
 `:mass_1_source`, `:redshift`, `:luminosity_distance`, ...). `fluxes` has shape
-`(n_freq, n_samples)` -- column-major friendly for the importance-sampling hot loop.
+`(nfreq, nsamples)` -- column-major friendly for the importance-sampling hot loop.
 """
 struct WaveformCatalog{S <: NamedTuple}
     samples::S
@@ -31,8 +31,8 @@ struct WaveformCatalog{S <: NamedTuple}
     end
 end
 
-n_samples(c::WaveformCatalog) = size(c.fluxes, 2)
-n_freq(c::WaveformCatalog) = size(c.fluxes, 1)
+nsamples(c::WaveformCatalog) = size(c.fluxes, 2)
+nfreq(c::WaveformCatalog) = size(c.fluxes, 1)
 
 """
     WaveformCatalogMetadata

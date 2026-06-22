@@ -7,7 +7,7 @@ Write `file` to an HDF5 catalog file at `path`.
 
 HDF5 layout:
 - `/samples/<column_name>` -- one float64 dataset per sample column
-- `/fluxes` -- float64 matrix of shape `(n_freq, n_samples)`
+- `/fluxes` -- float64 matrix of shape `(nfreq, nsamples)`
 - root attributes: `approximant`, `source_type`, `grid_*`, `git_revision`, `command`
 """
 function save_catalog(path::AbstractString, file::WaveformCatalogFile)

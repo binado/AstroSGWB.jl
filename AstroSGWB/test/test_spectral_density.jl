@@ -18,7 +18,7 @@ end
 @testset "spectral_density primitive" begin
     fluxes = Float64[1.0 2.0 3.0; 4.0 5.0 6.0]
     rate = 2.5
-    n_samples = size(fluxes, 2)
+    nsamples = size(fluxes, 2)
 
     @testset "unweighted average over samples" begin
         expected = 0.4 .* rate .* vec(mean(fluxes; dims = 2))
@@ -27,12 +27,12 @@ end
 
     @testset "weighted contraction without weight normalization" begin
         w = [0.5, 1.0, 2.0]
-        expected = 0.4 .* rate .* (fluxes * w) ./ n_samples
+        expected = 0.4 .* rate .* (fluxes * w) ./ nsamples
         @test spectral_density(fluxes, rate; weights = w) ≈ expected
     end
 
     @testset "uniform weights equal to ones give the unweighted mean" begin
-        w = ones(n_samples)
+        w = ones(nsamples)
         @test spectral_density(fluxes, rate; weights = w) ≈ spectral_density(fluxes, rate)
     end
 
@@ -40,16 +40,16 @@ end
         @test_throws DimensionMismatch spectral_density(fluxes, rate; weights = [1.0, 2.0])
     end
 
-    @testset "output length matches n_freq" begin
+    @testset "output length matches nfreq" begin
         @test length(spectral_density(fluxes, rate)) == size(fluxes, 1)
-        @test length(spectral_density(fluxes, rate; weights = rand(n_samples))) ==
+        @test length(spectral_density(fluxes, rate; weights = rand(nsamples))) ==
               size(fluxes, 1)
     end
 
     @testset "dual weighted contraction matches generic expression" begin
         w = [
             ForwardDiff.Dual(0.5, 1.0), ForwardDiff.Dual(1.0, -0.5), ForwardDiff.Dual(2.0, 0.25)]
-        expected = 0.4 .* rate .* ((fluxes * w) ./ n_samples)
+        expected = 0.4 .* rate .* ((fluxes * w) ./ nsamples)
         got = spectral_density(fluxes, rate; weights = w)
         @test ForwardDiff.value.(got) ≈ ForwardDiff.value.(expected)
         @test [ForwardDiff.partials(x)[1] for x in got] ≈
@@ -64,7 +64,7 @@ end
         ]
         rate_dual = ForwardDiff.Dual{Nothing, Float64, 2}(rate, ForwardDiff.Partials((
             0.3, -0.1)))
-        expected = 0.4 .* rate_dual .* ((fluxes * w) ./ n_samples)
+        expected = 0.4 .* rate_dual .* ((fluxes * w) ./ nsamples)
         got = spectral_density(fluxes, rate_dual; weights = w)
         @test ForwardDiff.value.(got) ≈ ForwardDiff.value.(expected)
         for lane in 1:2

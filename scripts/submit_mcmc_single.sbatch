@@ -12,14 +12,14 @@
 #
 # Submit from the repository root with the config as the single positional argument:
 #   cd /path/to/AstroSGWB.jl
-#   sbatch scripts/submit_mcmc.sbatch config/mcmc/example.toml
+#   sbatch scripts/submit_mcmc_single.sbatch config/mcmc/example.toml
 #
 # One Turing chain runs per allocated CPU thread (MCMCThreads), so set
 # --cpus-per-task to the number of chains you want.
 
 set -euo pipefail
 
-CONFIG="${1:?usage: sbatch scripts/submit_mcmc.sbatch <config.toml>}"
+CONFIG="${1:?usage: sbatch scripts/submit_mcmc_single.sbatch <config.toml>}"
 
 # Slurm executes a copied batch script from its spool directory on some
 # clusters, so BASH_SOURCE/dirname can point at /var/spool/slurmd. Anchor all
@@ -29,16 +29,21 @@ cd "$REPO_ROOT"
 mkdir -p logs
 
 if [[ ! -d AstroSGWB || ! -d AstroSGWBInference || ! -f scripts/run_mcmc.jl ]]; then
-    echo "submit_mcmc.sbatch must be submitted from the AstroSGWB.jl repository root" >&2
+    echo "submit_mcmc_single.sbatch must be submitted from the AstroSGWB.jl repository root" >&2
     echo "current directory: $PWD" >&2
+    exit 2
+fi
+
+if [[ ! -f "$CONFIG" ]]; then
+    echo "config file does not exist: $CONFIG" >&2
     exit 2
 fi
 
 # Adjust this to your cluster's module system / Julia install.
 # module load julia/1.12
 
-# Locate the raw Julia binary to bypass the juliaup config lock issue on HPC
-JULIA_EXE=$(ls -d $HOME/.julia/juliaup/julia-*/bin/julia 2>/dev/null | sort -V | tail -n 1 || echo "julia")
+# Locate the raw Julia binary to bypass the juliaup config lock issue on HPC.
+JULIA_EXE=$(ls -d "$HOME"/.julia/juliaup/julia-*/bin/julia 2>/dev/null | sort -V | tail -n 1 || echo "julia")
 
 # Each Julia thread runs one MCMC chain.
 export JULIA_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
@@ -56,14 +61,13 @@ else
 fi
 mkdir -p "${JULIA_DEPOT_PATH%%:*}"
 
-echo "[submit_mcmc] config=$CONFIG julia=$JULIA_EXE threads=$JULIA_NUM_THREADS depot=${JULIA_DEPOT_PATH%%:*}"
+echo "[submit_mcmc_single] config=$CONFIG julia=$JULIA_EXE threads=$JULIA_NUM_THREADS depot=${JULIA_DEPOT_PATH%%:*}"
 
 # NOTE: Do NOT run Pkg.instantiate() on compute nodes.
 # Instead, ensure you run `just setup-run` on the login node BEFORE submitting.
 #
 # julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
 
-# Run the MCMC sampler
+# Run the MCMC sampler.
 job-nanny "$JULIA_EXE" --project=scripts/run -t "$JULIA_NUM_THREADS" \
     scripts/run_mcmc.jl "$CONFIG"
-

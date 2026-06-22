@@ -7,7 +7,7 @@ sampling, redshift grids, and likelihoods. Turing model construction lives in th
 
 The primary inference artifact is **`catalog.h5`** ([`WaveformCatalogFile`](@ref)):
 per-sample intrinsic parameters with precomputed luminosity distances, and a
-`(n_freq, n_samples)` per-sample flux matrix `|h_+|² + |h_×|²` (before the
+`(nfreq, nsamples)` per-sample flux matrix `|h_+|² + |h_×|²` (before the
 fiducial `(D_L/D_gw)²` factor).
 
 Callers define their population model, fiducial hyperparameters, and catalog sample

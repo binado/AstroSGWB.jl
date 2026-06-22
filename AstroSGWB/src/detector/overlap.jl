@@ -148,7 +148,7 @@ end
 """
     pairwise_overlap_reduction_function(frequencies, detectors)
 
-Returns `Γ[i,j,f]` with shape `(n_detector, n_detector, n_freq)` (symmetric in `i,j`).
+Returns `Γ[i,j,f]` with shape `(n_detector, n_detector, nfreq)` (symmetric in `i,j`).
 """
 function pairwise_overlap_reduction_function(
         frequencies::AbstractVector{<:Real},
@@ -156,8 +156,8 @@ function pairwise_overlap_reduction_function(
 )
     det_list = collect(detectors)
     n = length(det_list)
-    n_freq = length(frequencies)
-    out = zeros(Float64, n, n, n_freq)
+    nfreq = length(frequencies)
+    out = zeros(Float64, n, n, nfreq)
     for i in 1:n
         for j in i:n
             d1 = det_list[i]

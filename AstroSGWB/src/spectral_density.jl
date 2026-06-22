@@ -5,9 +5,9 @@ using ForwardDiff
 
 Collapse per-sample flux contributions into a spectral density vector.
 
-`fluxes` is a `(n_freq, n_samples)` matrix (column-major friendly). When `weights`
-is `nothing`, samples are averaged uniformly: `mean_flux = sum(fluxes; dims=2) / n_samples`.
-When `weights` is supplied, the contraction is `fluxes * weights / n_samples`
+`fluxes` is a `(nfreq, nsamples)` matrix (column-major friendly). When `weights`
+is `nothing`, samples are averaged uniformly: `mean_flux = sum(fluxes; dims=2) / nsamples`.
+When `weights` is supplied, the contraction is `fluxes * weights / nsamples`
 (no normalization of `weights`). The `0.4 = 2/5` prefactor captures the
 average over the inclination angle.
 """
@@ -24,8 +24,8 @@ function _spectral_density(
         merger_rate_per_sec::Real,
         ::Nothing
 )
-    n_samples = size(fluxes, 2)
-    mean_flux = vec(sum(fluxes; dims = 2)) ./ n_samples
+    nsamples = size(fluxes, 2)
+    mean_flux = vec(sum(fluxes; dims = 2)) ./ nsamples
     return 0.4 .* merger_rate_per_sec .* mean_flux
 end
 
@@ -34,8 +34,8 @@ function _spectral_density(
         merger_rate_per_sec::Real,
         weights::AbstractVector{<:Real}
 )
-    n_samples = size(fluxes, 2)
-    mean_flux = (fluxes * weights) ./ n_samples
+    nsamples = size(fluxes, 2)
+    mean_flux = (fluxes * weights) ./ nsamples
     return 0.4 .* merger_rate_per_sec .* mean_flux
 end
 
@@ -73,15 +73,15 @@ function _spectral_density_forwarddiff(
         rate_partials::NTuple{N, V},
         weights::AbstractVector{<:ForwardDiff.Dual{Tag, V, N}}
 ) where {Tag, V, N}
-    n_freq, n_samples = size(fluxes)
-    length(weights) == n_samples ||
+    nfreq, nsamples = size(fluxes)
+    length(weights) == nsamples ||
         throw(DimensionMismatch("weight length must match flux sample dimension"))
 
-    # Pack value + partials into one contiguous `(n_samples, N+1)` buffer so a single
+    # Pack value + partials into one contiguous `(nsamples, N+1)` buffer so a single
     # gemm `fluxes * weight_block` yields the primal sum (column 1) and every partial
     # sum (columns 2:N+1) at once, instead of a separate gemv + gemm.
-    weight_block = Matrix{V}(undef, n_samples, N + 1)
-    @inbounds for i in 1:n_samples
+    weight_block = Matrix{V}(undef, nsamples, N + 1)
+    @inbounds for i in 1:nsamples
         w = weights[i]
         weight_block[i, 1] = ForwardDiff.value(w)
         p = ForwardDiff.partials(w)
@@ -91,9 +91,9 @@ function _spectral_density_forwarddiff(
     end
 
     sums = fluxes * weight_block
-    scale = V(0.4) / V(n_samples)
-    out = Vector{ForwardDiff.Dual{Tag, V, N}}(undef, n_freq)
-    @inbounds for i in 1:n_freq
+    scale = V(0.4) / V(nsamples)
+    out = Vector{ForwardDiff.Dual{Tag, V, N}}(undef, nfreq)
+    @inbounds for i in 1:nfreq
         primal_sum = sums[i, 1]
         value = scale * rate_value * primal_sum
         partials = ntuple(

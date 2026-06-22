@@ -1,8 +1,9 @@
 # Headless, config-driven NUTS runner for the AstroSGWB importance-sampling model.
 #
-# This mirrors the sampling cells of notebooks/mcmc_pluto.jl but takes run-specific
-# settings (catalog, detectors, fiducials, sampler, etc.) from a TOML config.
-# Hyperprior bounds are fixed here, matching the notebook.
+# This mirrors the sampling cells of notebooks/mcmc.jl but takes run-specific
+# settings (catalog, detectors, fiducials, sampler, etc.) from a TOML config,
+# parsed and validated via AstroSGWBInference.MCMCConfig. Hyperprior bounds, the
+# cosmology family, and the population model are fixed here, matching the notebook.
 #
 # Run from the repository root, for example:
 #   julia --project=scripts/run -t auto scripts/run_mcmc.jl config/mcmc/example.toml
@@ -29,20 +30,26 @@ using AstroSGWB:
                  MadauDickinsonSourceFrame,
                  stack_source_masses
 import AstroSGWB: hyperparameters, single_event_prior
-using AstroSGWBInference: build_turing_model, condition_turing_model, atomic_save_chain
+using AstroSGWBInference:
+                          build_turing_model,
+                          condition_turing_model,
+                          atomic_save_chain,
+                          MCMCConfig,
+                          load_config,
+                          save_config,
+                          validate_fiducials
 using ADTypes: AutoForwardDiff
 using AdvancedHMC: DenseEuclideanMetric
 using Distributions: Uniform, product_distribution
 using FlexiChains: VNChain
 using Turing
 using Random
-using TOML
 using Logging
 using LinearAlgebra: BLAS
 using Dates: now, format
 
 # --------------------------------------------------------------------------
-# Population model (kept inline, matching notebooks/mcmc_pluto.jl)
+# Population model (kept inline, matching notebooks/mcmc.jl)
 # --------------------------------------------------------------------------
 
 struct BNSPopulationModel <: PopulationModel end
@@ -74,10 +81,10 @@ function bns_samples_from_catalog(catalog_samples::NamedTuple)
     )
 end
 
-# Fixed model selection (see notebooks/mcmc_pluto.jl).
+# Fixed model selection (see notebooks/mcmc.jl).
 const C = ModifiedPropagation{W0CDM}
 
-# Hard-coded hyperprior bounds (matching notebooks/mcmc_pluto.jl).
+# Hard-coded hyperprior bounds (matching notebooks/mcmc.jl).
 const HYPERPRIOR = product_distribution((
     H0 = Uniform(20.0, 140.0),
     Ωm = Uniform(0.05, 0.95),
@@ -89,82 +96,37 @@ const HYPERPRIOR = product_distribution((
     zpeak = Uniform(0.05, 10.0)
 ))
 
-# Map between TOML ASCII keys and the canonical Unicode hyperparameter symbols.
-const _ASCII_TO_SYM = Dict(
-    "H0" => :H0,
-    "Omega_m" => :Ωm,
-    "w0" => :w0,
-    "Xi_0" => :Ξ₀,
-    "Xi_n" => :Ξₙ,
-    "gamma" => :γ,
-    "kappa" => :κ,
-    "z_peak" => :zpeak
-)
-const _SYM_TO_ASCII = Dict(v => k for (k, v) in _ASCII_TO_SYM)
-
 # --------------------------------------------------------------------------
-# TOML helpers
+# Materialization helpers
 # --------------------------------------------------------------------------
 
-function _require(settings::Dict, key::AbstractString)
-    haskey(settings, key) || throw(ArgumentError("missing required TOML key $(repr(key))"))
-    return settings[key]
-end
-
-function _require_table(settings::Dict, key::AbstractString)
-    v = _require(settings, key)
-    v isa Dict || throw(ArgumentError("TOML key $(repr(key)) must be a table"))
-    return v
-end
-
-function _require_string_array(settings::Dict, key::AbstractString)
-    v = _require(settings, key)
-    v isa Vector || throw(ArgumentError("TOML key $(repr(key)) must be an array"))
-    all(x -> x isa AbstractString, v) ||
-        throw(ArgumentError("TOML key $(repr(key)) must be an array of strings"))
-    return Vector{String}(v)
-end
-
-function _resolve_catalog_path(catalog_path::String, base::AbstractString)
-    return isabspath(catalog_path) ? catalog_path :
+function _resolve_catalog_path(catalog_path::AbstractString, base::AbstractString)
+    return isabspath(catalog_path) ? String(catalog_path) :
            normpath(joinpath(base, catalog_path))
-end
-
-"""Build the canonical fiducial NamedTuple from the `[fiducials]` table."""
-function _fiducials_from_toml(fid_tbl::Dict, order::Tuple{Vararg{Symbol}})
-    pairs = map(order) do sym
-        ascii = _SYM_TO_ASCII[sym]
-        haskey(fid_tbl, ascii) ||
-            throw(ArgumentError("missing fiducial value [fiducials].$ascii"))
-        sym => Float64(fid_tbl[ascii])
-    end
-    nt = NamedTuple(pairs)
-    return canonical_hyperparameters(order, nt; context = "fiducial hyperparameters")
-end
-
-"""Normalize a `sample_only` entry (ASCII alias or Unicode string) to a symbol."""
-function _to_sym(name::AbstractString)
-    haskey(_ASCII_TO_SYM, name) && return _ASCII_TO_SYM[name]
-    sym = Symbol(name)
-    sym in values(_ASCII_TO_SYM) || throw(
-        ArgumentError("unknown hyperparameter name $(repr(name)) in sample_only"),
-    )
-    return sym
-end
-
-function _sample_only_from_toml(cfg::Dict)
-    haskey(cfg, "sample_only") || return nothing
-    raw = cfg["sample_only"]
-    raw === nothing && return nothing
-    raw isa Vector ||
-        throw(ArgumentError("sample_only must be an array of strings (or omitted)"))
-    isempty(raw) && return nothing
-    return Tuple(_to_sym(String(x)) for x in raw)
 end
 
 function _resolve_adtype(name::AbstractString)
     name == "ForwardDiff" && return AutoForwardDiff()
     throw(ArgumentError("unsupported ad_backend $(repr(name)) (use \"ForwardDiff\")"))
+end
+
+"""Order the validated fiducial map into the canonical NamedTuple the model expects."""
+function _fiducials_namedtuple(cfg::MCMCConfig, order::Tuple{Vararg{Symbol}})
+    validate_fiducials(cfg, order)
+    nt = NamedTuple(Tuple(sym => cfg.fiducials[sym] for sym in order))
+    return canonical_hyperparameters(order, nt; context = "fiducial hyperparameters")
+end
+
+"""Resolve `sample_only` to a tuple of symbols, validating membership in `order`."""
+function _resolve_sample_only(cfg::MCMCConfig, order::Tuple{Vararg{Symbol}})
+    cfg.sample_only === nothing && return nothing
+    isempty(cfg.sample_only) && return nothing
+    for sym in cfg.sample_only
+        sym in order || throw(ArgumentError(
+            "unknown hyperparameter $(repr(sym)) in sample_only; expected one of $order",
+        ))
+    end
+    return Tuple(cfg.sample_only)
 end
 
 # --------------------------------------------------------------------------
@@ -176,38 +138,29 @@ function run_mcmc(config_file::String)
     num_threads = Base.Threads.nthreads()
 
     @info "loading config" path = config_file
-    cfg = TOML.parsefile(config_file)
+    cfg = load_config(config_file)
 
-    catalog_path = _resolve_catalog_path(_require(cfg, "catalog_path")::String, _REPO_ROOT)
-    detectors = [Detector(n) for n in _require_string_array(cfg, "detectors")]
-    seed = Int(_require(cfg, "seed"))
-    local_merger_rate = Float64(_require(cfg, "local_merger_rate"))
-    observation_time = Float64(_require(cfg, "observation_time"))
-    output_dir = joinpath(_REPO_ROOT, String(get(cfg, "output_dir", "chains")))
-    output_prefix = String(get(cfg, "output_prefix", "chains"))
+    catalog_path = _resolve_catalog_path(cfg.catalog_path, _REPO_ROOT)
+    detectors = [Detector(n) for n in cfg.detectors]
+    output_dir = joinpath(_REPO_ROOT, cfg.output_dir)
+    output_prefix = cfg.output_prefix
 
-    sampler_tbl = _require_table(cfg, "sampler")
-    n_samples = Int(_require(sampler_tbl, "n_samples"))
-    n_adapts = Int(_require(sampler_tbl, "n_adapts"))
-    target_acceptance = Float64(_require(sampler_tbl, "target_acceptance"))
-    ad_backend = String(_require(sampler_tbl, "ad_backend"))
-    cfg_num_chains = Int(get(sampler_tbl, "num_chains", 0))
-
-    num_chains = cfg_num_chains > 0 ? cfg_num_chains : num_threads
-    num_chains == num_threads || throw(ArgumentError(
-        "sampler.num_chains must equal Base.Threads.nthreads() for MCMCThreads() " *
-        "(got num_chains=$num_chains, nthreads()=$num_threads); " *
-        "set num_chains = 0 or match -t / SLURM_CPUS_PER_TASK",
+    cfg_nchains = cfg.sampler.nchains
+    nchains = cfg_nchains > 0 ? cfg_nchains : num_threads
+    nchains == num_threads || throw(ArgumentError(
+        "sampler.nchains must equal Base.Threads.nthreads() for MCMCThreads() " *
+        "(got nchains=$nchains, nthreads()=$num_threads); " *
+        "set nchains = 0 or match -t / SLURM_CPUS_PER_TASK",
     ))
 
     pop = BNSPopulationModel()
     order = full_hyperparameters(C, pop)
     @info "model" cosmology=string(C) order
-    fiducials = _fiducials_from_toml(_require_table(cfg, "fiducials"), order)
-    sample_only = _sample_only_from_toml(cfg)
+    fiducials = _fiducials_namedtuple(cfg, order)
+    sample_only = _resolve_sample_only(cfg, order)
 
-    @info "seeding RNG" seed
-    Random.seed!(seed)
+    @info "seeding RNG" seed = cfg.seed
+    Random.seed!(cfg.seed)
 
     @info "loading catalog" catalog_path detectors=join((d.name for d in detectors), ",")
     loaded = load_catalog(catalog_path)
@@ -219,8 +172,8 @@ function run_mcmc(config_file::String)
         C,
         loaded.metadata.grid,
         detectors,
-        observation_time,
-        local_merger_rate
+        cfg.observation_time,
+        cfg.local_merger_rate
     )
     @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(
         problem.samples.redshift,
@@ -228,13 +181,15 @@ function run_mcmc(config_file::String)
 
     mkpath(output_dir)
     timestamp = format(now(), "yyyymmdd-HHMMSS")
+    config_stem = splitext(basename(config_file))[1]
     det_suffix = join((d.name for d in detectors), ",")
     params_suffix = sample_only === nothing ? "all" : join(sample_only, "-")
-    base = "$(output_prefix)-$(params_suffix)-det=$(det_suffix)-seed$(seed)-$(timestamp)"
+    base = "$(output_prefix)-$(config_stem)-$(params_suffix)-det=$(det_suffix)-seed$(cfg.seed)-$(timestamp)"
     output_jld2 = joinpath(output_dir, "$base.jld2")
+    output_toml = joinpath(output_dir, "$base.toml")
 
-    adtype = _resolve_adtype(ad_backend)
-    @info "starting NUTS" n_adapts n_samples target_acceptance ad_backend sample_only num_chains
+    adtype = _resolve_adtype(cfg.sampler.ad_backend)
+    @info "starting NUTS" nadapts=cfg.sampler.nadapts nsamples=cfg.sampler.nsamples target_acceptance=cfg.sampler.target_acceptance ad_backend=cfg.sampler.ad_backend sample_only nchains
     turing_model = build_turing_model(
         problem,
         C,
@@ -250,18 +205,18 @@ function run_mcmc(config_file::String)
         order = order
     )
     nuts = Turing.NUTS(
-        n_adapts,
-        target_acceptance;
+        cfg.sampler.nadapts,
+        cfg.sampler.target_acceptance;
         metricT = DenseEuclideanMetric,
         adtype = adtype
     )
-    initial_params = fill(InitFromPrior(), num_chains)
+    initial_params = fill(InitFromPrior(), nchains)
     chain = sample(
         conditioned,
         nuts,
         MCMCThreads(),
-        n_samples,
-        num_chains;
+        cfg.sampler.nsamples,
+        nchains;
         progress = true,
         save_state = false,
         chain_type = VNChain,
@@ -271,7 +226,9 @@ function run_mcmc(config_file::String)
 
     @info "writing chain to JLD2" path = output_jld2
     atomic_save_chain(output_jld2, chain)
-    @info "done" output_jld2
+    @info "writing run config to TOML" path = output_toml
+    save_config(cfg, output_toml)
+    @info "done" output_jld2 output_toml
     return output_jld2
 end
 
