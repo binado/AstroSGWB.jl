@@ -31,6 +31,7 @@ begin
                      year_to_second,
                      Ωgw
     using AstroSGWBInference: build_turing_model, condition_turing_model
+    using AstroSGWBInference: MCMCConfig, SamplerConfig, save_config
     using AstroSGWBInference.ChainIO: atomic_save_chain
     using Distributions: Uniform, product_distribution
     using Turing
@@ -232,6 +233,29 @@ begin
     params_suffix = sample_only === nothing ? "all" : join(sample_only, "-")
     base = "$(output_prefix)-$(params_suffix)-det=$(det_suffix)-seed$(seed)-$(timestamp)"
     output_jld2 = joinpath(output_dir, "$base.jld2")
+    output_toml = joinpath(output_dir, "$base.toml")
+
+    # Reproducible record of this run's settings, dumped on a successful run.
+    run_config = MCMCConfig(
+        1,
+        catalog_path,
+        string.(detnames),
+        seed,
+        observation_time,
+        local_merger_rate,
+        SamplerConfig(
+            sampler.n_samples,
+            sampler.n_adapts,
+            sampler.target_acceptance,
+            sampler.ad_backend,
+            sampler.num_chains
+        ),
+        Dict{Symbol, Float64}(k => Float64(v) for (k, v) in pairs(fiducials)),
+        sample_only_tup === nothing ? nothing : collect(Symbol, sample_only_tup),
+        output_dir,
+        output_prefix,
+        chain_input_jld2
+    )
 
     nothing
 end
@@ -352,6 +376,8 @@ begin
     if chain_input_jld2 === nothing && chain != nothing
         @info "writing chain to JLD2" path = output_jld2
         atomic_save_chain(output_jld2, chain)
+        @info "writing run config to TOML" path = output_toml
+        save_config(run_config, output_toml)
         @info "done"
     else
         @info "skipping JLD2 save (chain was loaded from disk)"
