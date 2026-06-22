@@ -55,6 +55,8 @@ end
 
     lps = component_logpdfs(prior, samples)
     @test keys(lps) == keys(prior.dists)
+    @test lps.x ≈ logpdfvec(prior.dists.x, samples.x)
+    @test lps.y ≈ logpdfvec(prior.dists.y, samples.y)
     @test lps.x .+ lps.y ≈ batched_logpdf(prior, samples)
 end
 
@@ -99,6 +101,9 @@ end
     # exactly zero (skipped, never evaluated).
     prior_same = single_event_prior(pop, cosmo, Λ_fid)
     @test prior_same.dists.x === proposal.dists.x
+    @test logpdfdiffvec(
+        pop, Val(:x), prior_same.dists.x, proposal.dists.x,
+        proposal_logprob.x, samples.x) === nothing
     diff_same = logprobdiff(pop, prior_same, proposal, proposal_logprob, samples)
     @test diff_same == zeros(length(samples.x))
 
@@ -112,7 +117,7 @@ end
     @test logprobdiff(pop, prior, proposal, samples) ≈ diff
 end
 
-@testset "logprobdiff per-component override via Val{key}" begin
+@testset "logprobdiff per-component vector override via Val{key}" begin
     pop = SkipYPop()
     cosmo = LambdaCDM(67.0, 0.315)
     Λ_fid = (H0 = 67.0, Ωm = 0.315, α = 0.8, β = 1.8)
@@ -125,6 +130,9 @@ end
 
     # Only the :x component contributes; :y is skipped by the override even though the
     # target and proposal distributions differ.
+    @test logpdfdiffvec(
+        pop, Val(:y), prior.dists.y, proposal.dists.y,
+        proposal_logprob.y, samples.y) === nothing
     diff = logprobdiff(pop, prior, proposal, proposal_logprob, samples)
     x_only = component_logpdfs(prior, samples).x .- proposal_logprob.x
     @test diff ≈ x_only

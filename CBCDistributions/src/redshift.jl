@@ -4,8 +4,9 @@ using Random
 export RedshiftPrior, redshift_integral, redshift_log_prob, merger_rate_per_sec,
        detector_frame_merger_rate_density, expected_number_of_events,
        madau_dickinson_source_frame_distribution,
-       SampleInterpolant, _interpolate_at_sample, _cdf_at_sample,
-       luminosity_distance_at_sample,
+       SampleInterpolant, _interpolate_at_sample, _interpolate_at_samples,
+       _cdf_at_sample, _cdf_at_samples,
+       luminosity_distance_at_sample, luminosity_distance_at_samples,
        build_redshift_prior,
        RedshiftInterpolatedDistribution, _normalized_log_density,
        redshift_logpdf_eltype,
@@ -167,9 +168,9 @@ Per-sample interpolation metadata for proposal redshifts on the fixed redshift
 grid. `bin_idx[i]` is the lower grid cell index for sample `i`; `t[i]` is the
 within-cell fraction.
 """
-struct SampleInterpolant
-    bin_idx::Vector{Int}
-    t::Vector{Float64}
+struct SampleInterpolant{B <: AbstractVector{<:Integer}, T <: AbstractVector{<:Real}}
+    bin_idx::B
+    t::T
 end
 
 """
@@ -218,6 +219,14 @@ end
         t = interp.t[sample_index]
         return y[i] + t * (y[i + 1] - y[i])
     end
+end
+
+function _interpolate_at_samples(y::AbstractVector, interp::SampleInterpolant)
+    b = interp.bin_idx
+    t = interp.t
+    y_lo = y[b]
+    y_hi = y[b .+ 1]
+    return y_lo .+ t .* (y_hi .- y_lo)
 end
 
 @inline function _cdf_at_sample(
@@ -297,6 +306,51 @@ function luminosity_distance_at_sample(
     return (1 + z) * cache.d_h * integral
 end
 
+# Vectorized counterpart of `_cdf_at_sample`: the proposal redshifts are fixed, so the
+# per-sample grid cell (`interp.bin_idx`/`interp.t`) is reused every gradient step. This
+# replaces the scalar-index `map` with gathers (`cumulative[bin_idx]`, `y[bin_idx]`, ...)
+# plus a fused broadcast of `_linear_cell_integral`, with the cell width `dx` derived
+# inline rather than precomputed. The plain gather + broadcast form contains no scalar
+# indexing, so it dispatches unchanged on device arrays.
+function _cdf_at_samples(
+        cumulative::AbstractVector,
+        y::AbstractVector,
+        interp::SampleInterpolant,
+        z_grid::AbstractVector{<:Real}
+)
+    b = interp.bin_idx
+    t = interp.t
+    z_lo = z_grid[b]
+    dx = z_grid[b .+ 1] .- z_lo
+    y_lo = y[b]
+    y_hi = y[b .+ 1]
+    cum = cumulative[b]
+    return _linear_cell_integral.(cum, y_lo, y_hi, dx, t)
+end
+
+"""
+    luminosity_distance_at_samples(cache, interp, z_grid, z_samples) -> AbstractVector
+
+Batched EM luminosity distance for every proposal sample, the vectorized form of
+[`luminosity_distance_at_sample`](@ref). Uses the precomputed per-sample grid cells in
+`interp` so the cumulative cosmology integral is gathered (not re-searched) per evaluation,
+then broadcasts `(1 + z) * d_h * integral`.
+"""
+function luminosity_distance_at_samples(
+        cache::CosmologyCache,
+        interp::SampleInterpolant,
+        z_grid::AbstractVector{<:Real},
+        z_samples::AbstractVector{<:Real}
+)
+    integral = _cdf_at_samples(
+        cache.inv_E_integral.cumulative,
+        cache.inv_E_integral.y,
+        interp,
+        z_grid
+    )
+    return (1 .+ z_samples) .* cache.d_h .* integral
+end
+
 struct RedshiftInterpolatedDistribution{P <: RedshiftPrior} <:
        ContinuousUnivariateDistribution
     prior::P
@@ -320,23 +374,19 @@ end
 # precomputed cell index and within-cell fraction. This skips the per-sample grid
 # search (`searchsortedlast`) that the scalar `logpdf` path repeats every gradient
 # evaluation, and hoists the normalization out of the loop.
-function add_logpdfvec!(
-        out::AbstractVector,
+function logpdfvec(
         d::RedshiftInterpolatedDistribution,
         field::SampleField{<:AbstractVector, <:SampleInterpolant}
 )
     interp = field.meta
-    length(out) == length(interp.bin_idx) ||
+    length(sample_values(field)) == length(interp.bin_idx) ||
         throw(ArgumentError("sample interpolant length must match batch size"))
     prior = d.prior
-    y = prior.dN_dz.y
     norm = redshift_integral(prior)
-    tiny = floatmin(real(eltype(out)))
-    @inbounds for i in eachindex(out)
-        pdf_i = _interpolate_at_sample(y, interp, i)
-        out[i] += _normalized_log_density(pdf_i, norm, tiny)
-    end
-    return out
+    T = promote_type(eltype(prior.dN_dz.y), typeof(norm))
+    tiny = floatmin(real(T))
+    pdf = _interpolate_at_samples(prior.dN_dz.y, interp)
+    return _normalized_log_density.(pdf, norm, tiny)
 end
 
 function Random.rand(rng::AbstractRNG, d::RedshiftInterpolatedDistribution)

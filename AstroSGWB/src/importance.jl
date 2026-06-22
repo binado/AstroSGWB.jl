@@ -5,28 +5,15 @@ using LinearAlgebra
 # `(D_L,fid/D_L,θ)²`, and the modified-propagation factor `(1/Ξ_θ)²`. The raw catalog flux
 # carries `1/D_L,fid²`, so multiplying by `dl_fid_sq / (D_L,θ² · Ξ_θ²)` recovers the
 # physically correct `1/D_gw,θ²` dilution.
-@inline function _importance_weight_at_sample(
-        log_ratio::AbstractVector,
-        dl_fid_sq::AbstractVector{<:Real},
-        z::AbstractVector{<:Real},
-        redshift_grid::AbstractVector{<:Real},
-        interp::SampleInterpolant,
-        cosmology_cache::CosmologyCache,
-        sample_index::Integer
-)
-    d_l = luminosity_distance_at_sample(
-        cosmology_cache, interp, redshift_grid, z, sample_index)
-    Ξ_theta = gw_em_distance_ratio(z[sample_index], cosmology_cache.cosmology)
-    return exp(log_ratio[sample_index]) * dl_fid_sq[sample_index] / (d_l^2 * Ξ_theta^2)
-end
-
 # Shared kernel for both the naive and cached `compute_importance_weights` methods. Inputs
 # are explicit arrays so the only difference between the two backends is where the fiducial
 # caches come from (recomputed vs read from a `ModelContext`) and how `log_ratio` (per-sample
 # `log p_target − log p_proposal`) was produced (`logprobdiff` vs full two-sided
-# `batched_logpdf`). Built with `map` over the index range: this keeps the result type stable
-# (a properly-typed empty vector for n == 0, rather than a `Union` with `Float64[]`) so the
-# AD/`Dual` likelihood path stays inferrable.
+# `batched_logpdf`). Expressed as gathers (inside `luminosity_distance_at_samples`) plus a
+# fused broadcast rather than a scalar-index `map`: this contains no scalar indexing so it
+# dispatches unchanged on device arrays, and broadcast element promotion keeps the result
+# type stable (a properly-typed empty vector for n == 0) so the AD/`Dual` path stays
+# inferrable.
 function _importance_weights_core(
         log_ratio::AbstractVector,
         dl_fid_sq::AbstractVector{<:Real},
@@ -37,10 +24,9 @@ function _importance_weights_core(
 )
     length(z) == length(log_ratio) ||
         throw(ArgumentError("population prior logpdf length must match proposal sample count"))
-    return map(eachindex(z)) do i
-        _importance_weight_at_sample(
-            log_ratio, dl_fid_sq, z, redshift_grid, interp, cosmology_cache, i)
-    end
+    d_l = luminosity_distance_at_samples(cosmology_cache, interp, redshift_grid, z)
+    Ξ = gw_em_distance_ratio(z, cosmology_cache.cosmology)
+    return exp.(log_ratio) .* dl_fid_sq ./ (d_l .^ 2 .* Ξ .^ 2)
 end
 
 """

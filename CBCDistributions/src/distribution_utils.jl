@@ -9,48 +9,51 @@ function _batched_output_eltype(dists)
 end
 
 """
-    add_logpdfvec!(out, d, field) -> out
+    logpdfvec(d, field) -> AbstractVector
 
-Accumulate a component distribution's batched log-density into `out`.
-Implementations own the per-sample loop and add `logpdf(d, sample_i)` to
-`out[i]`. `field` may be a raw batched field or a [`SampleField`](@ref) carrying
-metadata for specialized fast paths.
+Return a component distribution's batched log-density. `field` may be a raw
+batched field or a [`SampleField`](@ref) carrying metadata for specialized fast
+paths.
+
+This is the preferred extension point for backend-friendly batched
+distributions: specialized methods should return a vector using gathers and
+broadcasts instead of scalar mutation where possible. Generic fallbacks may use
+CPU scalar loops for distributions that do not provide a native batched API.
 """
-function add_logpdfvec!(
-        out::AbstractVector,
-        d::UnivariateDistribution,
-        field
-)
+function logpdfvec(d::UnivariateDistribution, field)
     values = sample_values(field)
-    @inbounds for i in eachindex(out, values)
-        out[i] += logpdf(d, values[i])
-    end
+    return [logpdf(d, values[i]) for i in eachindex(values)]
+end
+
+function logpdfvec(d::MultivariateDistribution, field)
+    field_values = sample_values(field)
+    return logpdf(d, field_values)
+end
+
+function logpdfvec(d::SourceMassPairDistribution, field)
+    values = sample_values(field)
+    return [logpdf(d, (values[1, i], values[2, i])) for i in axes(values, 2)]
+end
+
+function _component_logpdfvec(d, field, n::Integer)
+    out = logpdfvec(d, field)
+    length(out) == n ||
+        throw(ArgumentError("component logpdf length must match batch size"))
     return out
 end
 
-function add_logpdfvec!(
-        out::AbstractVector,
-        d::MultivariateDistribution,
-        field
-)
-    field_values = sample_values(field)
-    logpdf_values = logpdf(d, field_values)
+"""
+    add_logpdfvec!(out, d, field) -> out
+
+Compatibility wrapper that accumulates [`logpdfvec`](@ref) into `out`. New
+batched distributions should specialize `logpdfvec` instead.
+"""
+function add_logpdfvec!(out::AbstractVector, d, field)
+    logpdf_values = logpdfvec(d, field)
     length(logpdf_values) == length(out) ||
         throw(ArgumentError("component logpdf length must match output length"))
     @inbounds for i in eachindex(out, logpdf_values)
         out[i] += logpdf_values[i]
-    end
-    return out
-end
-
-function add_logpdfvec!(
-        out::AbstractVector,
-        d::SourceMassPairDistribution,
-        field
-)
-    values = sample_values(field)
-    @inbounds for i in eachindex(out)
-        out[i] += logpdf(d, (values[1, i], values[2, i]))
     end
     return out
 end
@@ -68,12 +71,12 @@ function batched_logpdf(
         samples::NamedTuple
 )
     n = validate_samples(d, samples)
-    T = _batched_output_eltype(d.dists)
-    out = zeros(T, n)
-    for key in keys(d.dists)
-        add_logpdfvec!(out, d.dists[key], samples[key])
+    ks = keys(d.dists)
+    isempty(ks) && return zeros(_batched_output_eltype(d.dists), n)
+    vals = map(ks) do key
+        _component_logpdfvec(d.dists[key], samples[key], n)
     end
-    return out
+    return reduce((a, b) -> a .+ b, vals)
 end
 
 """
@@ -100,22 +103,21 @@ function component_logpdfs(
     ks = keys(d.dists)
     n = validate_samples(d, samples)
     vals = map(ks) do key
-        dk = d.dists[key]
-        out = zeros(_batched_output_eltype((dk,)), n)
-        add_logpdfvec!(out, dk, samples[key])
+        _component_logpdfvec(d.dists[key], samples[key], n)
     end
     return NamedTuple{ks}(vals)
 end
 
 """
-    logprobdiff!(out, model, ::Val{key}, d_target, d_proposal, proposal_logprob, x)
+    logpdfdiffvec(model, ::Val{key}, d_target, d_proposal, proposal_logprob, x)
 
-Accumulate into `out` the per-sample log-density difference
-`logpdf(d_target, xᵢ) − proposal_logprob[i]` for one component `key` of the
-single-event prior. This is the per-component extension point of
-[`logprobdiff`](@ref): overload it on a concrete `PopulationModel` (and `Val{key}`
-or a distribution type) when the difference has a cheaper form than the generic
-two-sided evaluation.
+Return the per-sample log-density difference
+`logpdf(d_target, xᵢ) - proposal_logprob[i]` for one component `key` of the
+single-event prior, or `nothing` when the component cancels exactly and should be
+skipped. This is the per-component extension point of [`logprobdiff`](@ref):
+overload it on a concrete `PopulationModel` (and `Val{key}` or a distribution
+type) when the difference has a cheaper form than the generic two-sided
+evaluation.
 
 The default skips the component entirely when `d_target === d_proposal` and every
 cached proposal log-density is finite: egal distributions have identical
@@ -129,6 +131,33 @@ redshift prior) never compare egal and are computed. Overloads that skip a
 component bake in an exactness assumption owned by the population model; keep
 them in sync with `single_event_prior`.
 """
+function logpdfdiffvec(
+        model::PopulationModel,
+        ::Val{key},
+        d_target,
+        d_proposal,
+        proposal_logprob::AbstractVector{<:Real},
+        x
+) where {key}
+    if d_target === d_proposal && all(isfinite, proposal_logprob)
+        return nothing
+    end
+    target_logprob = logpdfvec(d_target, x)
+    length(proposal_logprob) == length(target_logprob) || throw(
+        ArgumentError(
+        "proposal logpdf length must match batch size for population prior field $(repr(key))",
+    ),
+    )
+    return target_logprob .- proposal_logprob
+end
+
+"""
+    logprobdiff!(out, model, ::Val{key}, d_target, d_proposal, proposal_logprob, x)
+
+Compatibility wrapper that accumulates [`logpdfdiffvec`](@ref) into `out`. New
+population-model customizations should specialize `logpdfdiffvec` and return
+`nothing` for exact component skips.
+"""
 function logprobdiff!(
         out::AbstractVector,
         model::PopulationModel,
@@ -138,17 +167,15 @@ function logprobdiff!(
         proposal_logprob::AbstractVector{<:Real},
         x
 ) where {key}
-    if d_target === d_proposal && all(isfinite, proposal_logprob)
-        return out
-    end
-    length(proposal_logprob) == length(out) || throw(
-        ArgumentError(
-        "proposal logpdf length must match batch size for population prior field $(repr(key))",
-    ),
-    )
-    add_logpdfvec!(out, d_target, x)
-    @inbounds for i in eachindex(out, proposal_logprob)
-        out[i] -= proposal_logprob[i]
+    diff = logpdfdiffvec(
+        model, Val(key), d_target, d_proposal, proposal_logprob, x)
+    diff === nothing && return out
+    length(diff) == length(out) ||
+        throw(ArgumentError(
+            "component logpdf difference length must match output length for population prior field $(repr(key))",
+        ))
+    @inbounds for i in eachindex(out, diff)
+        out[i] += diff[i]
     end
     return out
 end
@@ -160,7 +187,7 @@ Per-sample log-density ratio `log p_target - log p_proposal` between the target
 single-event `prior` (built at live hyperparameters `Λ`) and the fiducial `proposal`,
 with the proposal's per-component log-densities supplied precomputed in
 `proposal_logprob` (see [`component_logpdfs`](@ref)). Components are accumulated via
-[`logprobdiff!`](@ref), so egal components (identical between target and proposal,
+[`logpdfdiffvec`](@ref), so egal components (identical between target and proposal,
 i.e. `Λ`-independent) are skipped exactly, and population models can overload the
 per-component method for custom cancellations.
 """
@@ -177,14 +204,19 @@ function logprobdiff(
     keys(proposal_logprob) == ks ||
         throw(ArgumentError("proposal logpdf fields must match target prior fields $(ks)"))
     n = validate_samples(prior, samples)
-    T = _batched_output_eltype(prior.dists)
-    out = zeros(T, n)
-    for key in ks
-        logprobdiff!(
-            out, model, Val(key), prior.dists[key], proposal.dists[key],
+    diffs = map(ks) do key
+        logpdfdiffvec(
+            model, Val(key), prior.dists[key], proposal.dists[key],
             proposal_logprob[key], samples[key])
     end
-    return out
+    kept = filter(!isnothing, diffs)
+    isempty(kept) && return _zero_logpdfdiff(proposal_logprob, n, prior.dists)
+    return reduce((a, b) -> a .+ b, kept)
+end
+
+function _zero_logpdfdiff(proposal_logprob::NamedTuple, n::Integer, dists)
+    isempty(proposal_logprob) && return zeros(_batched_output_eltype(dists), n)
+    return zero.(first(values(proposal_logprob)))
 end
 
 """
