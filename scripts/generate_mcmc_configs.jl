@@ -22,7 +22,11 @@ const DETECTOR_NETWORKS = (
 
 const SAMPLE_ONLY_SETS = (
     "H0" => [:H0],
-    "modified-propagation" => [:Ξ₀, :Ξₙ]
+    "Omega_m" => [:H0, :Ωm],
+    "w0" => [:H0, :w0],
+    "modified-propagation" => [:Ξ₀, :Ξₙ],
+    "H0-MD" => [:H0, :γ, :κ, :zpeak],
+    "Xi_0-MD" => [:Ξ₀, :γ, :κ, :zpeak]
 )
 
 const BASE_SAMPLER = SamplerConfig(
