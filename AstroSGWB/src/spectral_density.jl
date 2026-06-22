@@ -73,36 +73,30 @@ function _spectral_density_forwarddiff(
         rate_partials::NTuple{N, V},
         weights::AbstractVector{<:ForwardDiff.Dual{Tag, V, N}}
 ) where {Tag, V, N}
-    nfreq, nsamples = size(fluxes)
+    nsamples = size(fluxes, 2)
     length(weights) == nsamples ||
         throw(DimensionMismatch("weight length must match flux sample dimension"))
 
     # Pack value + partials into one contiguous `(nsamples, N+1)` buffer so a single
     # gemm `fluxes * weight_block` yields the primal sum (column 1) and every partial
-    # sum (columns 2:N+1) at once, instead of a separate gemv + gemm.
-    weight_block = Matrix{V}(undef, nsamples, N + 1)
-    @inbounds for i in 1:nsamples
-        w = weights[i]
-        weight_block[i, 1] = ForwardDiff.value(w)
-        p = ForwardDiff.partials(w)
-        for j in 1:N
-            weight_block[i, j + 1] = p[j]
-        end
-    end
+    # sum (columns 2:N+1) at once, instead of a separate gemv + gemm. Built with
+    # broadcasts + `hcat` (no scalar indexing) so the pack, gemm, and recombine all
+    # dispatch unchanged on device arrays.
+    val = ForwardDiff.value.(weights)
+    pvecs = ForwardDiff.partials.(weights)
+    parts = ntuple(j -> getindex.(pvecs, j), Val(N))
+    weight_block = hcat(val, parts...)
 
     sums = fluxes * weight_block
     scale = V(0.4) / V(nsamples)
-    out = Vector{ForwardDiff.Dual{Tag, V, N}}(undef, nfreq)
-    @inbounds for i in 1:nfreq
-        primal_sum = sums[i, 1]
-        value = scale * rate_value * primal_sum
-        partials = ntuple(
-            j -> scale * (rate_partials[j] * primal_sum + rate_value * sums[i, j + 1]),
-            Val(N)
-        )
-        out[i] = ForwardDiff.Dual{Tag, V, N}(value, ForwardDiff.Partials(partials))
-    end
-    return out
+    primal = @view sums[:, 1]
+    value = scale .* rate_value .* primal
+    pcols = ntuple(
+        j -> scale .* (rate_partials[j] .* primal .+ rate_value .* @view(sums[:, j + 1])),
+        Val(N)
+    )
+    make_dual(v, p::Vararg{V, N}) = ForwardDiff.Dual{Tag, V, N}(v, ForwardDiff.Partials(p))
+    return make_dual.(value, pcols...)
 end
 
 """
