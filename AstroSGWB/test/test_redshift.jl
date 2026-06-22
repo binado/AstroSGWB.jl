@@ -1,4 +1,5 @@
 using Test
+using Distributions: logpdf
 using CBCDistributions
 using AstroSGWB
 
@@ -58,6 +59,12 @@ end
            for
            i in eachindex(samples)] ≈
           [interpolate(redshift_prior_dist.dN_dz, z) for z in samples]
+    @test _interpolate_at_samples(redshift_prior_dist.dN_dz.y, interp) ≈
+          [_interpolate_at_sample(redshift_prior_dist.dN_dz.y, interp, i)
+           for i in eachindex(samples)]
+    redshift_dist = RedshiftInterpolatedDistribution(redshift_prior_dist)
+    @test logpdfvec(redshift_dist, SampleField(samples, interp)) ≈
+          [logpdf(redshift_dist, z) for z in samples]
     @test [_cdf_at_sample(
                cosmology_cache.inv_E_integral.cumulative,
                cosmology_cache.inv_E_integral.y,

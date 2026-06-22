@@ -4,7 +4,8 @@ using Random
 export RedshiftPrior, redshift_integral, redshift_log_prob, merger_rate_per_sec,
        detector_frame_merger_rate_density, expected_number_of_events,
        madau_dickinson_source_frame_distribution,
-       SampleInterpolant, _interpolate_at_sample, _cdf_at_sample, _cdf_at_samples,
+       SampleInterpolant, _interpolate_at_sample, _interpolate_at_samples,
+       _cdf_at_sample, _cdf_at_samples,
        luminosity_distance_at_sample, luminosity_distance_at_samples,
        build_redshift_prior,
        RedshiftInterpolatedDistribution, _normalized_log_density,
@@ -220,6 +221,14 @@ end
     end
 end
 
+function _interpolate_at_samples(y::AbstractVector, interp::SampleInterpolant)
+    b = interp.bin_idx
+    t = interp.t
+    y_lo = y[b]
+    y_hi = y[b .+ 1]
+    return y_lo .+ t .* (y_hi .- y_lo)
+end
+
 @inline function _cdf_at_sample(
         cumulative::AbstractVector,
         y::AbstractVector,
@@ -365,23 +374,19 @@ end
 # precomputed cell index and within-cell fraction. This skips the per-sample grid
 # search (`searchsortedlast`) that the scalar `logpdf` path repeats every gradient
 # evaluation, and hoists the normalization out of the loop.
-function add_logpdfvec!(
-        out::AbstractVector,
+function logpdfvec(
         d::RedshiftInterpolatedDistribution,
         field::SampleField{<:AbstractVector, <:SampleInterpolant}
 )
     interp = field.meta
-    length(out) == length(interp.bin_idx) ||
+    length(sample_values(field)) == length(interp.bin_idx) ||
         throw(ArgumentError("sample interpolant length must match batch size"))
     prior = d.prior
-    y = prior.dN_dz.y
     norm = redshift_integral(prior)
-    tiny = floatmin(real(eltype(out)))
-    @inbounds for i in eachindex(out)
-        pdf_i = _interpolate_at_sample(y, interp, i)
-        out[i] += _normalized_log_density(pdf_i, norm, tiny)
-    end
-    return out
+    T = promote_type(eltype(prior.dN_dz.y), typeof(norm))
+    tiny = floatmin(real(T))
+    pdf = _interpolate_at_samples(prior.dN_dz.y, interp)
+    return _normalized_log_density.(pdf, norm, tiny)
 end
 
 function Random.rand(rng::AbstractRNG, d::RedshiftInterpolatedDistribution)

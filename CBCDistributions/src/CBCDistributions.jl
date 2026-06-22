@@ -11,6 +11,7 @@ export PopulationModel, single_event_prior,
        full_hyperparameters,
        canonical_hyperparameters, validate_hyperparameters,
        SampleField, sample_values, sample_meta,
+       logpdfvec, logpdfdiffvec,
        add_logpdfvec!, batched_logpdf, component_logpdfs, logprobdiff, logprobdiff!
 export CumulativeIntegral1D, interpolate, cdf, normalizer
 export stack_source_masses, validate_samples

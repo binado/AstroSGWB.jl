@@ -5,8 +5,8 @@
     SampleField(values, meta=nothing)
 
 Wrapper for a batched sample field and optional per-field metadata. The
-`add_logpdfvec!` batching contract evaluates `values`; specialized distributions
-may use `meta` for precomputed state tied to those fixed sample locations.
+`logpdfvec` batching contract evaluates `values`; specialized distributions may
+use `meta` for precomputed state tied to those fixed sample locations.
 """
 struct SampleField{V, M}
     values::V
