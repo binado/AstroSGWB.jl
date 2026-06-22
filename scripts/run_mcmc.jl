@@ -181,9 +181,10 @@ function run_mcmc(config_file::String)
 
     mkpath(output_dir)
     timestamp = format(now(), "yyyymmdd-HHMMSS")
+    config_stem = splitext(basename(config_file))[1]
     det_suffix = join((d.name for d in detectors), ",")
     params_suffix = sample_only === nothing ? "all" : join(sample_only, "-")
-    base = "$(output_prefix)-$(params_suffix)-det=$(det_suffix)-seed$(cfg.seed)-$(timestamp)"
+    base = "$(output_prefix)-$(config_stem)-$(params_suffix)-det=$(det_suffix)-seed$(cfg.seed)-$(timestamp)"
     output_jld2 = joinpath(output_dir, "$base.jld2")
     output_toml = joinpath(output_dir, "$base.toml")
 
