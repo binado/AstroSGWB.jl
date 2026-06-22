@@ -3,7 +3,7 @@
 # Cosmology family and population are fixed in the script
 # (ModifiedPropagation{W0CDM} + BNSPopulationModel).
 
-version = 1
+version = 2
 
 # Catalog path is relative to the repo root unless absolute.
 catalog_path = "catalog.h5"
@@ -21,11 +21,11 @@ output_dir = "chains"
 output_prefix = "chains"
 
 [sampler]
-n_samples = 3000
-n_adapts = 3000
+nsamples = 3000
+nadapts = 3000
 target_acceptance = 0.9
 ad_backend = "ForwardDiff"
-num_chains = 0               # 0 -> use Base.Threads.nthreads(); if set, must match nthreads()
+nchains = 0                 # 0 -> use Base.Threads.nthreads(); if set, must match nthreads()
 
 # Fiducial point (also the importance-sampling reference). Keys are the canonical
 # Unicode hyperparameter names; non-ASCII keys must be quoted (TOML requirement).

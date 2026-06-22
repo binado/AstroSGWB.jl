@@ -119,7 +119,7 @@ end
 md"""
 ## Configuration
 
-Edit runtime settings here: `catalog_path`, detectors, observation time, merger rate, fiducials, `hyperprior_dists` / `hyperprior`, sampler (`n_samples`, `n_adapts`, `ad_backend`, `num_chains`), output paths, `chain_input_jld2`, and `DEBUG`.
+Edit runtime settings here: `catalog_path`, detectors, observation time, merger rate, fiducials, `hyperprior_dists` / `hyperprior`, sampler (`nsamples`, `nadapts`, `ad_backend`, `nchains`), output paths, `chain_input_jld2`, and `DEBUG`.
 """
 
 # ╔═╡ c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f
@@ -155,11 +155,11 @@ begin
     output_prefix = "chains"
 
     sampler = (
-        n_samples = 3000,
-        n_adapts = 3000,
+        nsamples = 3000,
+        nadapts = 3000,
         target_acceptance = 0.9,
         ad_backend = "ForwardDiff",
-        num_chains = 0
+        nchains = 0
     )
 
     cosmology_parameters = (;
@@ -195,13 +195,13 @@ begin
 
     chain_input_jld2 = nothing
 
-    num_chains = sampler.num_chains > 0 ? sampler.num_chains : num_threads
+    nchains = sampler.nchains > 0 ? sampler.nchains : num_threads
 end
 
 # ╔═╡ 3d7e6f5a-8c9b-4e0d-1f4a-5b6c7d8e9f0a
 begin
-    if num_chains != num_threads
-        @warn "num_chains differs from Base.Threads.nthreads()" num_chains num_threads
+    if nchains != num_threads
+        @warn "nchains differs from Base.Threads.nthreads()" nchains num_threads
     end
 
     @info "loading catalog" catalog_path detectors = join((d.name for d in detectors), ",")
@@ -244,11 +244,11 @@ begin
         observation_time,
         local_merger_rate,
         SamplerConfig(
-            sampler.n_samples,
-            sampler.n_adapts,
+            sampler.nsamples,
+            sampler.nadapts,
             sampler.target_acceptance,
             sampler.ad_backend,
-            sampler.num_chains
+            sampler.nchains
         ),
         Dict{Symbol, Float64}(k => Float64(v) for (k, v) in pairs(fiducials)),
         sample_only_tup === nothing ? nothing : collect(Symbol, sample_only_tup),
@@ -320,10 +320,10 @@ begin
         chain = load(chain_path)["chain"]
         @info "chain loaded" chain_size = size(chain)
     else
-        initial_params = fill(InitFromPrior(), num_chains)
+        initial_params = fill(InitFromPrior(), nchains)
         adtype = resolve_adtype(sampler.ad_backend)
 
-        @info "starting NUTS" n_adapts=sampler.n_adapts n_samples=sampler.n_samples target_acceptance=sampler.target_acceptance ad_backend=sampler.ad_backend sample_only=sample_only_tup
+        @info "starting NUTS" nadapts=sampler.nadapts nsamples=sampler.nsamples target_acceptance=sampler.target_acceptance ad_backend=sampler.ad_backend sample_only=sample_only_tup
         turing_model = build_turing_model(
             problem,
             C,
@@ -339,7 +339,7 @@ begin
             order = order
         )
         nuts = Turing.NUTS(
-            sampler.n_adapts,
+            sampler.nadapts,
             sampler.target_acceptance;
             metricT = AdvancedHMC.DenseEuclideanMetric,
             adtype = adtype
@@ -352,8 +352,8 @@ begin
                 conditioned,
                 nuts,
                 MCMCThreads(),
-                sampler.n_samples,
-                num_chains;
+                sampler.nsamples,
+                nchains;
                 progress = true,
                 save_state = false,
                 chain_type = VNChain,

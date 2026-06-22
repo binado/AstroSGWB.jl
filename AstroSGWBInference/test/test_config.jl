@@ -15,7 +15,7 @@ function example_config(; sample_only = [:H0])
         :zpeak => 2.0
     )
     return MCMCConfig(
-        1,
+        2,
         "catalog.h5",
         ["S1", "R1", "C1"],
         42,
@@ -33,7 +33,7 @@ end
 # validating constructor directly.
 function example_dict()
     return Dict{String, Any}(
-        "version" => 1,
+        "version" => 2,
         "catalog_path" => "catalog.h5",
         "detectors" => ["S1", "R1", "C1"],
         "seed" => 42,
@@ -43,11 +43,11 @@ function example_dict()
         "output_dir" => "chains",
         "output_prefix" => "chains",
         "sampler" => Dict{String, Any}(
-            "n_samples" => 3000,
-            "n_adapts" => 3000,
+            "nsamples" => 3000,
+            "nadapts" => 3000,
             "target_acceptance" => 0.9,
             "ad_backend" => "ForwardDiff",
-            "num_chains" => 0
+            "nchains" => 0
         ),
         "fiducials" => Dict{String, Any}(
             "H0" => 67.66,
@@ -126,7 +126,7 @@ end
 
 @testset "validation failures throw" begin
     bad_version = example_dict()
-    bad_version["version"] = 2
+    bad_version["version"] = 3
     @test_throws ArgumentError MCMCConfig(bad_version)
 
     bad_backend = example_dict()

@@ -5,7 +5,7 @@ using TOML
 export MCMCConfig, SamplerConfig, load_config, save_config, validate_fiducials
 
 """Current config schema version. Bump on any breaking layout change."""
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 """AD backends the notebook knows how to resolve (mirrors `resolve_adtype`)."""
 const SUPPORTED_AD_BACKENDS = ("ForwardDiff",)
@@ -13,16 +13,16 @@ const SUPPORTED_AD_BACKENDS = ("ForwardDiff",)
 """
     SamplerConfig
 
-NUTS sampler options for a run. `num_chains == 0` means "resolve to
+NUTS sampler options for a run. `nchains == 0` means "resolve to
 `Base.Threads.nthreads()` at run time" — the resolution stays the caller's job
 so the config records intent verbatim.
 """
 struct SamplerConfig
-    n_samples::Int
-    n_adapts::Int
+    nsamples::Int
+    nadapts::Int
     target_acceptance::Float64
     ad_backend::String
-    num_chains::Int
+    nchains::Int
 end
 
 """
@@ -81,11 +81,11 @@ end
 Build and validate a `SamplerConfig` from a `[sampler]` sub-table.
 """
 function SamplerConfig(d::AbstractDict)
-    n_samples = Int(d["n_samples"])
-    n_adapts = Int(d["n_adapts"])
+    nsamples = Int(d["nsamples"])
+    nadapts = Int(d["nadapts"])
     target_acceptance = Float64(d["target_acceptance"])
     ad_backend = String(d["ad_backend"])
-    num_chains = Int(d["num_chains"])
+    nchains = Int(d["nchains"])
 
     ad_backend in SUPPORTED_AD_BACKENDS || throw(ArgumentError(
         "unsupported ad_backend $(repr(ad_backend)); supported: $(SUPPORTED_AD_BACKENDS)",
@@ -93,11 +93,11 @@ function SamplerConfig(d::AbstractDict)
     0 < target_acceptance < 1 || throw(ArgumentError(
         "target_acceptance must be in (0, 1); got $target_acceptance",
     ))
-    n_samples ≥ 0 || throw(ArgumentError("n_samples must be ≥ 0; got $n_samples"))
-    n_adapts ≥ 0 || throw(ArgumentError("n_adapts must be ≥ 0; got $n_adapts"))
-    num_chains ≥ 0 || throw(ArgumentError("num_chains must be ≥ 0; got $num_chains"))
+    nsamples ≥ 0 || throw(ArgumentError("nsamples must be ≥ 0; got $nsamples"))
+    nadapts ≥ 0 || throw(ArgumentError("nadapts must be ≥ 0; got $nadapts"))
+    nchains ≥ 0 || throw(ArgumentError("nchains must be ≥ 0; got $nchains"))
 
-    return SamplerConfig(n_samples, n_adapts, target_acceptance, ad_backend, num_chains)
+    return SamplerConfig(nsamples, nadapts, target_acceptance, ad_backend, nchains)
 end
 
 """
@@ -169,11 +169,11 @@ function save_config(cfg::MCMCConfig, path::AbstractString)
         "output_dir" => cfg.output_dir,
         "output_prefix" => cfg.output_prefix,
         "sampler" => Dict{String, Any}(
-            "n_samples" => cfg.sampler.n_samples,
-            "n_adapts" => cfg.sampler.n_adapts,
+            "nsamples" => cfg.sampler.nsamples,
+            "nadapts" => cfg.sampler.nadapts,
             "target_acceptance" => cfg.sampler.target_acceptance,
             "ad_backend" => cfg.sampler.ad_backend,
-            "num_chains" => cfg.sampler.num_chains
+            "nchains" => cfg.sampler.nchains
         ),
         "fiducials" => Dict{String, Any}(String(k) => v for (k, v) in cfg.fiducials)
     )

@@ -145,12 +145,12 @@ function run_mcmc(config_file::String)
     output_dir = joinpath(_REPO_ROOT, cfg.output_dir)
     output_prefix = cfg.output_prefix
 
-    cfg_num_chains = cfg.sampler.num_chains
-    num_chains = cfg_num_chains > 0 ? cfg_num_chains : num_threads
-    num_chains == num_threads || throw(ArgumentError(
-        "sampler.num_chains must equal Base.Threads.nthreads() for MCMCThreads() " *
-        "(got num_chains=$num_chains, nthreads()=$num_threads); " *
-        "set num_chains = 0 or match -t / SLURM_CPUS_PER_TASK",
+    cfg_nchains = cfg.sampler.nchains
+    nchains = cfg_nchains > 0 ? cfg_nchains : num_threads
+    nchains == num_threads || throw(ArgumentError(
+        "sampler.nchains must equal Base.Threads.nthreads() for MCMCThreads() " *
+        "(got nchains=$nchains, nthreads()=$num_threads); " *
+        "set nchains = 0 or match -t / SLURM_CPUS_PER_TASK",
     ))
 
     pop = BNSPopulationModel()
@@ -188,7 +188,7 @@ function run_mcmc(config_file::String)
     output_toml = joinpath(output_dir, "$base.toml")
 
     adtype = _resolve_adtype(cfg.sampler.ad_backend)
-    @info "starting NUTS" n_adapts=cfg.sampler.n_adapts n_samples=cfg.sampler.n_samples target_acceptance=cfg.sampler.target_acceptance ad_backend=cfg.sampler.ad_backend sample_only num_chains
+    @info "starting NUTS" nadapts=cfg.sampler.nadapts nsamples=cfg.sampler.nsamples target_acceptance=cfg.sampler.target_acceptance ad_backend=cfg.sampler.ad_backend sample_only nchains
     turing_model = build_turing_model(
         problem,
         C,
@@ -204,18 +204,18 @@ function run_mcmc(config_file::String)
         order = order
     )
     nuts = Turing.NUTS(
-        cfg.sampler.n_adapts,
+        cfg.sampler.nadapts,
         cfg.sampler.target_acceptance;
         metricT = DenseEuclideanMetric,
         adtype = adtype
     )
-    initial_params = fill(InitFromPrior(), num_chains)
+    initial_params = fill(InitFromPrior(), nchains)
     chain = sample(
         conditioned,
         nuts,
         MCMCThreads(),
-        cfg.sampler.n_samples,
-        num_chains;
+        cfg.sampler.nsamples,
+        nchains;
         progress = true,
         save_state = false,
         chain_type = VNChain,
