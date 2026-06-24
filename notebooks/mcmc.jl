@@ -189,8 +189,10 @@ begin
     )
     hyperprior = product_distribution(hyperprior_dists)
 
-    # Defining cosmology and population model
-    C = ModifiedPropagation{W0CDM}
+    # Defining cosmology, propagation, and population model. Background expansion `C`
+    # and GW propagation `P` are orthogonal axes (use `GR` for standard propagation).
+    C = W0CDM
+    P = ModifiedPropagation
     pop = BNSPopulationModel()
 
     chain_input_jld2 = nothing
@@ -219,7 +221,7 @@ begin
         observation_time,
         local_merger_rate
     )
-    order = full_hyperparameters(C, pop)
+    order = full_hyperparameters(C, P, pop)
     @info order
     sample_only_tup = sample_only === nothing ? nothing : Tuple(sample_only)
 
@@ -267,8 +269,8 @@ In the cells below, we plot ``\Omega_{\mathrm{GW}}(f)`` as a function of the fre
 """
 
 # ╔═╡ d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a
-function plot_fiducial_omega_gw(problem, C, fiducials, ctx)
-    weights0 = compute_importance_weights(problem, C, fiducials, ctx)
+function plot_fiducial_omega_gw(problem, C, P, fiducials, ctx)
+    weights0 = compute_importance_weights(problem, C, P, fiducials, ctx)
     rate0 = merger_rate(problem, C, fiducials, ctx)
     Sh0 = spectral_density(problem.fluxes, rate0; weights = weights0)
     f = ctx.observation.frequencies
@@ -302,7 +304,7 @@ function plot_fiducial_omega_gw(problem, C, fiducials, ctx)
 end
 
 # ╔═╡ 5f9a8b7c-0e1d-4a2f-3b6c-7d8e9f0a1b2c
-plot_fiducial_omega_gw(problem, C, fiducials, ctx)
+plot_fiducial_omega_gw(problem, C, P, fiducials, ctx)
 
 # ╔═╡ ccf43d43-7f31-41e9-85db-12842561973c
 md"""
@@ -327,6 +329,7 @@ begin
         turing_model = build_turing_model(
             problem,
             C,
+            P,
             ctx,
             hyperprior;
             track = false

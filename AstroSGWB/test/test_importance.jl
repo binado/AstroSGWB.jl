@@ -8,9 +8,10 @@ if !@isdefined parity_catalog_dir
 end
 include(joinpath(@__DIR__, "parity_fixtures.jl"))
 
-const _IMP_C = ModifiedPropagation{LambdaCDM}
+const _IMP_C = LambdaCDM
+const _IMP_P = ModifiedPropagation
 const _IMP_POP = ParityBNSPopulation()
-const _IMP_ORDER = full_hyperparameters(_IMP_C, _IMP_POP)
+const _IMP_ORDER = full_hyperparameters(_IMP_C, _IMP_P, _IMP_POP)
 
 # Construct a problem + ModelContext directly (no catalog/detectors) for type/edge tests.
 function _importance_type_test_fixture(n::Integer)
@@ -43,11 +44,13 @@ end
 
 @testset "importance smoke and naive/cached parity" begin
     loaded = parity_problem_context(:posterior, [Detector("H1"), Detector("L1")])
-    problem, C, ctx = loaded.problem, loaded.cosmology_type, loaded.ctx
+    problem, C, P,
+    ctx = loaded.problem, loaded.cosmology_type,
+    loaded.propagation_type, loaded.ctx
     theta = PARITY_THETA
 
-    weights_cached = compute_importance_weights(problem, C, theta, ctx)
-    weights_naive = compute_importance_weights(problem, C, theta)
+    weights_cached = compute_importance_weights(problem, C, P, theta, ctx)
+    weights_naive = compute_importance_weights(problem, C, P, theta)
     @test length(weights_cached) == length(problem.samples.redshift)
     @test all(isfinite, weights_cached)
     @test weights_cached ≈ weights_naive   # R2 parity oracle
@@ -68,10 +71,10 @@ end
     @test Sh_cached ≈ Sh_naive
 
     Λ_fid = fiducial_hyperparameters(problem)
-    weights_fid = compute_importance_weights(problem, C, Λ_fid, ctx)
+    weights_fid = compute_importance_weights(problem, C, P, Λ_fid, ctx)
     rate_fid_ctx = merger_rate(problem, C, Λ_fid, ctx)
     Sh_fid = spectral_density(problem.fluxes, rate_fid_ctx; weights = weights_fid)
-    @test fiducial_spectral_density(problem, C, ctx) ≈ Sh_fid
+    @test fiducial_spectral_density(problem, C, P, ctx) ≈ Sh_fid
 
     rate_fid = merger_rate(
         ctx.proposal_prior,
@@ -98,9 +101,10 @@ end
     empty_problem, empty_ctx, _ = _importance_type_test_fixture(0)
     populated_problem, populated_ctx, _ = _importance_type_test_fixture(1)
 
-    empty_weights = compute_importance_weights(empty_problem, _IMP_C, theta, empty_ctx)
+    empty_weights = compute_importance_weights(
+        empty_problem, _IMP_C, _IMP_P, theta, empty_ctx)
     populated_weights = compute_importance_weights(
-        populated_problem, _IMP_C, theta, populated_ctx)
+        populated_problem, _IMP_C, _IMP_P, theta, populated_ctx)
 
     @test isempty(empty_weights)
     @test all(isfinite, populated_weights)
@@ -110,6 +114,7 @@ end
 @testset "fiducial observed spectrum applies modified-propagation weights" begin
     loaded = parity_problem_context(:importance_context, [Detector("H1"), Detector("L1")])
     C = loaded.cosmology_type
+    P = loaded.propagation_type
     problem = loaded.problem
     Λ_fid = merge(fiducial_hyperparameters(problem), (Ξ₀ = 1.2,))
     problem = ImportanceSamplingProblem(
@@ -117,7 +122,7 @@ end
     grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
     ctx = build_model_context(
         problem, C, grid, [Detector("H1"), Detector("L1")], 1.0, 161.0)
-    Sh_fid = fiducial_spectral_density(problem, C, ctx)
+    Sh_fid = fiducial_spectral_density(problem, C, P, ctx)
     rate_fid = merger_rate(
         ctx.proposal_prior,
         ctx.local_merger_rate,

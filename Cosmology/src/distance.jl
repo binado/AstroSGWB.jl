@@ -65,20 +65,20 @@ function differential_comoving_volume(z::Real, c::AbstractCosmology, dist::Cumul
 end
 
 """
-    gw_em_distance_ratio(z, c) -> Real
+    gw_em_distance_ratio(z, prop) -> Real
 
 Ratio `Ξ(z) = D_gw / D_L` between the gravitational-wave and electromagnetic luminosity
-distances at redshift `z`. Standard FLRW cosmologies recover GR (`Ξ ≡ 1`); a
-[`ModifiedPropagation`](@ref) applies the `(Ξ₀, Ξₙ)` factor
+distances at redshift `z`. [`GR`](@ref) recovers `Ξ ≡ 1`; a [`ModifiedPropagation`](@ref)
+applies the `(Ξ₀, Ξₙ)` factor
 
 ``\\Xi(z) = \\Xi_0 + (1 - \\Xi_0) / (1 + z)^{\\Xi_n}``.
 
 This is the single source of truth for the propagation factor; `gravitational_wave_distance`
-is `gw_em_distance_ratio(z, c) * D_L`.
+is `gw_em_distance_ratio(z, prop) * D_L`.
 """
 gw_em_distance_ratio(z::Real, Ξ₀::Real, Ξₙ::Real) = Ξ₀ + (1 - Ξ₀) / (1 + z)^Ξₙ
-gw_em_distance_ratio(z::Real, ::AbstractCosmology) = one(z)
-gw_em_distance_ratio(z::Real, c::ModifiedPropagation) = gw_em_distance_ratio(z, c.Ξ₀, c.Ξₙ)
+gw_em_distance_ratio(z::Real, ::GR) = one(z)
+gw_em_distance_ratio(z::Real, p::ModifiedPropagation) = gw_em_distance_ratio(z, p.Ξ₀, p.Ξₙ)
 
 function gravitational_wave_distance(
         z::Real,
@@ -90,12 +90,12 @@ function gravitational_wave_distance(
 end
 
 # GW luminosity distance from a precomputed EM luminosity distance `d_l`. The propagation
-# dispatch lives entirely in `gw_em_distance_ratio` (1 for standard cosmologies, the
-# (Ξ₀, Ξₙ) factor for `ModifiedPropagation`), so this is just `Ξ(z) * d_l`.
-function gravitational_wave_distance(z::Real, d_l::Real, c::AbstractCosmology)
-    gw_em_distance_ratio(z, c) * d_l
+# dispatch lives entirely in `gw_em_distance_ratio` (1 for `GR`, the (Ξ₀, Ξₙ) factor for
+# `ModifiedPropagation`), so this is just `Ξ(z) * d_l`.
+function gravitational_wave_distance(z::Real, d_l::Real, prop::AbstractPropagation)
+    gw_em_distance_ratio(z, prop) * d_l
 end
 
-function gravitational_wave_distance(z::Real, c::AbstractCosmology)
-    return gravitational_wave_distance(z, luminosity_distance(z, c), c)
+function gravitational_wave_distance(z::Real, c::AbstractCosmology, prop::AbstractPropagation)
+    return gravitational_wave_distance(z, luminosity_distance(z, c), prop)
 end

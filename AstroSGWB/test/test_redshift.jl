@@ -28,9 +28,9 @@ end
 end
 
 @testset "sample interpolation helpers" begin
-    C = ModifiedPropagation{LambdaCDM}
+    C, P = LambdaCDM, ModifiedPropagation
     pop = ParityBNSPopulation()
-    order = full_hyperparameters(C, pop)
+    order = full_hyperparameters(C, P, pop)
     theta = canonical_hyperparameters(
         order,
         (;

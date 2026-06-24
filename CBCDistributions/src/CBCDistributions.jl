@@ -1,10 +1,10 @@
 module CBCDistributions
 
 import Cosmology
-import Cosmology: AbstractCosmology, CosmologyCache, E,
+import Cosmology: AbstractCosmology, AbstractPropagation, CosmologyCache, E,
                   CumulativeIntegral1D, cdf, interpolate, normalizer,
                   _cumulative_integral_from_values, _linear_cell_integral,
-                  hyperparameters
+                  hyperparameters, propagation_hyperparameters
 
 export PopulationModel, hyperparameters, single_event_prior,
        full_hyperparameters,

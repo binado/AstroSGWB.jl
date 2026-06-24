@@ -4,7 +4,9 @@ using ForwardDiff
 using Cosmology: CumulativeIntegral1D, cdf, hubble_constant_si, interpolate,
                  normalizer, cosmology, cosmology_type, cosmology_config_name,
                  SUPPORTED_COSMOLOGIES, comoving_distance, W0CDM, W0WaCDM,
-                 ModifiedPropagation, hyperparameters, base_cosmology
+                 GR, ModifiedPropagation, hyperparameters,
+                 propagation, propagation_type, propagation_config_name,
+                 propagation_hyperparameters, SUPPORTED_PROPAGATIONS
 
 @testset "hubble_constant_si" begin
     H0 = 70.0
@@ -30,26 +32,28 @@ end
 
 @testset "gw_em_distance_ratio" begin
     zs = (0.0, 0.3, 1.0, 2.5)
+    c = LambdaCDM(67.0, 0.315)
 
-    # Standard FLRW cosmologies recover GR: Ξ ≡ 1, so D_gw = D_L.
-    for c in (LambdaCDM(67.0, 0.315), W0CDM(67.0, 0.315, -0.9),
+    # GR propagation recovers Ξ ≡ 1, so D_gw = D_L for any background cosmology.
+    for cosmo in (LambdaCDM(67.0, 0.315), W0CDM(67.0, 0.315, -0.9),
         W0WaCDM(67.0, 0.315, -0.9, 0.2))
         for z in zs
-            @test gw_em_distance_ratio(z, c) ≈ 1.0
-            @test gravitational_wave_distance(z, c) ≈ luminosity_distance(z, c)
+            @test gw_em_distance_ratio(z, GR()) ≈ 1.0
+            @test gravitational_wave_distance(z, cosmo, GR()) ≈
+                  luminosity_distance(z, cosmo)
         end
     end
 
-    # ModifiedPropagation applies Ξ(z) = Ξ₀ + (1 - Ξ₀)/(1 + z)^Ξₙ.
+    # ModifiedPropagation applies Ξ(z) = Ξ₀ + (1 - Ξ₀)/(1 + z)^Ξₙ, independent of cosmology.
     Ξ₀, Ξₙ = 1.2, 2.0
-    c_mod = ModifiedPropagation(LambdaCDM(67.0, 0.315), Ξ₀, Ξₙ)
+    p_mod = ModifiedPropagation(Ξ₀, Ξₙ)
     for z in zs
         Ξ = Ξ₀ + (1 - Ξ₀) / (1 + z)^Ξₙ
-        @test gw_em_distance_ratio(z, c_mod) ≈ Ξ
+        @test gw_em_distance_ratio(z, p_mod) ≈ Ξ
         @test gw_em_distance_ratio(z, Ξ₀, Ξₙ) ≈ Ξ
         # gravitational_wave_distance is exactly Ξ(z) · D_L.
-        @test gravitational_wave_distance(z, c_mod) ≈
-              gw_em_distance_ratio(z, c_mod) * luminosity_distance(z, c_mod)
+        @test gravitational_wave_distance(z, c, p_mod) ≈
+              gw_em_distance_ratio(z, p_mod) * luminosity_distance(z, c)
     end
 end
 
@@ -57,12 +61,13 @@ end
     @test hyperparameters(LambdaCDM) == (:H0, :Ωm)
     @test hyperparameters(W0CDM) == (:H0, :Ωm, :w0)
     @test hyperparameters(W0WaCDM) == (:H0, :Ωm, :w0, :wa)
-    @test hyperparameters(ModifiedPropagation{LambdaCDM}) == (:H0, :Ωm, :Ξ₀, :Ξₙ)
 
     h_lcdm = (H0 = 67.0, Ωm = 0.315)
     @test cosmology(LambdaCDM, h_lcdm) == LambdaCDM(67.0, 0.315)
     @test LambdaCDM(h_lcdm) == LambdaCDM(67.0, 0.315)
     @test cosmology(h_lcdm) == LambdaCDM(67.0, 0.315)
+    # Extra propagation keys in `h` are ignored by the cosmology builder.
+    @test cosmology(LambdaCDM, (; h_lcdm..., Ξ₀ = 1.2, Ξₙ = 2.0)) == LambdaCDM(67.0, 0.315)
 
     h_w0 = (; h_lcdm..., w0 = -0.9)
     @test cosmology(W0CDM, h_w0) == W0CDM(67.0, 0.315, -0.9)
@@ -73,18 +78,29 @@ end
     @test cosmology(h_cpl) == W0WaCDM(67.0, 0.315, -0.9, 0.2)
 
     @test cosmology_config_name(LambdaCDM) == "LambdaCDM"
-    @test cosmology_config_name(ModifiedPropagation{LambdaCDM}) ==
-          "ModifiedPropagation{LambdaCDM}"
     @test cosmology_type("W0CDM") === W0CDM
-    @test ModifiedPropagation{LambdaCDM} in SUPPORTED_COSMOLOGIES
+    @test Set(SUPPORTED_COSMOLOGIES) == Set((LambdaCDM, W0CDM, W0WaCDM))
     @test_throws ArgumentError cosmology_type("not_a_model")
+end
 
-    h_mod = (; h_lcdm..., Ξ₀ = 1.2, Ξₙ = 2.0)
-    c_mod = cosmology(ModifiedPropagation{LambdaCDM}, h_mod)
-    @test c_mod isa ModifiedPropagation{<:LambdaCDM}
-    @test base_cosmology(c_mod) == LambdaCDM(67.0, 0.315)
-    @test gravitational_wave_distance(0.5, c_mod) ≈
-          gravitational_wave_distance(0.5, luminosity_distance(0.5, c_mod.base), 1.2, 2.0)
+@testset "propagation axis" begin
+    @test propagation_hyperparameters(GR) == ()
+    @test propagation_hyperparameters(ModifiedPropagation) == (:Ξ₀, :Ξₙ)
+
+    @test propagation(GR, (;)) === GR()
+    h_mod = (Ξ₀ = 1.2, Ξₙ = 2.0)
+    p_mod = propagation(ModifiedPropagation, h_mod)
+    @test p_mod isa ModifiedPropagation
+    @test p_mod.Ξ₀ == 1.2 && p_mod.Ξₙ == 2.0
+    # Extra (cosmology) keys are ignored when building propagation.
+    @test propagation(ModifiedPropagation, (; h_mod..., H0 = 67.0, Ωm = 0.315)) == p_mod
+
+    @test propagation_config_name(GR) == "GR"
+    @test propagation_config_name(ModifiedPropagation) == "ModifiedPropagation"
+    @test propagation_type("GR") === GR
+    @test propagation_type("ModifiedPropagation") === ModifiedPropagation
+    @test Set(SUPPORTED_PROPAGATIONS) == Set((GR, ModifiedPropagation))
+    @test_throws ArgumentError propagation_type("not_a_model")
 end
 
 @testset "dark_energy_eos" begin

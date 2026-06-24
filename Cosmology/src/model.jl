@@ -41,31 +41,11 @@ H0(c::AbstractCosmology) = c.H0
 
 Base.broadcastable(c::AbstractCosmology) = Ref(c)
 
-"""
-Modified gravitational-wave propagation layered over a base FLRW cosmology.
-Electromagnetic distances and expansion history are delegated to `base`; the
-GW luminosity distance applies the usual `(Ξ₀, Ξₙ)` propagation factor.
-"""
-struct ModifiedPropagation{C <: AbstractCosmology, TΞ0 <: Real, TΞn <: Real} <:
-       AbstractCosmology
-    base::C
-    Ξ₀::TΞ0
-    Ξₙ::TΞn
-end
-
-base_cosmology(c::AbstractCosmology) = c
-base_cosmology(c::ModifiedPropagation) = c.base
-H0(c::ModifiedPropagation) = H0(c.base)
-Ωm(c::ModifiedPropagation) = Ωm(c.base)
-
 """Supported configurable cosmology subtypes (registration order)."""
 const SUPPORTED_COSMOLOGIES = (
     LambdaCDM,
     W0CDM,
-    W0WaCDM,
-    ModifiedPropagation{LambdaCDM},
-    ModifiedPropagation{W0CDM},
-    ModifiedPropagation{W0WaCDM}
+    W0WaCDM
 )
 
 """
@@ -74,9 +54,6 @@ const SUPPORTED_COSMOLOGIES = (
 Hyperparameter symbols for cosmology subtype `C`, in struct field order.
 """
 hyperparameters(::Type{C}) where {C <: AbstractCosmology} = fieldnames(C)
-function hyperparameters(::Type{<:ModifiedPropagation{C}}) where {C <: AbstractCosmology}
-    return (hyperparameters(C)..., :Ξ₀, :Ξₙ)
-end
 
 const cosmology_parameters = hyperparameters
 
@@ -88,11 +65,6 @@ Build cosmology subtype `C` from hyperparameter state `h` (fields must match [`h
 function cosmology(::Type{C}, h::NamedTuple) where {C <: AbstractCosmology}
     fn = fieldnames(C)
     return C(ntuple(i -> h[fn[i]], Val(length(fn)))...)
-end
-
-function cosmology(::Type{<:ModifiedPropagation{C}}, h::NamedTuple) where {C <:
-                                                                           AbstractCosmology}
-    return ModifiedPropagation(cosmology(C, h), h.Ξ₀, h.Ξₙ)
 end
 
 """
@@ -113,10 +85,6 @@ end
 cosmology_config_name(::Type{LambdaCDM}) = "LambdaCDM"
 cosmology_config_name(::Type{W0CDM}) = "W0CDM"
 cosmology_config_name(::Type{W0WaCDM}) = "W0WaCDM"
-function cosmology_config_name(::Type{<:ModifiedPropagation{C}}) where {C <:
-                                                                        AbstractCosmology}
-    return "ModifiedPropagation{$(cosmology_config_name(C))}"
-end
 
 const _COSMOLOGY_BY_CONFIG_NAME = Dict(
     cosmology_config_name(C) => C for C in SUPPORTED_COSMOLOGIES
@@ -137,6 +105,72 @@ function cosmology_type(name::AbstractString)
     return C
 end
 
+# ---------------------------------------------------------------------------
+# GW propagation: an axis orthogonal to the FLRW background. `d_L^GW(z) =
+# Ξ(z) · d_L^EM(z)`, and `Ξ(z)` never touches `Ωm`/`E(z)`/any distance integral,
+# so propagation is threaded as its own type token `P` alongside the cosmology
+# token `C` rather than wrapping a cosmology.
+# ---------------------------------------------------------------------------
+
+"""Abstract supertype for gravitational-wave propagation models."""
+abstract type AbstractPropagation end
+
+"""General relativity propagation: `Ξ(z) ≡ 1` (GW and EM distances coincide)."""
+struct GR <: AbstractPropagation end
+
+"""
+Modified gravitational-wave propagation with `Ξ(z) = Ξ₀ + (1 - Ξ₀)/(1 + z)^Ξₙ`.
+Independent of the FLRW background; combined with a cosmology only when forming
+the GW luminosity distance.
+"""
+struct ModifiedPropagation{T <: Real} <: AbstractPropagation
+    Ξ₀::T
+    Ξₙ::T
+end
+
+Base.broadcastable(p::AbstractPropagation) = Ref(p)
+
+"""Supported configurable propagation subtypes (registration order)."""
+const SUPPORTED_PROPAGATIONS = (GR, ModifiedPropagation)
+
+"""
+    propagation_hyperparameters(::Type{P}) -> Tuple{Vararg{Symbol}}
+
+Hyperparameter symbols owned by propagation subtype `P`.
+"""
+propagation_hyperparameters(::Type{GR}) = ()
+propagation_hyperparameters(::Type{<:ModifiedPropagation}) = (:Ξ₀, :Ξₙ)
+
+"""
+    propagation(::Type{P}, h::NamedTuple) -> AbstractPropagation
+
+Build propagation subtype `P` from hyperparameter state `h`.
+"""
+propagation(::Type{GR}, h::NamedTuple) = GR()
+propagation(::Type{<:ModifiedPropagation}, h::NamedTuple) = ModifiedPropagation(h.Ξ₀, h.Ξₙ)
+
+propagation_config_name(::Type{GR}) = "GR"
+propagation_config_name(::Type{<:ModifiedPropagation}) = "ModifiedPropagation"
+
+const _PROPAGATION_BY_CONFIG_NAME = Dict(
+    propagation_config_name(P) => P for P in SUPPORTED_PROPAGATIONS
+)
+
+"""
+    propagation_type(name::AbstractString) -> Type{<:AbstractPropagation}
+
+Resolve a config/TOML propagation name to a concrete subtype.
+"""
+function propagation_type(name::AbstractString)
+    P = get(_PROPAGATION_BY_CONFIG_NAME, String(name), nothing)
+    P === nothing && throw(
+        ArgumentError(
+        "unknown propagation \"$(name)\"; valid choices: $(sort(collect(keys(_PROPAGATION_BY_CONFIG_NAME))))",
+    ),
+    )
+    return P
+end
+
 """
     dark_energy_eos(c::AbstractCosmology, z) -> Real
 
@@ -145,7 +179,6 @@ Dark energy equation of state w(z).
 dark_energy_eos(::LambdaCDM, z) = -one(z)
 dark_energy_eos(c::W0CDM, z) = c.w0
 dark_energy_eos(c::W0WaCDM, z) = c.w0 + c.wa * z / (1 + z)
-dark_energy_eos(c::ModifiedPropagation, z) = dark_energy_eos(c.base, z)
 
 """
     de_density_ratio(c::AbstractCosmology, z) -> Real
@@ -157,7 +190,6 @@ de_density_ratio(c::W0CDM, z) = (1 + z)^(3 * (1 + c.w0))
 function de_density_ratio(c::W0WaCDM, z)
     (1 + z)^(3 * (1 + c.w0 + c.wa)) * exp(-3 * c.wa * z / (1 + z))
 end
-de_density_ratio(c::ModifiedPropagation, z) = de_density_ratio(c.base, z)
 
 """
     E(z, c::AbstractCosmology) -> Real

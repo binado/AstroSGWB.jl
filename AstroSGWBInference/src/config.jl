@@ -32,10 +32,10 @@ Strongly-typed, serializable record of the *data* that defines an MCMC run:
 input/output paths, detector network, seed, observation time, local merger rate,
 sampler options, fiducial values, and `sample_only`.
 
-It deliberately does **not** capture the priors, population model, or cosmology
-family — those are code (live objects / types) that stay hardcoded in the run
-script. Full reproducibility is therefore "this config TOML + the git commit of
-the run script", not the TOML alone.
+It deliberately does **not** capture the priors, population model, cosmology
+family, or propagation family — those are code (live objects / types) that stay
+hardcoded in the run script. Full reproducibility is therefore "this config TOML +
+the git commit of the run script", not the TOML alone.
 
 `detectors` are stored as plain name strings (e.g. `"S1"`); the caller
 materializes them with `Detector.(cfg.detectors)`. `fiducials` is a flat
@@ -193,9 +193,9 @@ end
     validate_fiducials(cfg::MCMCConfig, order)
 
 Check that the fiducial keys exactly match the model's expected hyperparameters,
-where `order = full_hyperparameters(C, pop)`. Kept separate from construction so
-`MCMCConfig` stays decoupled from the cosmology family and population model; the
-caller invokes it once both are in scope. Throws on any missing/extra/typo'd key
+where `order = full_hyperparameters(C, P, pop)`. Kept separate from construction so
+`MCMCConfig` stays decoupled from the cosmology/propagation families and population
+model; the caller invokes it once all are in scope. Throws on any missing/extra/typo'd key
 (e.g. `zpeak` vs `z_peak`).
 """
 function validate_fiducials(cfg::MCMCConfig, order)

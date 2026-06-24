@@ -25,7 +25,8 @@ using CBCDistributions
 using Cosmology
 import CBCDistributions: single_event_prior
 import Cosmology: cosmology, cosmology_type, gravitational_wave_distance,
-                  gw_em_distance_ratio, hyperparameters
+                  gw_em_distance_ratio, hyperparameters,
+                  propagation, propagation_type
 
 include("types.jl")
 include("models/base.jl")
@@ -96,19 +97,25 @@ export E,
        LambdaCDM,
        W0CDM,
        W0WaCDM,
+       AbstractPropagation,
+       GR,
        ModifiedPropagation,
        dark_energy_eos,
        de_density_ratio,
        cosmology,
        cosmology_type,
        SUPPORTED_COSMOLOGIES,
+       propagation,
+       propagation_hyperparameters,
+       propagation_type,
+       propagation_config_name,
+       SUPPORTED_PROPAGATIONS,
        CosmologyCache,
        comoving_distance,
        luminosity_distance,
        differential_comoving_volume,
        gravitational_wave_distance,
        gw_em_distance_ratio,
-       base_cosmology,
        hubble_constant_si,
        H0,
        Ωm
