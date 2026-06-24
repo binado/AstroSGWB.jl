@@ -116,13 +116,13 @@ where ``S_h(f)`` is the strain spectral density (same units as [`spectral_densit
 and ``H_0`` is the Hubble constant in **s⁻¹**.
 
 ``H_0`` is passed in **km/s/Mpc** (matching hyperparameter `H0` and [`LambdaCDM`](@ref).`H0`)
-and converted internally via [`CBCDistributions.hubble_constant_si`](@ref).
+and converted internally via [`Cosmology.hubble_constant_si`](@ref).
 
 `frequency` and `spectral_density` may be scalars or arrays; they broadcast together (e.g. same-length
 vectors for one spectrum per frequency bin).
 """
 function Ωgw(spectral_density, frequency, H0::Real)
-    h0_si = CBCDistributions.hubble_constant_si(H0)
+    h0_si = Cosmology.hubble_constant_si(H0)
     pre = 4 * pi^2 / (3 * h0_si^2)
     return @. pre * frequency^3 * spectral_density
 end

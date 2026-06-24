@@ -1,11 +1,10 @@
 using QuadGK
 using Test
 using ForwardDiff
-using CBCDistributions: CumulativeIntegral1D, cdf, hubble_constant_si, interpolate,
-                        normalizer, cosmology_parameters, cosmology, cosmology_type,
-                        cosmology_config_name, SUPPORTED_COSMOLOGIES, comoving_distance,
-                        W0CDM, W0WaCDM, ModifiedPropagation, hyperparameters,
-                        base_cosmology
+using Cosmology: CumulativeIntegral1D, cdf, hubble_constant_si, interpolate,
+                 normalizer, cosmology, cosmology_type, cosmology_config_name,
+                 SUPPORTED_COSMOLOGIES, comoving_distance, W0CDM, W0WaCDM,
+                 ModifiedPropagation, hyperparameters, base_cosmology
 
 @testset "hubble_constant_si" begin
     H0 = 70.0
@@ -54,10 +53,10 @@ end
     end
 end
 
-@testset "cosmology_parameters and cosmology" begin
-    @test cosmology_parameters(LambdaCDM) == (:H0, :Ωm)
-    @test cosmology_parameters(W0CDM) == (:H0, :Ωm, :w0)
-    @test cosmology_parameters(W0WaCDM) == (:H0, :Ωm, :w0, :wa)
+@testset "cosmology hyperparameters and cosmology" begin
+    @test hyperparameters(LambdaCDM) == (:H0, :Ωm)
+    @test hyperparameters(W0CDM) == (:H0, :Ωm, :w0)
+    @test hyperparameters(W0WaCDM) == (:H0, :Ωm, :w0, :wa)
     @test hyperparameters(ModifiedPropagation{LambdaCDM}) == (:H0, :Ωm, :Ξ₀, :Ξₙ)
 
     h_lcdm = (H0 = 67.0, Ωm = 0.315)
