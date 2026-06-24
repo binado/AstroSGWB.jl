@@ -22,8 +22,10 @@ calls rather than stored on the problem.
 module AstroSGWB
 
 using CBCDistributions
-import CBCDistributions: cosmology, cosmology_type, gravitational_wave_distance,
-                         gw_em_distance_ratio, hyperparameters, single_event_prior
+using Cosmology
+import CBCDistributions: single_event_prior
+import Cosmology: cosmology, cosmology_type, gravitational_wave_distance,
+                  gw_em_distance_ratio, hyperparameters
 
 include("types.jl")
 include("models/base.jl")
@@ -60,6 +62,9 @@ export ImportanceSamplingProblem,
        CATALOG_SOURCE_TYPE_ATTR,
        CATALOG_SOURCE_TYPE_BNS,
        CumulativeIntegral1D,
+       interpolate,
+       cdf,
+       normalizer,
        RedshiftPrior,
        redshift
 
@@ -104,6 +109,8 @@ export E,
        differential_comoving_volume,
        gravitational_wave_distance,
        gw_em_distance_ratio,
+       base_cosmology,
+       hubble_constant_si,
        H0,
        Ωm
 

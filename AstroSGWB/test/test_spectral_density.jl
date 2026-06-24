@@ -1,5 +1,5 @@
 using AstroSGWB: Ωgw
-using CBCDistributions: hubble_constant_si
+using Cosmology: hubble_constant_si
 using ForwardDiff
 using Statistics
 using Test

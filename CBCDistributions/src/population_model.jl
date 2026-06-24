@@ -64,7 +64,7 @@ used for the flat HMC/Turing parameter vector.
 """
 function full_hyperparameters(::Type{C}, pop::PopulationModel) where {C <:
                                                                       AbstractCosmology}
-    return (hyperparameters(C)..., hyperparameters(pop)...)
+    return (Cosmology.hyperparameters(C)..., hyperparameters(pop)...)
 end
 
 """

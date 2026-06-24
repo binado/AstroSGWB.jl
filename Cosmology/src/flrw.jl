@@ -85,7 +85,7 @@ const cosmology_parameters = hyperparameters
 """
     cosmology(::Type{C}, h::NamedTuple) -> C
 
-Build cosmology subtype `C` from hyperparameter state `h` (fields must match [`cosmology_parameters`](@ref)(`C`)).
+Build cosmology subtype `C` from hyperparameter state `h` (fields must match [`hyperparameters`](@ref)(`C`)).
 """
 function cosmology(::Type{C}, h::NamedTuple) where {C <: AbstractCosmology}
     fn = fieldnames(C)
