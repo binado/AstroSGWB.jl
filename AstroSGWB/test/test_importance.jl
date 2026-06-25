@@ -1,5 +1,5 @@
 using AstroSGWB
-using CBCDistributions: SampleInterpolant
+using CBCDistributions: GridQuery
 using ForwardDiff
 using Test
 
@@ -29,7 +29,7 @@ function _importance_type_test_fixture(n::Integer)
     )
     problem = ImportanceSamplingProblem(_IMP_POP, zeros(2, n), samples, Λ)
     z_grid = collect(Float64, DEFAULT_Z_GRID)
-    interp = SampleInterpolant(samples.redshift, z_grid)
+    interp = GridQuery(samples.redshift, z_grid)
     obs = ObservationContext(
         [1.0, 2.0], [1.0, 1.0], [1.0, 1.0], BitVector([true, true]), 1.0)
     cache_fid = CosmologyCache(cosmology(_IMP_C, Λ), z_grid)

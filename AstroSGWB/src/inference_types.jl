@@ -35,8 +35,8 @@ redshift(s::NamedTuple) = s.redshift
 
 redshift(problem::ImportanceSamplingProblem) = redshift(problem.samples)
 
-function _with_redshift_interpolant(samples::NamedTuple, interp::SampleInterpolant)
-    return merge(samples, (; redshift = SampleField(samples.redshift, interp)))
+function _with_redshift_interpolant(samples::NamedTuple, query::GridQuery)
+    return merge(samples, (; redshift = SampleField(samples.redshift, query)))
 end
 
 """
@@ -63,7 +63,7 @@ struct ModelContext{P <: ProductNamedTupleDistribution, L <: NamedTuple}
     proposal_log_prob::L
     dl_fid_sq::Vector{Float64}
     redshift_grid::Vector{Float64}
-    sample_interpolant::SampleInterpolant
+    sample_interpolant::GridQuery
     observation::ObservationContext
     local_merger_rate::Float64
 end

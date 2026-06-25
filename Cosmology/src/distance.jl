@@ -58,6 +58,23 @@ function luminosity_distance(z::Real, c::AbstractCosmology, dist::CumulativeInte
     (1 + z) * comoving_distance(z, c, dist)
 end
 
+"""
+    luminosity_distance_at_sample(cache::CosmologyCache, q::GridQuery, z_samples, i) -> Real
+
+EM luminosity distance for the `i`-th proposal redshift, reusing the precomputed
+[`GridQuery`](@ref) cell location to skip the per-sample grid search. The redshift grid is
+read from `cache.inv_E_integral.x`, so no separate grid argument is needed.
+"""
+function luminosity_distance_at_sample(
+        cache::CosmologyCache,
+        q::GridQuery,
+        z_samples::AbstractVector{<:Real},
+        i::Integer
+)
+    z = @inbounds z_samples[i]
+    return (1 + z) * cache.d_h * cdf(cache.inv_E_integral, q, i)
+end
+
 function differential_comoving_volume(z::Real, c::AbstractCosmology, dist::CumulativeIntegral1D)
     d_h = SPEED_OF_LIGHT_KM_S / H0(c)
     d_c = comoving_distance(z, c, dist)

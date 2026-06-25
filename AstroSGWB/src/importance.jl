@@ -9,14 +9,12 @@ using LinearAlgebra
         log_ratio::AbstractVector,
         dl_fid_sq::AbstractVector{<:Real},
         z::AbstractVector{<:Real},
-        redshift_grid::AbstractVector{<:Real},
-        interp::SampleInterpolant,
+        interp::GridQuery,
         cosmology_cache::CosmologyCache,
         prop::AbstractPropagation,
         sample_index::Integer
 )
-    d_l = luminosity_distance_at_sample(
-        cosmology_cache, interp, redshift_grid, z, sample_index)
+    d_l = luminosity_distance_at_sample(cosmology_cache, interp, z, sample_index)
     Ξ_theta = gw_em_distance_ratio(z[sample_index], prop)
     return exp(log_ratio[sample_index]) * dl_fid_sq[sample_index] / (d_l^2 * Ξ_theta^2)
 end
@@ -32,8 +30,7 @@ function _importance_weights_core(
         log_ratio::AbstractVector,
         dl_fid_sq::AbstractVector{<:Real},
         z::AbstractVector{<:Real},
-        redshift_grid::AbstractVector{<:Real},
-        interp::SampleInterpolant,
+        interp::GridQuery,
         cosmology_cache::CosmologyCache,
         prop::AbstractPropagation
 )
@@ -41,7 +38,7 @@ function _importance_weights_core(
         throw(ArgumentError("population prior logpdf length must match proposal sample count"))
     return map(eachindex(z)) do i
         _importance_weight_at_sample(
-            log_ratio, dl_fid_sq, z, redshift_grid, interp, cosmology_cache, prop, i)
+            log_ratio, dl_fid_sq, z, interp, cosmology_cache, prop, i)
     end
 end
 
@@ -97,7 +94,6 @@ function compute_importance_weights(
         log_ratio,
         ctx.dl_fid_sq,
         problem.samples.redshift,
-        ctx.redshift_grid,
         ctx.sample_interpolant,
         cache,
         prop
@@ -127,7 +123,7 @@ function compute_importance_weights(
     proposal_log_prob = batched_logpdf(prior_fid, problem.samples)
     dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
     redshift_grid = collect(Float64, DEFAULT_Z_GRID)
-    interp = SampleInterpolant(z, redshift_grid)
+    interp = GridQuery(z, redshift_grid)
 
     cosmology_cache = CosmologyCache(cosmology(C, Λ), redshift_grid)
     prior = single_event_prior(problem.population_model, cosmology_cache, Λ)
@@ -137,7 +133,6 @@ function compute_importance_weights(
         log_ratio,
         dl_fid_sq,
         z,
-        redshift_grid,
         interp,
         cosmology_cache,
         prop

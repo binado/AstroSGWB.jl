@@ -52,24 +52,17 @@ end
         cosmology_cache
     )
     samples = [0.0, 0.137, 0.9, 2.0]
-    interp = SampleInterpolant(samples, z_grid)
+    query = GridQuery(samples, z_grid)
 
-    @test [_interpolate_at_sample(redshift_prior_dist.dN_dz.y, interp, i)
-           for
-           i in eachindex(samples)] ≈
+    @test [interpolate(redshift_prior_dist.dN_dz, query, i)
+           for i in eachindex(samples)] ≈
           [interpolate(redshift_prior_dist.dN_dz, z) for z in samples]
-    @test [_cdf_at_sample(
-               cosmology_cache.inv_E_integral.cumulative,
-               cosmology_cache.inv_E_integral.y,
-               interp,
-               z_grid,
-               i
-           ) for i in eachindex(samples)] ≈
+    @test [cdf(cosmology_cache.inv_E_integral, query, i)
+           for i in eachindex(samples)] ≈
           [cdf(cosmology_cache.inv_E_integral, z) for z in samples]
-    @test [luminosity_distance_at_sample(
-               cosmology_cache, interp, z_grid, samples, i)
+    @test [luminosity_distance_at_sample(cosmology_cache, query, samples, i)
            for i in eachindex(samples)] ≈
           [luminosity_distance(z, cosmology_cache) for z in samples]
-    @test_throws ArgumentError SampleInterpolant([-0.1], z_grid)
-    @test_throws ArgumentError SampleInterpolant([2.1], z_grid)
+    @test_throws ArgumentError GridQuery([-0.1], z_grid)
+    @test_throws ArgumentError GridQuery([2.1], z_grid)
 end

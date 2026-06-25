@@ -251,4 +251,52 @@ end
         end
         @test isfinite(ForwardDiff.derivative(f, 0.315))
     end
+
+    @testset "from-values constructor matches function constructor" begin
+        c = LambdaCDM(67.0, 0.315)
+        x = collect(LinRange(0.0, 10.0, 256))
+        inv_E = w -> inv(E(w, c))
+        from_fn = CumulativeIntegral1D(x, inv_E)
+        from_vals = CumulativeIntegral1D(x, map(inv_E, x))
+        @test from_vals.y == from_fn.y
+        @test from_vals.cumulative == from_fn.cumulative
+        @test_throws ArgumentError CumulativeIntegral1D([0.0], [1.0])
+        @test_throws ArgumentError CumulativeIntegral1D(x, [1.0, 2.0])
+    end
+end
+
+@testset "GridQuery batched accessors" begin
+    c = LambdaCDM(67.0, 0.315)
+    z_grid = collect(LinRange(0.0, 2.0, 101))
+    cache = CosmologyCache(c, z_grid)
+    ci = cache.inv_E_integral
+    samples = [0.0, 0.137, 0.9, 2.0]
+    query = GridQuery(samples, z_grid)
+
+    @testset "batched interpolate/cdf match scalar verbs" begin
+        @test [interpolate(ci, query, i) for i in eachindex(samples)] ≈
+              [interpolate(ci, z) for z in samples]
+        @test [cdf(ci, query, i) for i in eachindex(samples)] ≈
+              [cdf(ci, z) for z in samples]
+    end
+
+    @testset "luminosity_distance_at_sample matches scalar cache path" begin
+        @test [luminosity_distance_at_sample(cache, query, samples, i)
+               for i in eachindex(samples)] ≈
+              [luminosity_distance(z, cache) for z in samples]
+    end
+
+    @testset "out-of-grid points throw" begin
+        @test_throws ArgumentError GridQuery([-0.1], z_grid)
+        @test_throws ArgumentError GridQuery([2.1], z_grid)
+    end
+
+    @testset "ForwardDiff Duals propagate through batched cdf" begin
+        f = Ωm -> begin
+            cache2 = CosmologyCache(LambdaCDM(67.0, Ωm), z_grid)
+            sum(luminosity_distance_at_sample(cache2, query, samples, i)
+            for i in eachindex(samples))
+        end
+        @test isfinite(ForwardDiff.derivative(f, 0.315))
+    end
 end
