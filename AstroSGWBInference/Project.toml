@@ -24,11 +24,15 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 
 [extras]
+ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
+AdvancedHMC = "0bf59076-c3b1-5ca4-86bd-e02cd72cde3d"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "HDF5"]
+test = ["Test", "ADTypes", "AdvancedHMC", "Dates", "HDF5", "Logging"]
 
 [sources]
 AstroSGWB = {path = "../AstroSGWB"}

@@ -63,6 +63,7 @@ CONFIG="\${CONFIGS[\$TASK_ID]}"
 # relative paths to the directory where sbatch was submitted.
 REPO_ROOT="\${SLURM_SUBMIT_DIR:-\$PWD}"
 cd "\$REPO_ROOT"
+REPO_ROOT="\$(pwd -P)"
 mkdir -p logs
 
 if [[ ! -d AstroSGWB || ! -d AstroSGWBInference || ! -f scripts/run_mcmc.jl ]]; then
@@ -75,6 +76,7 @@ if [[ ! -f "\$CONFIG" ]]; then
     echo "config file does not exist: \$CONFIG" >&2
     exit 2
 fi
+CONFIG_ABS="\$(cd "\$(dirname "\$CONFIG")" && pwd -P)/\$(basename "\$CONFIG")"
 
 # Adjust this to your cluster's module system / Julia install.
 # module load julia/1.12
@@ -105,7 +107,8 @@ echo "[submit_mcmc_array] task=\$TASK_ID config=\$CONFIG julia=\$JULIA_EXE threa
 #
 # julia --project=scripts/run -e 'using Pkg; Pkg.instantiate()'
 
-# Run the MCMC sampler.
-job-nanny "\$JULIA_EXE" --project=scripts/run -t "\$JULIA_NUM_THREADS" \\
-    scripts/run_mcmc.jl "\$CONFIG"
+# Run the MCMC sampler. Use absolute paths so job-nanny staging does not make
+# Julia resolve local path dependencies relative to an incomplete temp copy.
+job-nanny "\$JULIA_EXE" --project="\$REPO_ROOT/scripts/run" -t "\$JULIA_NUM_THREADS" \\
+    "\$REPO_ROOT/scripts/run_mcmc.jl" "\$CONFIG_ABS"
 SBATCH

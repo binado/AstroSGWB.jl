@@ -18,7 +18,7 @@ using AstroSGWB:
                  canonical_hyperparameters,
                  full_hyperparameters,
                  load_catalog,
-                 AbstractCosmology,
+                 CosmologyCache,
                  PopulationModel,
                  ImportanceSamplingProblem,
                  ModifiedPropagation,
@@ -56,8 +56,8 @@ struct BNSPopulationModel <: PopulationModel end
 
 hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
 
-function single_event_prior(::BNSPopulationModel, cosmo::AbstractCosmology, Λ::NamedTuple)
-    z_d = redshift_prior(MadauDickinsonSourceFrame(), cosmo, Λ)
+function single_event_prior(::BNSPopulationModel, cache::CosmologyCache, Λ::NamedTuple)
+    z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
     spin = AlignedSpinChiSimple()
     return product_distribution((
         mass = OrderedUniformSourceMassPair(),
@@ -234,8 +234,12 @@ end
 
 end # module AstroSGWBRunMCMC
 
-function (@main)(args::Vector{String})
+function main(args::Vector{String})
     length(args) == 1 || throw(ArgumentError("usage: run_mcmc.jl <config.toml>"))
     AstroSGWBRunMCMC.run_mcmc(args[1])
     return 0
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main(ARGS)
 end
