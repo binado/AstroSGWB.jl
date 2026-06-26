@@ -92,6 +92,7 @@ end
     loaded = _load_variant(:importance_context)
     problem = loaded.problem
     C = loaded.cosmology_type
+    P = loaded.propagation_type
     ctx = loaded.ctx
     pop = problem.population_model
     Λ = fiducial_hyperparameters(problem)
@@ -111,24 +112,27 @@ end
     @test year_to_second(ctx.observation.observation_time) ≈ 365.25 * 24 * 3600
     @test ctx.local_merger_rate == 161.0
 
-    fs = fiducial_spectral_density(problem, C, ctx)
+    fs = fiducial_spectral_density(problem, C, P, ctx)
     @test all(isfinite, fs)
     @test length(fs) == length(ctx.observation.frequencies)
 end
 
 @testset "fiducial spectral density differs across cosmologies" begin
     loaded_w0 = _load_variant(:w0cdm)
-    @test loaded_w0.cosmology_type === ModifiedPropagation{W0CDM}
+    @test loaded_w0.cosmology_type === W0CDM
+    @test loaded_w0.propagation_type === ModifiedPropagation
     ctx_w0 = loaded_w0.ctx
-    fs_w0 = fiducial_spectral_density(loaded_w0.problem, loaded_w0.cosmology_type, ctx_w0)
+    P = loaded_w0.propagation_type
+    fs_w0 = fiducial_spectral_density(
+        loaded_w0.problem, loaded_w0.cosmology_type, P, ctx_w0)
     @test all(isfinite, fs_w0)
 
     # Build a LambdaCDM context from the same raw inputs and confirm the fiducial spectrum
     # is not identical (the cosmology genuinely feeds through the caches).
     p_w0 = loaded_w0.problem
     Λ = fiducial_hyperparameters(p_w0)
-    C_lcdm = ModifiedPropagation{LambdaCDM}
-    order_lcdm = full_hyperparameters(C_lcdm, p_w0.population_model)
+    C_lcdm = LambdaCDM
+    order_lcdm = full_hyperparameters(C_lcdm, P, p_w0.population_model)
     Λ_lcdm = canonical_hyperparameters(order_lcdm, (; (k => Λ[k] for k in order_lcdm)...))
     p_lcdm = ImportanceSamplingProblem(
         p_w0.population_model, p_w0.fluxes, p_w0.samples, Λ_lcdm)
@@ -141,5 +145,5 @@ end
         ctx_lcdm.observation.observation_time
     )
     @test !(fs_w0 ≈ spectral_density(p_lcdm.fluxes, rate_lcdm))
-    @test !(fs_w0 ≈ fiducial_spectral_density(p_lcdm, C_lcdm, ctx_lcdm))
+    @test !(fs_w0 ≈ fiducial_spectral_density(p_lcdm, C_lcdm, P, ctx_lcdm))
 end

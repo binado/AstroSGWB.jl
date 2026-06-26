@@ -20,17 +20,20 @@ end
 
 @testset "full_hyperparameters and merge_hyperpriors" begin
     pop = TestPop()
-    @test full_hyperparameters(ModifiedPropagation{LambdaCDM}, pop) ==
+    @test full_hyperparameters(LambdaCDM, ModifiedPropagation, pop) ==
           (:H0, :Ωm, :Ξ₀, :Ξₙ, :α, :β)
 
     hp = merge_hyperpriors(
-        cosmology_hyperprior(ModifiedPropagation{LambdaCDM}),
+        cosmology_hyperprior(LambdaCDM),
+        propagation_hyperprior(ModifiedPropagation),
         population_hyperprior(pop)
     )
     @test hp isa Distributions.ProductNamedTupleDistribution
     @test keys(hp.dists) == (:H0, :Ωm, :Ξ₀, :Ξₙ, :α, :β)
 
-    @test full_hyperparameters(LambdaCDM, pop) == (:H0, :Ωm, :α, :β)
+    @test full_hyperparameters(LambdaCDM, GR, pop) == (:H0, :Ωm, :α, :β)
+    @test full_hyperparameters(W0CDM, ModifiedPropagation, pop) ==
+          (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :α, :β)
 end
 
 @testset "cosmology_hyperprior for cosmology types" begin
@@ -42,12 +45,11 @@ end
 
     hp_cpl = cosmology_hyperprior(W0WaCDM)
     @test keys(hp_cpl.dists) == (:H0, :Ωm, :w0, :wa)
+end
 
-    hp_mod = cosmology_hyperprior(ModifiedPropagation{LambdaCDM})
-    @test keys(hp_mod.dists) == (:H0, :Ωm, :Ξ₀, :Ξₙ)
-
-    hp_mod_w0 = cosmology_hyperprior(ModifiedPropagation{W0CDM})
-    @test keys(hp_mod_w0.dists) == (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ)
+@testset "propagation_hyperprior for propagation types" begin
+    hp_mod = propagation_hyperprior(ModifiedPropagation)
+    @test keys(hp_mod.dists) == (:Ξ₀, :Ξₙ)
 end
 
 @testset "canonical_hyperparameters" begin

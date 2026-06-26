@@ -62,7 +62,7 @@ function build_model_context(
     dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
 
     redshift_grid = collect(Float64, z_grid)
-    interp = SampleInterpolant(z, redshift_grid)
+    interp = GridQuery(z, redshift_grid)
     local_rate = Float64(local_merger_rate)
 
     # Fiducial proposal prior and its per-component log-densities, computed with the same

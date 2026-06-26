@@ -22,6 +22,7 @@ using AstroSGWB:
                  PopulationModel,
                  ImportanceSamplingProblem,
                  ModifiedPropagation,
+                 GR,
                  W0CDM,
                  Detector,
                  OrderedUniformSourceMassPair,
@@ -81,8 +82,10 @@ function bns_samples_from_catalog(catalog_samples::NamedTuple)
     )
 end
 
-# Fixed model selection (see notebooks/mcmc.jl).
-const C = ModifiedPropagation{W0CDM}
+# Fixed model selection (see notebooks/mcmc.jl): background cosmology `C` and GW
+# propagation `P` are now orthogonal axes.
+const C = W0CDM
+const P = ModifiedPropagation
 
 # Hard-coded hyperprior bounds (matching notebooks/mcmc.jl).
 const HYPERPRIOR = product_distribution((
@@ -154,8 +157,8 @@ function run_mcmc(config_file::String)
     ))
 
     pop = BNSPopulationModel()
-    order = full_hyperparameters(C, pop)
-    @info "model" cosmology=string(C) order
+    order = full_hyperparameters(C, P, pop)
+    @info "model" cosmology=string(C) propagation=string(P) order
     fiducials = _fiducials_namedtuple(cfg, order)
     sample_only = _resolve_sample_only(cfg, order)
 
@@ -193,6 +196,7 @@ function run_mcmc(config_file::String)
     turing_model = build_turing_model(
         problem,
         C,
+        P,
         ctx,
         HYPERPRIOR;
         track = true

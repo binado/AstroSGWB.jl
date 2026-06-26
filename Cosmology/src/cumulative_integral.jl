@@ -86,6 +86,22 @@ function CumulativeIntegral1D(x::AbstractVector{<:Real}, f)
 end
 
 """
+    CumulativeIntegral1D(x, y::AbstractVector{<:Real})
+
+Build a [`CumulativeIntegral1D`](@ref) directly from precomputed nodal values `y`
+(rather than evaluating a function). `x` must be strictly increasing with length ≥ 2
+and `length(y) == length(x)`. `y` may carry `ForwardDiff.Dual` values so the cumulative
+integral differentiates through whatever produced `y`.
+"""
+function CumulativeIntegral1D(x::AbstractVector{<:Real}, y::AbstractVector{<:Real})
+    n = length(x)
+    n >= 2 || throw(ArgumentError("CumulativeIntegral1D requires at least 2 grid points"))
+    length(y) == n || throw(ArgumentError("x and y must have the same length"))
+    x_float = x isa AbstractVector{Float64} ? x : collect(Float64, x)
+    return _cumulative_integral_from_values(x_float, y)
+end
+
+"""
     interpolate(c::CumulativeIntegral1D, x0) -> Real
 
 Linear interpolation of `c.y` at `x0`. Only defined for
@@ -125,3 +141,85 @@ end
 Total integral of `f` over the grid, `last(c.cumulative)`.
 """
 normalizer(c::CumulativeIntegral1D) = @inbounds c.cumulative[end]
+
+"""
+    GridQuery
+
+Precomputed query plan for a fixed set of points located on a fixed grid. `bin_idx[i]`
+is the lower grid-cell index for query point `i`; `t[i]` is the within-cell fraction.
+
+Built once for a set of points and reused across many [`CumulativeIntegral1D`](@ref)s that
+share the same grid but carry different (e.g. parameter-dependent) nodal values, so the
+per-point grid search is hoisted out of the hot path. Query a [`CumulativeIntegral1D`](@ref)
+with `interpolate(c, q, i)` (value) and `cdf(c, q, i)` (cumulative integral), the batched
+counterparts to the scalar `interpolate(c, x0)` / `cdf(c, x0)`.
+"""
+struct GridQuery
+    bin_idx::Vector{Int}
+    t::Vector{Float64}
+end
+
+"""
+    GridQuery(points, x)
+
+Precompute the lower cell index and within-cell fraction of each point in `points`
+on grid `x` (strictly increasing, length ≥ 2). Throws if a point lies outside
+`[x[1], x[end]]`.
+"""
+function GridQuery(points::AbstractVector{<:Real}, x::AbstractVector{<:Real})
+    n_grid = length(x)
+    n_grid >= 2 || throw(ArgumentError("grid must contain at least two points"))
+    n = length(points)
+    bin_idx = Vector{Int}(undef, n)
+    t = Vector{Float64}(undef, n)
+    x_min = @inbounds x[1]
+    x_max = @inbounds x[end]
+    @inbounds for i in 1:n
+        z = points[i]
+        (x_min <= z <= x_max) || throw(
+            ArgumentError("query point $(z) lies outside grid support [$x_min, $x_max]"),
+        )
+        idx = if z == x_max
+            n_grid - 1
+        else
+            searchsortedlast(x, z)
+        end
+        idx = max(1, min(idx, n_grid - 1))
+        dz = x[idx + 1] - x[idx]
+        bin_idx[i] = idx
+        t[i] = Float64((z - x[idx]) / dz)
+    end
+    return GridQuery(bin_idx, t)
+end
+
+"""
+    interpolate(c::CumulativeIntegral1D, q::GridQuery, i) -> Real
+
+Linear interpolation of `c.y` at the `i`-th point of `q`, reusing the precomputed cell
+location. Batched, search-free counterpart to [`interpolate`](@ref)`(c, x0)`.
+"""
+@inline function interpolate(c::CumulativeIntegral1D, q::GridQuery, i::Integer)
+    @inbounds begin
+        idx = q.bin_idx[i]
+        ti = q.t[i]
+        y = c.y
+        return y[idx] + ti * (y[idx + 1] - y[idx])
+    end
+end
+
+"""
+    cdf(c::CumulativeIntegral1D, q::GridQuery, i) -> Real
+
+Antiderivative of the linear interpolant from `c.x[1]` to the `i`-th point of `q`, reusing
+the precomputed cell location. Batched, search-free counterpart to [`cdf`](@ref)`(c, x0)`.
+"""
+@inline function cdf(c::CumulativeIntegral1D, q::GridQuery, i::Integer)
+    @inbounds begin
+        idx = q.bin_idx[i]
+        ti = q.t[i]
+        dx = c.x[idx + 1] - c.x[idx]
+        y_lo = c.y[idx]
+        y_hi = c.y[idx + 1]
+        return _linear_cell_integral(c.cumulative[idx], y_lo, y_hi, dx, ti)
+    end
+end

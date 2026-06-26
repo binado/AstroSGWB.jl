@@ -2,7 +2,7 @@ using Test
 using Bijectors
 using Distributions: product_distribution, Uniform
 using AstroSGWB:
-                 ModifiedPropagation,
+                 ModifiedPropagation, GR,
                  LambdaCDM, W0CDM, W0WaCDM,
                  full_hyperparameters,
                  canonical_hyperparameters,
@@ -17,9 +17,9 @@ if !@isdefined PARITY_PRIORS
 end
 
 @testset "caller-defined population hyperparameter contract" begin
-    C = ModifiedPropagation{LambdaCDM}
+    C, P = LambdaCDM, ModifiedPropagation
     pop = ParityBNSPopulation()
-    order = full_hyperparameters(C, pop)
+    order = full_hyperparameters(C, P, pop)
 
     @test order == (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
 
@@ -66,8 +66,10 @@ end
     @test_throws ArgumentError validate_hyperparameters(order, merge(θ, (; extra = 1.0)))
     @test collect(Bijectors.link(prior_a, θ)) isa Vector
 
-    @test full_hyperparameters(ModifiedPropagation{W0CDM}, ParityBNSPopulation()) ==
+    @test full_hyperparameters(W0CDM, ModifiedPropagation, ParityBNSPopulation()) ==
           (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-    @test full_hyperparameters(ModifiedPropagation{W0WaCDM}, ParityBNSPopulation()) ==
+    @test full_hyperparameters(W0WaCDM, ModifiedPropagation, ParityBNSPopulation()) ==
           (:H0, :Ωm, :w0, :wa, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+    @test full_hyperparameters(LambdaCDM, GR, ParityBNSPopulation()) ==
+          (:H0, :Ωm, :γ, :κ, :zpeak)
 end

@@ -280,9 +280,10 @@ function _run(;
 
     @info "loading catalog" catalog_path detectors=join((d.name for d in detectors), ",")
     loaded = load_catalog(catalog_path)
-    C = ModifiedPropagation{LambdaCDM}
+    C = LambdaCDM
+    P = ModifiedPropagation
     pop = BNSPopulationModel()
-    order = full_hyperparameters(C, pop)
+    order = full_hyperparameters(C, P, pop)
     θ0 = _theta0_from_toml(init_tbl, order)
     samples = bns_samples_from_catalog(loaded.catalog.samples)
     problem = ImportanceSamplingProblem(pop, loaded.catalog.fluxes, samples, θ0)
@@ -298,7 +299,7 @@ function _run(;
 
     observed = if observed_spectral_density_csv === nothing
         @info "using fiducial spectrum from catalog as observed data"
-        fiducial_spectral_density(problem, C, ctx)
+        fiducial_spectral_density(problem, C, P, ctx)
     else
         @info "loading observed spectrum from CSV" path = observed_spectral_density_csv
         _load_observed_spectral_density(
@@ -322,6 +323,7 @@ function _run(;
     model = build_turing_model(
         problem,
         C,
+        P,
         ctx,
         priors;
         track = false,
@@ -335,7 +337,7 @@ function _run(;
     c0 = cosmology(C, h)
     prior0 = single_event_prior(problem.population_model, c0, h)
     redshift_prior0 = prior0.dists.redshift.prior
-    weights0 = compute_importance_weights(problem, C, h, ctx)
+    weights0 = compute_importance_weights(problem, C, P, h, ctx)
     rate0 = merger_rate(problem, C, h, ctx)
     z_samples = redshift(problem)
 
@@ -345,7 +347,7 @@ function _run(;
     @info "warming up (JIT + AD compile)"
     LogDensityProblems.logdensity(lf, z0_turing)
     LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
-    logposterior(h, problem, C, ctx, priors, observed)
+    logposterior(h, problem, C, P, ctx, priors, observed)
 
     # ------------------------------------------------------------------
     # BenchmarkTools suite
@@ -363,6 +365,7 @@ function _run(;
         $h,
         $problem,
         $C,
+        $P,
         $ctx,
         $priors,
         $observed
@@ -378,7 +381,7 @@ function _run(;
     suite["stage"]["redshift"] = @benchmarkable single_event_prior(
         $(problem.population_model), $c0, $h)
     suite["stage"]["weights"] = @benchmarkable compute_importance_weights(
-        $problem, $C, $h, $ctx)
+        $problem, $C, $P, $h, $ctx)
     suite["stage"]["rate"] = @benchmarkable merger_rate_per_sec(
         $redshift_prior0,
         $(ctx.local_merger_rate),

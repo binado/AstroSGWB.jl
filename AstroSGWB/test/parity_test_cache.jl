@@ -8,16 +8,16 @@ const _PARITY_COMMAND = "AstroSGWB/test/parity_test_cache.jl (generated test cat
 const _PARITY_GIT_REVISION = "parity-snapshots"
 const _PARITY_FREQUENCY_GRID = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
 
-function _parity_hyperparameters(C, pop, overrides::NamedTuple = NamedTuple())
+function _parity_hyperparameters(C, P, pop, overrides::NamedTuple = NamedTuple())
     defaults = (H0 = 67.0, Ωm = 0.315, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 3.0, zpeak = 2.5)
-    order = full_hyperparameters(C, pop)
+    order = full_hyperparameters(C, P, pop)
     return canonical_hyperparameters(order, merge(defaults, overrides))
 end
 
-function _parity_hyperparameters_w0(C, pop, overrides::NamedTuple = NamedTuple())
+function _parity_hyperparameters_w0(C, P, pop, overrides::NamedTuple = NamedTuple())
     defaults = (H0 = 67.0, Ωm = 0.315, w0 = -0.9, Ξ₀ = 1.0, Ξₙ = 0.0,
         γ = 2.7, κ = 3.0, zpeak = 2.5)
-    order = full_hyperparameters(C, pop)
+    order = full_hyperparameters(C, P, pop)
     return canonical_hyperparameters(order, merge(defaults, overrides))
 end
 
@@ -64,9 +64,9 @@ function _make_bns_samples(masses1, masses2, redshifts; chi1 = nothing, chi2 = n
 end
 
 function _write_posterior_catalog(dir)
-    C = ModifiedPropagation{LambdaCDM}
+    C, P = LambdaCDM, ModifiedPropagation
     pop = ParityBNSPopulation()
-    Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.0))
+    Λ = _parity_hyperparameters(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.0))
 
     samples = _make_bns_samples(
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
@@ -83,9 +83,9 @@ function _write_posterior_catalog(dir)
 end
 
 function _write_full_intrinsic_catalog(dir)
-    C = ModifiedPropagation{LambdaCDM}
+    C, P = LambdaCDM, ModifiedPropagation
     pop = ParityBNSPopulation()
-    Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.0))
+    Λ = _parity_hyperparameters(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.0))
 
     samples = _make_bns_samples(
         [1.8, 2.2, 1.4, 2.4], [1.2, 1.7, 1.1, 1.3], [0.1, 0.2, 0.3, 0.5];
@@ -108,9 +108,9 @@ function _write_full_intrinsic_catalog(dir)
 end
 
 function _write_importance_context_catalog(dir)
-    C = ModifiedPropagation{LambdaCDM}
+    C, P = LambdaCDM, ModifiedPropagation
     pop = ParityBNSPopulation()
-    Λ = _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
+    Λ = _parity_hyperparameters(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
 
     samples = _make_bns_samples(
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
@@ -127,9 +127,9 @@ function _write_importance_context_catalog(dir)
 end
 
 function _write_w0cdm_catalog(dir)
-    C = ModifiedPropagation{W0CDM}
+    C, P = W0CDM, ModifiedPropagation
     pop = ParityBNSPopulation()
-    Λ = _parity_hyperparameters_w0(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
+    Λ = _parity_hyperparameters_w0(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
 
     samples = _make_bns_samples(
         [1.4, 1.4], [1.2, 1.2], [0.1, 0.2];
@@ -174,7 +174,7 @@ function parity_bns_samples_from_catalog(catalog_samples::NamedTuple)
 end
 
 """
-    parity_problem_context(variant, detectors) -> (; problem, cosmology_type, ctx)
+    parity_problem_context(variant, detectors) -> (; problem, cosmology_type, propagation_type, ctx)
 
 Load the parity catalog for `variant`, restructure its samples, build the pure
 [`ImportanceSamplingProblem`](@ref), and build its [`ModelContext`](@ref).
@@ -183,13 +183,14 @@ function parity_problem_context(variant::Symbol, detectors)
     dir = parity_catalog_dir(variant)
     loaded = load_catalog(joinpath(dir, "catalog.h5"))
     pop = ParityBNSPopulation()
-    C = variant == :w0cdm ? ModifiedPropagation{W0CDM} : ModifiedPropagation{LambdaCDM}
+    C = variant == :w0cdm ? W0CDM : LambdaCDM
+    P = ModifiedPropagation
     Λ = variant == :w0cdm ?
-        _parity_hyperparameters_w0(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5)) :
+        _parity_hyperparameters_w0(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5)) :
         if variant == :posterior || variant == :full_intrinsic
-        _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.0))
+        _parity_hyperparameters(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.0))
     else
-        _parity_hyperparameters(C, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
+        _parity_hyperparameters(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.5))
     end
     catalog = loaded.catalog
     samples = parity_bns_samples_from_catalog(catalog.samples)
@@ -203,7 +204,7 @@ function parity_problem_context(variant::Symbol, detectors)
         kw.observation_time,
         kw.local_merger_rate
     )
-    return (; problem = problem, cosmology_type = C, ctx = ctx)
+    return (; problem = problem, cosmology_type = C, propagation_type = P, ctx = ctx)
 end
 
 """

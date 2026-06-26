@@ -62,13 +62,13 @@ function merger_rate(
 end
 
 """
-    loglikelihood(Λ, problem, C, ctx, observed)
+    loglikelihood(Λ, problem, C, P, ctx, observed)
 
-Gaussian in-band log-likelihood of the SGWB spectral density at `Λ`. Inlines the
-`weights → rate → Sₕ` sequence using the cached atomics and `ctx` masks/scales. Builds the
-redshift `CosmologyCache` once and shares it between `single_event_prior` and
-`compute_importance_weights`, so its cumulative cosmology integral is not rebuilt per
-ForwardDiff gradient step.
+Gaussian in-band log-likelihood of the SGWB spectral density at `Λ` (cosmology family `C`,
+propagation family `P`). Inlines the `weights → rate → Sₕ` sequence using the cached atomics
+and `ctx` masks/scales. Builds the redshift `CosmologyCache` once and shares it between
+`single_event_prior` and `compute_importance_weights`, so its cumulative cosmology integral is
+not rebuilt per ForwardDiff gradient step.
 
 `observed` is the full-length strain spectral density vector (one entry per frequency bin
 in `ctx.observation.frequencies`).
@@ -77,12 +77,14 @@ function loglikelihood(
         Λ::NamedTuple,
         problem::ImportanceSamplingProblem,
         ::Type{C},
+        ::Type{P},
         ctx::ModelContext,
         observed::AbstractVector{<:Real}
-) where {C <: AbstractCosmology}
+) where {C <: AbstractCosmology, P <: AbstractPropagation}
     cache = CosmologyCache(cosmology(C, Λ), ctx.redshift_grid)
     prior = single_event_prior(problem.population_model, cache, Λ)
-    weights = compute_importance_weights(problem, cache, prior, ctx)
+    prop = propagation(P, Λ)
+    weights = compute_importance_weights(problem, cache, prop, prior, ctx)
     rate = merger_rate(
         prior,
         ctx.local_merger_rate,
@@ -102,20 +104,22 @@ function fiducial_hyperparameters(problem::ImportanceSamplingProblem)
 end
 
 """
-    fiducial_spectral_density(problem, C, ctx) -> Vector
+    fiducial_spectral_density(problem, C, P, ctx) -> Vector
 
 Synthesize the default observed strain spectral density from catalog fluxes at the
 problem's fiducial hyperparameters, using the same importance-weighted forward model
-as [`loglikelihood`](@ref). Callers that omit `observed` in [`build_turing_model`](@ref)
-should use this spectrum so modified-propagation factors `Ξ(z)` are applied consistently.
+as [`loglikelihood`](@ref) (cosmology family `C`, propagation family `P`). Callers that
+omit `observed` in [`build_turing_model`](@ref) should use this spectrum so
+modified-propagation factors `Ξ(z)` are applied consistently.
 """
 function fiducial_spectral_density(
         problem::ImportanceSamplingProblem,
         ::Type{C},
+        ::Type{P},
         ctx::ModelContext
-) where {C <: AbstractCosmology}
+) where {C <: AbstractCosmology, P <: AbstractPropagation}
     Λ_fid = problem.fiducial_hyperparameters
-    weights = compute_importance_weights(problem, C, Λ_fid, ctx)
+    weights = compute_importance_weights(problem, C, P, Λ_fid, ctx)
     rate = merger_rate(problem, C, Λ_fid, ctx)
     return spectral_density(problem.fluxes, rate; weights = weights)
 end

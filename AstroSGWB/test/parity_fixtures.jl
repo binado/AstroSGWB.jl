@@ -10,9 +10,10 @@ if !@isdefined ParityBNSPopulation
     include(joinpath(@__DIR__, "fixture_population.jl"))
 end
 
-const _PARITY_C = ModifiedPropagation{LambdaCDM}
+const _PARITY_C = LambdaCDM
+const _PARITY_P = ModifiedPropagation
 const _PARITY_POP = ParityBNSPopulation()
-const _PARITY_ORDER = full_hyperparameters(_PARITY_C, _PARITY_POP)
+const _PARITY_ORDER = full_hyperparameters(_PARITY_C, _PARITY_P, _PARITY_POP)
 
 const PARITY_THETA = canonical_hyperparameters(
     _PARITY_ORDER,

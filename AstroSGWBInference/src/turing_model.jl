@@ -14,11 +14,12 @@ function logposterior(
         Λ::NamedTuple,
         problem::ImportanceSamplingProblem,
         ::Type{C},
+        ::Type{P},
         ctx::ModelContext,
         prior::ProductNamedTupleDistribution,
         observed::AbstractVector{<:Real}
-) where {C <: AbstractCosmology}
-    return logpdf(prior, Λ) + loglikelihood(Λ, problem, C, ctx, observed)
+) where {C <: AbstractCosmology, P <: AbstractPropagation}
+    return logpdf(prior, Λ) + loglikelihood(Λ, problem, C, P, ctx, observed)
 end
 
 function condition_turing_model(
@@ -54,11 +55,12 @@ end
         track::Bool,
         problem::ImportanceSamplingProblem,
         ::Val{C},
+        ::Val{P},
         ctx::ModelContext,
         prior::ProductNamedTupleDistribution,
         observed_in_band::AbstractVector{<:Real}
-) where {C}
-    order = full_hyperparameters(C, problem.population_model)
+) where {C, P}
+    order = full_hyperparameters(C, P, problem.population_model)
     Λ ~ to_submodel(sample_hyperparameters(order, prior.dists), false)
     Λc = canonical_hyperparameters(
         order,
@@ -69,7 +71,8 @@ end
 
     cache = CosmologyCache(cosmology(C, Λc), ctx.redshift_grid)
     event_prior = single_event_prior(problem.population_model, cache, Λc)
-    weights = compute_importance_weights(problem, cache, event_prior, ctx)
+    prop = propagation(P, Λc)
+    weights = compute_importance_weights(problem, cache, prop, event_prior, ctx)
     rate = merger_rate(
         event_prior,
         ctx.local_merger_rate,
@@ -100,15 +103,16 @@ end
 function build_turing_model(
         problem::ImportanceSamplingProblem,
         ::Type{C},
+        ::Type{P},
         ctx::ModelContext,
         prior::ProductNamedTupleDistribution;
         track::Bool = false,
         observed::Union{Nothing, AbstractVector{<:Real}} = nothing
-) where {C <: AbstractCosmology}
-    order = full_hyperparameters(C, problem.population_model)
+) where {C <: AbstractCosmology, P <: AbstractPropagation}
+    order = full_hyperparameters(C, P, problem.population_model)
     validate_hyperprior(order, prior)
     observed_data = if observed === nothing
-        fiducial_spectral_density(problem, C, ctx)
+        fiducial_spectral_density(problem, C, P, ctx)
     else
         observed
     end
@@ -116,6 +120,7 @@ function build_turing_model(
         track,
         problem,
         Val(C),
+        Val(P),
         ctx,
         prior,
         observed_data[ctx.observation.in_band_mask]

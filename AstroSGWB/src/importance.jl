@@ -9,14 +9,13 @@ using LinearAlgebra
         log_ratio::AbstractVector,
         dl_fid_sq::AbstractVector{<:Real},
         z::AbstractVector{<:Real},
-        redshift_grid::AbstractVector{<:Real},
-        interp::SampleInterpolant,
+        interp::GridQuery,
         cosmology_cache::CosmologyCache,
+        prop::AbstractPropagation,
         sample_index::Integer
 )
-    d_l = luminosity_distance_at_sample(
-        cosmology_cache, interp, redshift_grid, z, sample_index)
-    Ξ_theta = gw_em_distance_ratio(z[sample_index], cosmology_cache.cosmology)
+    d_l = luminosity_distance_at_sample(cosmology_cache, interp, z, sample_index)
+    Ξ_theta = gw_em_distance_ratio(z[sample_index], prop)
     return exp(log_ratio[sample_index]) * dl_fid_sq[sample_index] / (d_l^2 * Ξ_theta^2)
 end
 
@@ -31,48 +30,51 @@ function _importance_weights_core(
         log_ratio::AbstractVector,
         dl_fid_sq::AbstractVector{<:Real},
         z::AbstractVector{<:Real},
-        redshift_grid::AbstractVector{<:Real},
-        interp::SampleInterpolant,
-        cosmology_cache::CosmologyCache
+        interp::GridQuery,
+        cosmology_cache::CosmologyCache,
+        prop::AbstractPropagation
 )
     length(z) == length(log_ratio) ||
         throw(ArgumentError("population prior logpdf length must match proposal sample count"))
     return map(eachindex(z)) do i
         _importance_weight_at_sample(
-            log_ratio, dl_fid_sq, z, redshift_grid, interp, cosmology_cache, i)
+            log_ratio, dl_fid_sq, z, interp, cosmology_cache, prop, i)
     end
 end
 
 """
-    compute_importance_weights(problem, C, Λ, ctx::ModelContext) -> Vector
+    compute_importance_weights(problem, C, P, Λ, ctx::ModelContext) -> Vector
 
-Per-sample importance weights at hyperparameters `Λ` (cosmology family `C`), reading the
-fiducial proposal caches from `ctx`. This is the hot path used by the likelihood and the
-generative model.
+Per-sample importance weights at hyperparameters `Λ` (cosmology family `C`, propagation
+family `P`), reading the fiducial proposal caches from `ctx`. This is the hot path used by
+the likelihood and the generative model.
 """
 function compute_importance_weights(
         problem::ImportanceSamplingProblem,
         ::Type{C},
+        ::Type{P},
         Λ::NamedTuple,
         ctx::ModelContext
-) where {C <: AbstractCosmology}
+) where {C <: AbstractCosmology, P <: AbstractPropagation}
     cache = CosmologyCache(cosmology(C, Λ), ctx.redshift_grid)
     prior = single_event_prior(problem.population_model, cache, Λ)
-    return compute_importance_weights(problem, cache, prior, ctx)
+    prop = propagation(P, Λ)
+    return compute_importance_weights(problem, cache, prop, prior, ctx)
 end
 
 """
-    compute_importance_weights(problem, cache::CosmologyCache, prior, ctx::ModelContext) -> Vector
+    compute_importance_weights(problem, cache::CosmologyCache, prop, prior, ctx::ModelContext) -> Vector
 
-Importance weights from a prebuilt `cache` and single-event `prior`. The forward model
-builds the cache once, shares it with `single_event_prior` (which uses it for the redshift
-prior), and passes it here for the per-sample luminosity distance — so the cumulative
+Importance weights from a prebuilt `cache`, propagation `prop`, and single-event `prior`. The
+forward model builds the cache once, shares it with `single_event_prior` (which uses it for the
+redshift prior), and passes it here for the per-sample luminosity distance — so the cumulative
 cosmology integral is computed once per evaluation rather than rebuilt in both places. This
 is the bare form the forward model calls directly.
 """
 function compute_importance_weights(
         problem::ImportanceSamplingProblem,
         cache::CosmologyCache,
+        prop::AbstractPropagation,
         prior,
         ctx::ModelContext
 )
@@ -92,26 +94,28 @@ function compute_importance_weights(
         log_ratio,
         ctx.dl_fid_sq,
         problem.samples.redshift,
-        ctx.redshift_grid,
         ctx.sample_interpolant,
-        cache
+        cache,
+        prop
     )
 end
 
 """
-    compute_importance_weights(problem, C, Λ) -> Vector
+    compute_importance_weights(problem, C, P, Λ) -> Vector
 
 Naive importance weights: recompute the fiducial proposal caches (`proposal_log_prob`,
 `dl_fid_sq`, redshift interpolant) from scratch at `problem.fiducial_hyperparameters`,
-then weight at `Λ`. Slower than the `ctx` method but free of any precomputed state — it
-deliberately uses the full two-sided `batched_logpdf` rather than `logprobdiff`, so it
-serves as the correctness oracle for the cached path (including its component skipping).
+then weight at `Λ` (cosmology family `C`, propagation family `P`). Slower than the `ctx`
+method but free of any precomputed state — it deliberately uses the full two-sided
+`batched_logpdf` rather than `logprobdiff`, so it serves as the correctness oracle for the
+cached path (including its component skipping).
 """
 function compute_importance_weights(
         problem::ImportanceSamplingProblem,
         ::Type{C},
+        ::Type{P},
         Λ::NamedTuple
-) where {C <: AbstractCosmology}
+) where {C <: AbstractCosmology, P <: AbstractPropagation}
     Λ_fid = problem.fiducial_hyperparameters
     z = problem.samples.redshift
     c_fid = cosmology(C, Λ_fid)
@@ -119,17 +123,18 @@ function compute_importance_weights(
     proposal_log_prob = batched_logpdf(prior_fid, problem.samples)
     dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
     redshift_grid = collect(Float64, DEFAULT_Z_GRID)
-    interp = SampleInterpolant(z, redshift_grid)
+    interp = GridQuery(z, redshift_grid)
 
     cosmology_cache = CosmologyCache(cosmology(C, Λ), redshift_grid)
     prior = single_event_prior(problem.population_model, cosmology_cache, Λ)
+    prop = propagation(P, Λ)
     log_ratio = batched_logpdf(prior, problem.samples) .- proposal_log_prob
     return _importance_weights_core(
         log_ratio,
         dl_fid_sq,
         z,
-        redshift_grid,
         interp,
-        cosmology_cache
+        cosmology_cache,
+        prop
     )
 end

@@ -4,8 +4,6 @@ using Random
 export RedshiftPrior, redshift_integral, redshift_log_prob, merger_rate_per_sec,
        detector_frame_merger_rate_density, expected_number_of_events,
        madau_dickinson_source_frame_distribution,
-       SampleInterpolant, _interpolate_at_sample, _cdf_at_sample,
-       luminosity_distance_at_sample,
        build_redshift_prior,
        RedshiftInterpolatedDistribution, _normalized_log_density,
        redshift_logpdf_eltype,
@@ -156,87 +154,6 @@ function redshift_prior(
     return redshift_prior(sf_model, CosmologyCache(cosmo, z_grid), Λ)
 end
 
-# ---------------------------------------------------------------------------
-# Grid interpolation helpers
-# ---------------------------------------------------------------------------
-
-"""
-    SampleInterpolant
-
-Per-sample interpolation metadata for proposal redshifts on the fixed redshift
-grid. `bin_idx[i]` is the lower grid cell index for sample `i`; `t[i]` is the
-within-cell fraction.
-"""
-struct SampleInterpolant
-    bin_idx::Vector{Int}
-    t::Vector{Float64}
-end
-
-"""
-    SampleInterpolant(samples, z_grid)
-
-Precomputed interpolation metadata for fixed proposal redshifts on a shared
-redshift grid. Stores the lower cell index and within-cell fraction for each
-sample so likelihood evaluations can reuse bin locations.
-"""
-function SampleInterpolant(
-        samples::AbstractVector{<:Real},
-        z_grid::AbstractVector{<:Real}
-)
-    n_grid = length(z_grid)
-    n_grid >= 2 || throw(ArgumentError("z_grid must contain at least two points"))
-    n = length(samples)
-    bin_idx = Vector{Int}(undef, n)
-    t = Vector{Float64}(undef, n)
-    z_min = @inbounds z_grid[1]
-    z_max = @inbounds z_grid[end]
-    @inbounds for i in 1:n
-        z = samples[i]
-        (z_min <= z <= z_max) || throw(
-            ArgumentError("proposal redshift $(z) lies outside grid support [$z_min, $z_max]"),
-        )
-        idx = if z == z_max
-            n_grid - 1
-        else
-            searchsortedlast(z_grid, z)
-        end
-        idx = max(1, min(idx, n_grid - 1))
-        dz = z_grid[idx + 1] - z_grid[idx]
-        bin_idx[i] = idx
-        t[i] = Float64((z - z_grid[idx]) / dz)
-    end
-    return SampleInterpolant(bin_idx, t)
-end
-
-@inline function _interpolate_at_sample(
-        y::AbstractVector,
-        interp::SampleInterpolant,
-        sample_index::Integer
-)
-    @inbounds begin
-        i = interp.bin_idx[sample_index]
-        t = interp.t[sample_index]
-        return y[i] + t * (y[i + 1] - y[i])
-    end
-end
-
-@inline function _cdf_at_sample(
-        cumulative::AbstractVector,
-        y::AbstractVector,
-        interp::SampleInterpolant,
-        z_grid::AbstractVector{<:Real},
-        sample_index::Integer
-)
-    @inbounds begin
-        i = interp.bin_idx[sample_index]
-        t = interp.t[sample_index]
-        dx = z_grid[i + 1] - z_grid[i]
-        y_lo = y[i]
-        y_hi = y[i + 1]
-        return _linear_cell_integral(cumulative[i], y_lo, y_hi, dx, t)
-    end
-end
-
 function build_redshift_prior(source_frame_fn, cache::CosmologyCache)
     z_grid_f = cache.inv_E_integral.x
     pdf_vals = map(eachindex(z_grid_f)) do i
@@ -245,7 +162,7 @@ function build_redshift_prior(source_frame_fn, cache::CosmologyCache)
         dvc_dz = cache.d_h * d_c^2 / E(z, cache.cosmology)
         detector_frame_merger_rate_density(z, dvc_dz, source_frame_fn(z))
     end
-    return RedshiftPrior(_cumulative_integral_from_values(z_grid_f, pdf_vals))
+    return RedshiftPrior(CumulativeIntegral1D(z_grid_f, pdf_vals))
 end
 
 @inline function _normalized_log_density(pdf_at_value, norm, tiny)
@@ -279,24 +196,6 @@ function redshift_logpdf_eltype(prior::RedshiftPrior)
     return promote_type(eltype(prior.dN_dz.y), typeof(redshift_integral(prior)))
 end
 
-function luminosity_distance_at_sample(
-        cache::CosmologyCache,
-        interp::SampleInterpolant,
-        z_grid::AbstractVector{<:Real},
-        z_samples::AbstractVector{<:Real},
-        sample_index::Integer
-)
-    z = @inbounds z_samples[sample_index]
-    integral = _cdf_at_sample(
-        cache.inv_E_integral.cumulative,
-        cache.inv_E_integral.y,
-        interp,
-        z_grid,
-        sample_index
-    )
-    return (1 + z) * cache.d_h * integral
-end
-
 struct RedshiftInterpolatedDistribution{P <: RedshiftPrior} <:
        ContinuousUnivariateDistribution
     prior::P
@@ -323,17 +222,16 @@ end
 function add_logpdfvec!(
         out::AbstractVector,
         d::RedshiftInterpolatedDistribution,
-        field::SampleField{<:AbstractVector, <:SampleInterpolant}
+        field::SampleField{<:AbstractVector, <:GridQuery}
 )
-    interp = field.meta
-    length(out) == length(interp.bin_idx) ||
-        throw(ArgumentError("sample interpolant length must match batch size"))
+    query = field.meta
+    length(out) == length(query.bin_idx) ||
+        throw(ArgumentError("grid query length must match batch size"))
     prior = d.prior
-    y = prior.dN_dz.y
     norm = redshift_integral(prior)
     tiny = floatmin(real(eltype(out)))
     @inbounds for i in eachindex(out)
-        pdf_i = _interpolate_at_sample(y, interp, i)
+        pdf_i = interpolate(prior.dN_dz, query, i)
         out[i] += _normalized_log_density(pdf_i, norm, tiny)
     end
     return out
