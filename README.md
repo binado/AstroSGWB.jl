@@ -43,8 +43,9 @@ julia --project=AstroSGWBInference -e 'using Pkg; Pkg.test()'
 1. Provide a waveform **catalog** HDF5 file (`catalog.h5`) at the repo root or set `catalog_path` in the notebook. Catalogs store per-sample intrinsic parameters and a `(nfreq, nsamples)` flux matrix `|h₊|² + |h×|²` (before fiducial `(D_L/D_gw)²` scaling). Use [`AstroSGWB.load_catalog`](AstroSGWB/src/catalog/io.jl) / [`AstroSGWB.save_catalog`](AstroSGWB/src/catalog/io.jl).
 2. Define a concrete [`PopulationModel`](CBCDistributions/src/population_model.jl) subtype in Julia (`hyperparameters`, `single_event_prior`) and build hyperparameter priors with `product_distribution(...)` (see the notebook cells).
 3. Restructure catalog columns into the `NamedTuple` expected by `single_event_prior` (see `bns_samples_from_catalog` in the notebook).
-4. Build [`ImportanceSamplingProblem`](AstroSGWB/src/inference_types.jl) with fiducial hyperparameters, then [`build_model_context`](AstroSGWB/src/context.jl) for detector PSDs and fiducial caches.
-5. Sample with `AstroSGWBInference.build_turing_model`, `condition_turing_model`, and Turing NUTS; save chains via `AstroSGWBInference.atomic_save_chain`.
+4. Build a pure [`ImportanceSamplingProblem`](AstroSGWB/src/inference_types.jl) from the catalog fluxes, the restructured samples, and the fiducial hyperparameters; it carries no cosmology or detector state.
+5. Assemble a caller-owned **prepared model** that implements the package's cosmology-agnostic contract — `merger_rate_and_log_weights(model, Λ, samples)` ([`contract.jl`](AstroSGWB/src/contract.jl)) and `full_hyperparameters(model)` — by holding the proposal caches, `dl_fid_sq`, redshift interpolant, and merger-rate settings; build the matching detector/observation state with `build_observation_context` → [`ObservationContext`](AstroSGWB/src/detector/observation.jl). The canonical reference implementations are `prepare_parity_model` / `PreparedParityModel` in [`AstroSGWB/test/fixture_population.jl`](AstroSGWB/test/fixture_population.jl) and `prepare_bns_model` / `BNSPreparedModel` in [`scripts/run_mcmc.jl`](scripts/run_mcmc.jl).
+6. Sample with `AstroSGWBInference.build_turing_model(model, problem, observation, prior)`, `condition_turing_model`, and Turing NUTS; save chains via `AstroSGWBInference.atomic_save_chain`. If you omit an `observed` spectrum, `build_turing_model` synthesizes one via `fiducial_spectral_density(model, problem)` so the modified-propagation factors `Ξ(z)` are applied consistently.
 
 Waveform generation is not part of the Julia packages; see [scripts/generate_waveforms.py](./scripts/generate_waveforms.py) for a standalone Python accumulator (legacy layout).
 
@@ -62,7 +63,7 @@ Edit fiducials, hyperprior bounds, detectors, and sampler settings in the notebo
 
 ### Headless MCMC (config-driven)
 
-[`scripts/run_mcmc.jl`](scripts/run_mcmc.jl) mirrors the sampling cells of [`notebooks/mcmc_pluto.jl`](notebooks/mcmc_pluto.jl) but reads run-specific settings from a TOML file. Cosmology (`ModifiedPropagation{W0CDM}`), population model (`BNSPopulationModel`), and hyperprior bounds are fixed in the script, matching the notebook.
+[`scripts/run_mcmc.jl`](scripts/run_mcmc.jl) mirrors the sampling cells of [`notebooks/mcmc_pluto.jl`](notebooks/mcmc_pluto.jl) but reads run-specific settings from a TOML file. Cosmology family (`W0CDM`), GW propagation family (`ModifiedPropagation`), population model (`BNSPopulationModel`), and hyperprior bounds are fixed in the script (`prepare_bns_model` / `BNSPreparedModel`), matching the notebook.
 
 **One-time setup** (separate Julia project at [`scripts/run/`](scripts/run/)):
 
