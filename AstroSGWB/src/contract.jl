@@ -23,12 +23,3 @@ See also [`full_hyperparameters`](@ref)`(model)`, the companion method model aut
 implement to declare the flat HMC/Turing vector layout.
 """
 function merger_rate_and_log_weights end
-
-function merger_rate_and_log_weights(model, ::NamedTuple, samples)
-    throw(ArgumentError(string(
-        "merger_rate_and_log_weights is not implemented for model type ",
-        typeof(model),
-        "; model authors must define this method outside the package ",
-        "(see the merger_rate_and_log_weights contract docstring)."
-    )))
-end
