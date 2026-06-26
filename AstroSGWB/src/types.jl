@@ -7,8 +7,8 @@ variance), Gaussian bin scales for the likelihood, analysis band mask, and obser
 time metadata (`observation_time`, in years). The in-band Gaussian scale is precomputed for the likelihood hot path.
 
 The observed spectral density is intentionally *not* part of this object; callers pass it
-explicitly to [`loglikelihood`](@ref) or let [`build_turing_model`](@ref) synthesize it
-via [`fiducial_spectral_density`](@ref) when `observed` is omitted.
+explicitly to inference likelihood routines or let `AstroSGWBInference.build_turing_model`
+synthesize it from catalog fluxes, samples, and fiducials when `observed` is omitted.
 """
 struct ObservationContext
     frequencies::Vector{Float64}

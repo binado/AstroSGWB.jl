@@ -7,8 +7,7 @@ using AstroSGWB: PopulationModel, AbstractCosmology, AbstractPropagation,
                  CosmologyCache, GridQuery, DEFAULT_Z_GRID,
                  OrderedUniformSourceMassPair, AlignedSpinChiSimple,
                  redshift_prior, MadauDickinsonSourceFrame,
-                 ImportanceSamplingProblem, ObservationContext,
-                 FrequencyGrid, Detector, frequencies, in_band_mask,
+                 ObservationContext, FrequencyGrid, Detector, frequencies, in_band_mask,
                  build_observation_context,
                  cosmology, propagation, luminosity_distance,
                  component_logpdfs, logprobdiff, merger_rate,
@@ -72,18 +71,21 @@ struct PreparedParityModel{
 end
 
 """
-    prepare_parity_model(problem, C, P, grid, detectors, observation_time, local_merger_rate; z_grid)
+    prepare_parity_model(pop, samples, fiducials, C, P, grid, detectors, observation_time,
+        local_merger_rate; z_grid)
         -> (; model, observation)
 
-Assemble a [`PreparedParityModel`](@ref) and its [`ObservationContext`](@ref) from the raw
-[`ImportanceSamplingProblem`](@ref), the cosmology/propagation families `C`/`P`, the catalog
-[`FrequencyGrid`](@ref), and a detector network. Mirrors the precompute the retired
-`build_model_context` did, but partitions it: the cosmology-specific caches go on the model,
-the detector/observation state goes in `observation`. The proposal caches are rebuilt at the
-fiducial cosmology so stale on-disk values are never trusted.
+Assemble a [`PreparedParityModel`](@ref) and its [`ObservationContext`](@ref) from the
+caller-owned population, catalog samples, fiducials, cosmology/propagation families `C`/`P`,
+catalog [`FrequencyGrid`](@ref), and detector network. Mirrors the precompute the retired
+`build_model_context` did, but partitions it: the cosmology-specific caches go on the
+model, the detector/observation state goes in `observation`. The proposal caches are
+rebuilt at the fiducial cosmology so stale on-disk values are never trusted.
 """
 function prepare_parity_model(
-        problem::ImportanceSamplingProblem,
+        pop::PopulationModel,
+        samples::NamedTuple,
+        fiducials::NamedTuple,
         ::Type{C},
         ::Type{P},
         grid::FrequencyGrid,
@@ -95,9 +97,8 @@ function prepare_parity_model(
     length(detectors) < 2 && throw(ArgumentError(
         "prepare_parity_model: at least two detectors are required to build effective_psd and sgwb_scale"))
 
-    pop = problem.population_model
-    Λ_fid = problem.fiducial_hyperparameters
-    z = problem.samples.redshift
+    Λ_fid = fiducials
+    z = samples.redshift
 
     all_freq = frequencies(grid)
     mask = in_band_mask(grid)
@@ -117,8 +118,8 @@ function prepare_parity_model(
     # interpolant the hot path uses, so the redshift log-ratio at Λ_fid is exactly zero.
     cache_fid = CosmologyCache(c_fid, redshift_grid)
     proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
-    samples = with_redshift_interpolant(problem.samples, interp)
-    proposal_log_prob = component_logpdfs(proposal_prior, samples)
+    samples_interp = with_redshift_interpolant(samples, interp)
+    proposal_log_prob = component_logpdfs(proposal_prior, samples_interp)
 
     model = PreparedParityModel{C, P, typeof(pop),
         typeof(proposal_prior), typeof(proposal_log_prob)}(

@@ -2,7 +2,7 @@
     AstroSGWB
 
 Astrophysical stochastic gravitational-wave background modeling: importance
-sampling, redshift grids, and likelihoods. Turing model construction lives in the
+sampling, redshift grids, and spectral-density forward models. Turing model construction lives in the
 `AstroSGWBInference` package (see the `AstroSGWBInference/` directory in the repository).
 
 The primary inference artifact is **`catalog.h5`** ([`WaveformCatalogFile`](@ref)):
@@ -11,7 +11,8 @@ per-sample intrinsic parameters with precomputed luminosity distances, and a
 fiducial `(D_L/D_gw)²` factor).
 
 Callers define their population model, fiducial hyperparameters, and catalog sample
-adapter in Julia, then construct a pure [`ImportanceSamplingProblem`](@ref). The
+adapter in Julia, then pass raw catalog `fluxes`, restructured `samples`, and fiducials
+explicitly. The
 cosmology-specific derived caches (proposal log-prob, `dl_fid_sq`, redshift interpolant)
 live on a caller-owned *prepared model*, assembled from the exported kernels; the
 detector/observation state lives in an [`ObservationContext`](@ref).
@@ -35,7 +36,7 @@ include("models/base.jl")
 include("catalog/grid.jl")
 include("catalog/catalog.jl")
 include("catalog/io.jl")
-include("inference_types.jl")
+include("samples.jl")
 include("detector/psd.jl")
 include("detector/detector.jl")
 include("detector/overlap.jl")
@@ -45,12 +46,10 @@ include("importance.jl")
 include("spectral_density.jl")
 include("snr.jl")
 include("diagnostics.jl")
-include("contract.jl")
-include("posterior.jl")
+include("forward_model.jl")
 
 # Types
-export ImportanceSamplingProblem,
-       ObservationContext,
+export ObservationContext,
        with_redshift_interpolant,
        PopulationModel,
        hyperparameters,
@@ -153,6 +152,7 @@ export OrderedUniformSourceMassPair,
 
 # Importance sampling
 export importance_log_weights,
+       merger_rate_and_log_weights,
        spectral_density,
        inner_product,
        spectral_snr_squared,
@@ -162,11 +162,8 @@ export importance_log_weights,
 # Diagnostics
 export normalized_ess
 
-# Posterior
-export merger_rate_and_log_weights,
-       loglikelihood,
-       merger_rate,
-       fiducial_hyperparameters,
+# Forward-model helpers
+export merger_rate,
        fiducial_spectral_density
 
 # Time conversions

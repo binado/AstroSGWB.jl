@@ -2,10 +2,8 @@ module InferenceImpl
 
 using AstroSGWB
 using AstroSGWB:
-                 ImportanceSamplingProblem,
                  ObservationContext,
                  PopulationModel,
-                 loglikelihood,
                  merger_rate_and_log_weights,
                  spectral_density,
                  fiducial_spectral_density,
@@ -20,10 +18,12 @@ using Distributions: MvNormal, ProductNamedTupleDistribution, logpdf
 using LinearAlgebra: Diagonal
 using Turing
 
+include("likelihood.jl")
 include("turing_model.jl")
 
 export build_turing_model,
        condition_turing_model,
+       loglikelihood,
        logposterior,
        validate_hyperprior
 

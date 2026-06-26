@@ -19,7 +19,6 @@ using AstroSGWB:
                  AbstractCosmology,
                  AbstractPropagation,
                  PopulationModel,
-                 ImportanceSamplingProblem,
                  ObservationContext,
                  CosmologyCache,
                  GridQuery,
@@ -108,7 +107,9 @@ struct BNSPreparedModel{
 end
 
 function prepare_bns_model(
-        problem::ImportanceSamplingProblem,
+        pop::PopulationModel,
+        samples::NamedTuple,
+        fiducials::NamedTuple,
         ::Type{C},
         ::Type{P},
         grid::FrequencyGrid,
@@ -117,9 +118,8 @@ function prepare_bns_model(
         local_merger_rate::Real;
         z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
 ) where {C <: AbstractCosmology, P <: AbstractPropagation}
-    pop = problem.population_model
-    Λ_fid = problem.fiducial_hyperparameters
-    z = problem.samples.redshift
+    Λ_fid = fiducials
+    z = samples.redshift
 
     observation = build_observation_context(
         frequencies(grid), Vector{Detector}(collect(detectors)),
@@ -132,8 +132,8 @@ function prepare_bns_model(
 
     cache_fid = CosmologyCache(c_fid, redshift_grid)
     proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
-    samples = with_redshift_interpolant(problem.samples, interp)
-    proposal_log_prob = component_logpdfs(proposal_prior, samples)
+    samples_interp = with_redshift_interpolant(samples, interp)
+    proposal_log_prob = component_logpdfs(proposal_prior, samples_interp)
 
     model = BNSPreparedModel{C, P, typeof(pop),
         typeof(proposal_prior), typeof(proposal_log_prob)}(
@@ -263,9 +263,10 @@ function run_mcmc(config_file::String)
     loaded = load_catalog(catalog_path)
     catalog = loaded.catalog
     samples = bns_samples_from_catalog(catalog.samples)
-    problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
     prepared = prepare_bns_model(
-        problem,
+        pop,
+        samples,
+        fiducials,
         C,
         P,
         loaded.metadata.grid,
@@ -276,7 +277,7 @@ function run_mcmc(config_file::String)
     model = prepared.model
     observation = prepared.observation
     @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(
-        problem.samples.redshift,
+        samples.redshift,
     )
 
     mkpath(output_dir)
@@ -292,7 +293,9 @@ function run_mcmc(config_file::String)
     @info "starting NUTS" nadapts=cfg.sampler.nadapts nsamples=cfg.sampler.nsamples target_acceptance=cfg.sampler.target_acceptance ad_backend=cfg.sampler.ad_backend sample_only nchains
     turing_model = build_turing_model(
         model,
-        problem,
+        catalog.fluxes,
+        samples,
+        fiducials,
         observation,
         HYPERPRIOR;
         track = true

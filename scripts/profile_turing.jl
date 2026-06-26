@@ -52,7 +52,6 @@ using AstroSGWB:
                  frequencies,
                  in_band_mask,
                  build_observation_context,
-                 ImportanceSamplingProblem,
                  ModifiedPropagation,
                  LambdaCDM,
                  Detector
@@ -106,7 +105,9 @@ struct BNSPreparedModel{
 end
 
 function prepare_bns_model(
-        problem::ImportanceSamplingProblem,
+        pop::PopulationModel,
+        samples::NamedTuple,
+        fiducials::NamedTuple,
         ::Type{C},
         ::Type{P},
         grid::FrequencyGrid,
@@ -115,9 +116,8 @@ function prepare_bns_model(
         local_merger_rate::Real;
         z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
 ) where {C <: AbstractCosmology, P <: AbstractPropagation}
-    pop = problem.population_model
-    Λ_fid = problem.fiducial_hyperparameters
-    z = problem.samples.redshift
+    Λ_fid = fiducials
+    z = samples.redshift
 
     observation = build_observation_context(
         frequencies(grid), Vector{Detector}(collect(detectors)),
@@ -130,8 +130,8 @@ function prepare_bns_model(
 
     cache_fid = CosmologyCache(c_fid, redshift_grid)
     proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
-    samples = with_redshift_interpolant(problem.samples, interp)
-    proposal_log_prob = component_logpdfs(proposal_prior, samples)
+    samples_interp = with_redshift_interpolant(samples, interp)
+    proposal_log_prob = component_logpdfs(proposal_prior, samples_interp)
 
     model = BNSPreparedModel{C, P, typeof(pop),
         typeof(proposal_prior), typeof(proposal_log_prob)}(
@@ -373,9 +373,11 @@ function _run(;
     order = full_hyperparameters(C, P, pop)
     θ0 = _theta0_from_toml(init_tbl, order)
     samples = bns_samples_from_catalog(loaded.catalog.samples)
-    problem = ImportanceSamplingProblem(pop, loaded.catalog.fluxes, samples, θ0)
+    fluxes = loaded.catalog.fluxes
     prepared = prepare_bns_model(
-        problem,
+        pop,
+        samples,
+        θ0,
         C,
         P,
         loaded.metadata.grid,
@@ -385,11 +387,11 @@ function _run(;
     )
     model = prepared.model
     observation = prepared.observation
-    @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(problem.samples.redshift)
+    @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(samples.redshift)
 
     observed = if observed_spectral_density_csv === nothing
         @info "using fiducial spectrum from catalog as observed data"
-        fiducial_spectral_density(model, problem)
+        fiducial_spectral_density(model, fluxes, samples, θ0)
     else
         @info "loading observed spectrum from CSV" path = observed_spectral_density_csv
         _load_observed_spectral_density(
@@ -412,7 +414,9 @@ function _run(;
     # Turing / DynamicPPL path
     turing_model = build_turing_model(
         model,
-        problem,
+        fluxes,
+        samples,
+        θ0,
         observation,
         priors;
         track = false,
@@ -425,11 +429,11 @@ function _run(;
     h = θ0
     c0 = cosmology(C, h)
     cache0 = CosmologyCache(c0, model.redshift_grid)
-    prior0 = single_event_prior(problem.population_model, cache0, h)
+    prior0 = single_event_prior(pop, cache0, h)
     redshift_prior0 = prior0.dists.redshift.prior
-    rate0, log_weights0 = merger_rate_and_log_weights(model, h, problem.samples)
+    rate0, log_weights0 = merger_rate_and_log_weights(model, h, samples)
     weights0 = exp.(log_weights0)
-    z_samples = redshift(problem)
+    z_samples = redshift(samples)
 
     # ------------------------------------------------------------------
     # Warmup — trigger JIT / AD compilation before any benchmark
@@ -437,7 +441,7 @@ function _run(;
     @info "warming up (JIT + AD compile)"
     LogDensityProblems.logdensity(lf, z0_turing)
     LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
-    logposterior(h, model, problem, observation, priors, observed)
+    logposterior(h, model, fluxes, samples, observation, priors, observed)
 
     # ------------------------------------------------------------------
     # BenchmarkTools suite
@@ -454,7 +458,8 @@ function _run(;
     suite["primal"]["logposterior"] = @benchmarkable logposterior(
         $h,
         $model,
-        $problem,
+        $fluxes,
+        $samples,
         $observation,
         $priors,
         $observed
@@ -468,18 +473,18 @@ function _run(;
 
     suite["stage"] = BenchmarkGroup()
     suite["stage"]["redshift"] = @benchmarkable single_event_prior(
-        $(problem.population_model), $cache0, $h)
+        $pop, $cache0, $h)
     # The fused joint replaces the separate weight/rate atomics: it returns
     # (rate, log_weights) in one cosmology-specific pass.
     suite["stage"]["rate_and_log_weights"] = @benchmarkable merger_rate_and_log_weights(
-        $model, $h, $(problem.samples))
+        $model, $h, $samples)
     suite["stage"]["rate"] = @benchmarkable merger_rate_per_sec(
         $redshift_prior0,
         $(model.local_merger_rate),
         $(model.observation_time)
     )
     suite["stage"]["spectral"] = @benchmarkable spectral_density(
-        $(problem.fluxes),
+        $fluxes,
         $rate0;
         weights = $weights0
     )

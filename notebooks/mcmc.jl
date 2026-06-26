@@ -17,7 +17,6 @@ begin
                      PopulationModel,
                      AbstractCosmology,
                      AbstractPropagation,
-                     ImportanceSamplingProblem,
                      ObservationContext,
                      CosmologyCache,
                      GridQuery,
@@ -120,12 +119,12 @@ begin
     # The background cosmology `C` and propagation `P` are type parameters, so the package
     # never sees a cosmology token; it dispatches solely on this model.
     struct BNSPreparedModel{
-            C <: AbstractCosmology,
-            P <: AbstractPropagation,
-            Pop <: PopulationModel,
-            PR,
-            L <: NamedTuple
-        }
+        C <: AbstractCosmology,
+        P <: AbstractPropagation,
+        Pop <: PopulationModel,
+        PR,
+        L <: NamedTuple
+    }
         pop::Pop
         redshift_grid::Vector{Float64}
         sample_interpolant::GridQuery
@@ -137,7 +136,9 @@ begin
     end
 
     function prepare_bns_model(
-            problem::ImportanceSamplingProblem,
+            pop::PopulationModel,
+            samples::NamedTuple,
+            fiducials::NamedTuple,
             ::Type{C},
             ::Type{P},
             grid::FrequencyGrid,
@@ -146,9 +147,8 @@ begin
             local_merger_rate::Real;
             z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
     ) where {C <: AbstractCosmology, P <: AbstractPropagation}
-        pop = problem.population_model
-        Λ_fid = problem.fiducial_hyperparameters
-        z = problem.samples.redshift
+        Λ_fid = fiducials
+        z = samples.redshift
 
         observation = build_observation_context(
             frequencies(grid), Vector{Detector}(collect(detectors)),
@@ -161,8 +161,8 @@ begin
 
         cache_fid = CosmologyCache(c_fid, redshift_grid)
         proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
-        samples = with_redshift_interpolant(problem.samples, interp)
-        proposal_log_prob = component_logpdfs(proposal_prior, samples)
+        samples_interp = with_redshift_interpolant(samples, interp)
+        proposal_log_prob = component_logpdfs(proposal_prior, samples_interp)
 
         model = BNSPreparedModel{C, P, typeof(pop),
             typeof(proposal_prior), typeof(proposal_log_prob)}(
@@ -304,9 +304,10 @@ begin
 
     @info hyperparameters(C)
     samples = bns_samples_from_catalog(catalog.samples)
-    problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
     prepared = prepare_bns_model(
-        problem,
+        pop,
+        samples,
+        fiducials,
         C,
         P,
         loaded.metadata.grid,
@@ -321,7 +322,7 @@ begin
     sample_only_tup = sample_only === nothing ? nothing : Tuple(sample_only)
 
     @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(
-        problem.samples.redshift,
+        samples.redshift,
     )
 
     mkpath(output_dir)
@@ -364,9 +365,9 @@ In the cells below, we plot ``\Omega_{\mathrm{GW}}(f)`` as a function of the fre
 """
 
 # ╔═╡ d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a
-function plot_fiducial_omega_gw(model, problem, fiducials, observation)
-    rate0, log_weights0 = merger_rate_and_log_weights(model, fiducials, problem.samples)
-    Sh0 = spectral_density(problem.fluxes, rate0; weights = exp.(log_weights0))
+function plot_fiducial_omega_gw(model, fluxes, samples, fiducials, observation)
+    rate0, log_weights0 = merger_rate_and_log_weights(model, fiducials, samples)
+    Sh0 = spectral_density(fluxes, rate0; weights = exp.(log_weights0))
     f = observation.frequencies
     df = frequency_bin_width(f)
     snr = spectral_snr(
@@ -398,7 +399,7 @@ function plot_fiducial_omega_gw(model, problem, fiducials, observation)
 end
 
 # ╔═╡ 5f9a8b7c-0e1d-4a2f-3b6c-7d8e9f0a1b2c
-plot_fiducial_omega_gw(model, problem, fiducials, observation)
+plot_fiducial_omega_gw(model, catalog.fluxes, samples, fiducials, observation)
 
 # ╔═╡ ccf43d43-7f31-41e9-85db-12842561973c
 md"""
@@ -422,7 +423,9 @@ begin
         @info "starting NUTS" nadapts=sampler.nadapts nsamples=sampler.nsamples target_acceptance=sampler.target_acceptance ad_backend=sampler.ad_backend sample_only=sample_only_tup
         turing_model = build_turing_model(
             model,
-            problem,
+            catalog.fluxes,
+            samples,
+            fiducials,
             observation,
             hyperprior;
             track = false

@@ -175,13 +175,14 @@ end
 
 """
     parity_problem_context(variant, detectors)
-        -> (; problem, model, observation, cosmology_type, propagation_type)
+        -> (; pop, fluxes, samples, fiducials, model, observation, cosmology_type, propagation_type)
 
-Load the parity catalog for `variant`, restructure its samples, build the pure
-[`ImportanceSamplingProblem`](@ref), and assemble the out-of-package prepared model
-([`PreparedParityModel`](@ref)) plus its [`ObservationContext`](@ref). The cosmology and
-propagation families are returned for tests that still construct family-token hyperparameter
-orders, but they are *not* part of the inference surface.
+Load the parity catalog for `variant`, restructure its samples, and assemble the
+out-of-package prepared model ([`PreparedParityModel`](@ref)) plus its
+[`ObservationContext`](@ref). The raw catalog `fluxes`, restructured `samples`, and
+fiducials are returned explicitly. The cosmology and propagation families are returned for
+tests that still construct family-token hyperparameter orders, but they are *not* part of
+the inference surface.
 """
 function parity_problem_context(variant::Symbol, detectors)
     dir = parity_catalog_dir(variant)
@@ -198,10 +199,11 @@ function parity_problem_context(variant::Symbol, detectors)
     end
     catalog = loaded.catalog
     samples = parity_bns_samples_from_catalog(catalog.samples)
-    problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, Λ)
     kw = parity_observation_kwargs(variant)
     prepared = prepare_parity_model(
-        problem,
+        pop,
+        samples,
+        Λ,
         C,
         P,
         loaded.metadata.grid,
@@ -210,7 +212,12 @@ function parity_problem_context(variant::Symbol, detectors)
         kw.local_merger_rate
     )
     return (;
-        problem = problem, model = prepared.model, observation = prepared.observation,
+        pop = pop,
+        fluxes = catalog.fluxes,
+        samples = samples,
+        fiducials = Λ,
+        model = prepared.model,
+        observation = prepared.observation,
         cosmology_type = C, propagation_type = P)
 end
 

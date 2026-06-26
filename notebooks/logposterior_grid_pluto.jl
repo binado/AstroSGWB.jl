@@ -36,7 +36,6 @@ begin
                      PopulationModel,
                      AbstractCosmology,
                      AbstractPropagation,
-                     ImportanceSamplingProblem,
                      ObservationContext,
                      CosmologyCache,
                      GridQuery,
@@ -103,12 +102,12 @@ begin
 
     # Prepared model: out-of-package assembly of the cosmology-agnostic inference contract.
     struct BNSPreparedModel{
-            C <: AbstractCosmology,
-            P <: AbstractPropagation,
-            Pop <: PopulationModel,
-            PR,
-            L <: NamedTuple
-        }
+        C <: AbstractCosmology,
+        P <: AbstractPropagation,
+        Pop <: PopulationModel,
+        PR,
+        L <: NamedTuple
+    }
         pop::Pop
         redshift_grid::Vector{Float64}
         sample_interpolant::GridQuery
@@ -120,7 +119,9 @@ begin
     end
 
     function prepare_bns_model(
-            problem::ImportanceSamplingProblem,
+            pop::PopulationModel,
+            samples::NamedTuple,
+            fiducials::NamedTuple,
             ::Type{C},
             ::Type{P},
             grid::FrequencyGrid,
@@ -129,9 +130,8 @@ begin
             local_merger_rate::Real;
             z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
     ) where {C <: AbstractCosmology, P <: AbstractPropagation}
-        pop = problem.population_model
-        Λ_fid = problem.fiducial_hyperparameters
-        z = problem.samples.redshift
+        Λ_fid = fiducials
+        z = samples.redshift
 
         observation = build_observation_context(
             frequencies(grid), Vector{Detector}(collect(detectors)),
@@ -144,8 +144,8 @@ begin
 
         cache_fid = CosmologyCache(c_fid, redshift_grid)
         proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
-        samples = with_redshift_interpolant(problem.samples, interp)
-        proposal_log_prob = component_logpdfs(proposal_prior, samples)
+        samples_interp = with_redshift_interpolant(samples, interp)
+        proposal_log_prob = component_logpdfs(proposal_prior, samples_interp)
 
         model = BNSPreparedModel{C, P, typeof(pop),
             typeof(proposal_prior), typeof(proposal_log_prob)}(
@@ -241,9 +241,10 @@ begin
     @info hyperparameters(C)
     pop = BNSPopulationModel()
     samples = bns_samples_from_catalog(catalog.samples)
-    problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
     prepared = prepare_bns_model(
-        problem,
+        pop,
+        samples,
+        fiducials,
         C,
         P,
         loaded.metadata.grid,
@@ -258,11 +259,11 @@ begin
     sample_only_tup = sample_only === nothing ? nothing : Tuple(sample_only)
 
     @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(
-        problem.samples.redshift,
+        samples.redshift,
     )
 
     @info "using fiducial in-band spectrum from cache as observed data"
-    observed = fiducial_spectral_density(prepared_model, problem)
+    observed = fiducial_spectral_density(prepared_model, catalog.fluxes, samples, fiducials)
 
     nothing
 end
@@ -277,8 +278,8 @@ Wrap the conditioned Turing model with `DynamicPPL.LogDensityFunction` (non-link
 # ╔═╡ de9f8a7b-0c1d-4e2f-8031-5c6d7e8f9a0b
 begin
     model = build_turing_model(
-        prepared_model, problem, observation, hyperprior; track = false,
-        observed = observed)
+        prepared_model, catalog.fluxes, samples, fiducials, observation, hyperprior;
+        track = false, observed = observed)
     conditioned = condition_turing_model(
         model, fiducials, hyperprior, sample_only_tup; order = order)
     lf = DynamicPPL.LogDensityFunction(conditioned)

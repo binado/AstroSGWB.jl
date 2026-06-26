@@ -10,17 +10,6 @@ function validate_hyperprior(order::Tuple{Vararg{Symbol}}, prior::ProductNamedTu
     return nothing
 end
 
-function logposterior(
-        Λ::NamedTuple,
-        model,
-        problem::ImportanceSamplingProblem,
-        observation::ObservationContext,
-        prior::ProductNamedTupleDistribution,
-        observed::AbstractVector{<:Real}
-)
-    return logpdf(prior, Λ) + loglikelihood(Λ, model, problem, observation, observed)
-end
-
 function condition_turing_model(
         turing_model,
         theta0::NamedTuple,
@@ -93,7 +82,9 @@ end
 
 function build_turing_model(
         model,
-        problem::ImportanceSamplingProblem,
+        fluxes::AbstractMatrix{<:Real},
+        samples::NamedTuple,
+        fiducial_hyperparameters::NamedTuple,
         observation::ObservationContext,
         prior::ProductNamedTupleDistribution;
         track::Bool = false,
@@ -102,15 +93,15 @@ function build_turing_model(
     order = full_hyperparameters(model)
     validate_hyperprior(order, prior)
     observed_data = if observed === nothing
-        fiducial_spectral_density(model, problem)
+        fiducial_spectral_density(model, fluxes, samples, fiducial_hyperparameters)
     else
         observed
     end
     return astrosgwb_importance_turing_model(
         track,
         model,
-        problem.fluxes,
-        problem.samples,
+        fluxes,
+        samples,
         observation,
         prior,
         observed_data[observation.in_band_mask]

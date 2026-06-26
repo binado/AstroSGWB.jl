@@ -68,20 +68,18 @@ end
     @test_throws ArgumentError WaveformCatalog((redshift = [0.1, 0.2],), zeros(3, 3))
 end
 
-@testset "ImportanceSamplingProblem is a pure spec" begin
+@testset "catalog inputs are explicit" begin
     loaded = _load_variant(:importance_context)
-    problem = loaded.problem
 
-    @test problem isa ImportanceSamplingProblem
-    @test problem.population_model isa ParityBNSPopulation
-    @test redshift(problem) ≈ [0.1, 0.2]
-    @test Vector(problem.samples.mass[1, :]) ≈ [1.4, 1.4]
-    @test Vector(problem.samples.mass[2, :]) ≈ [1.2, 1.2]
-    @test problem.samples.χ₁ ≈ [0.0, 0.0]
-    @test problem.samples.Λ₁ ≈ [100.0, 100.0]
-    @test problem.fluxes ≈ Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
+    @test loaded.pop isa ParityBNSPopulation
+    @test redshift(loaded.samples) ≈ [0.1, 0.2]
+    @test Vector(loaded.samples.mass[1, :]) ≈ [1.4, 1.4]
+    @test Vector(loaded.samples.mass[2, :]) ≈ [1.2, 1.2]
+    @test loaded.samples.χ₁ ≈ [0.0, 0.0]
+    @test loaded.samples.Λ₁ ≈ [100.0, 100.0]
+    @test loaded.fluxes ≈ Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
 
-    Λ = fiducial_hyperparameters(problem)
+    Λ = loaded.fiducials
     @test Λ.H0 == 67.0
     @test Λ.Ωm == 0.315
     @test Λ.Ξ₀ == 1.0
@@ -90,7 +88,6 @@ end
 
 @testset "prepared model reconstructs derived caches" begin
     loaded = _load_variant(:importance_context)
-    problem = loaded.problem
     model = loaded.model
     observation = loaded.observation
 
@@ -109,7 +106,8 @@ end
     @test year_to_second(observation.observation_time) ≈ 365.25 * 24 * 3600
     @test model.local_merger_rate == 161.0
 
-    fs = fiducial_spectral_density(model, problem)
+    fs = fiducial_spectral_density(
+        model, loaded.fluxes, loaded.samples, loaded.fiducials)
     @test all(isfinite, fs)
     @test length(fs) == length(observation.frequencies)
 end
@@ -119,27 +117,35 @@ end
     @test loaded_w0.cosmology_type === W0CDM
     @test loaded_w0.propagation_type === ModifiedPropagation
     P = loaded_w0.propagation_type
-    fs_w0 = fiducial_spectral_density(loaded_w0.model, loaded_w0.problem)
+    fs_w0 = fiducial_spectral_density(
+        loaded_w0.model, loaded_w0.fluxes, loaded_w0.samples, loaded_w0.fiducials)
     @test all(isfinite, fs_w0)
 
     # Build a LambdaCDM prepared model from the same raw inputs and confirm the fiducial
     # spectrum is not identical (the cosmology genuinely feeds through the caches).
-    p_w0 = loaded_w0.problem
-    Λ = fiducial_hyperparameters(p_w0)
+    Λ = loaded_w0.fiducials
     C_lcdm = LambdaCDM
-    order_lcdm = full_hyperparameters(C_lcdm, P, p_w0.population_model)
+    order_lcdm = full_hyperparameters(C_lcdm, P, loaded_w0.pop)
     Λ_lcdm = canonical_hyperparameters(order_lcdm, (; (k => Λ[k] for k in order_lcdm)...))
-    p_lcdm = ImportanceSamplingProblem(
-        p_w0.population_model, p_w0.fluxes, p_w0.samples, Λ_lcdm)
     grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
     prepared_lcdm = prepare_parity_model(
-        p_lcdm, C_lcdm, P, grid, _TEST_LOAD_DETS, 1.0, 161.0)
+        loaded_w0.pop,
+        loaded_w0.samples,
+        Λ_lcdm,
+        C_lcdm,
+        P,
+        grid,
+        _TEST_LOAD_DETS,
+        1.0,
+        161.0
+    )
     model_lcdm = prepared_lcdm.model
     rate_lcdm = merger_rate(
         model_lcdm.proposal_prior,
         model_lcdm.local_merger_rate,
         model_lcdm.observation_time
     )
-    @test !(fs_w0 ≈ spectral_density(p_lcdm.fluxes, rate_lcdm))
-    @test !(fs_w0 ≈ fiducial_spectral_density(model_lcdm, p_lcdm))
+    @test !(fs_w0 ≈ spectral_density(loaded_w0.fluxes, rate_lcdm))
+    @test !(fs_w0 ≈ fiducial_spectral_density(
+        model_lcdm, loaded_w0.fluxes, loaded_w0.samples, Λ_lcdm))
 end
