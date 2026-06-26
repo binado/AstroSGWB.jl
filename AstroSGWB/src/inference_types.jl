@@ -19,10 +19,10 @@ Fields:
 
 The raw `fluxes` are used directly in the spectral-density contraction; the full distance
 correction `(D_L,fid/D_L,θ)²·(1/Ξ_θ²)` lives in the importance weights, not in the fluxes.
-All derived/`Λ`-independent caches (`dl_fid_sq`, proposal log-prob, redshift
-interpolant, detector PSDs) live in [`ModelContext`](@ref), built by
-[`build_model_context`](@ref). The cosmology family `C` is passed as a call argument,
-never stored here.
+All derived/`Λ`-independent caches (proposal log-prob, `dl_fid_sq`, redshift interpolant)
+are owned by the caller's prepared model — the cosmology-specific half of what was once a
+`ModelContext` — and consumed inside the model's [`merger_rate_and_log_weights`](@ref) joint.
+The cosmology family is the model's own concern, never stored here.
 """
 struct ImportanceSamplingProblem{M <: PopulationModel}
     population_model::M
@@ -35,35 +35,15 @@ redshift(s::NamedTuple) = s.redshift
 
 redshift(problem::ImportanceSamplingProblem) = redshift(problem.samples)
 
-function _with_redshift_interpolant(samples::NamedTuple, query::GridQuery)
+"""
+    with_redshift_interpolant(samples::NamedTuple, query::GridQuery) -> NamedTuple
+
+Attach the proposal redshift [`GridQuery`](@ref) to the `redshift` field of `samples`,
+wrapping it in a [`SampleField`](@ref) so the redshift logpdf reuses the precomputed
+per-sample grid locations instead of re-searching the grid every gradient evaluation.
+Model authors call this when assembling the proposal caches and inside their
+[`merger_rate_and_log_weights`](@ref) joint.
+"""
+function with_redshift_interpolant(samples::NamedTuple, query::GridQuery)
     return merge(samples, (; redshift = SampleField(samples.redshift, query)))
-end
-
-"""
-    ModelContext
-
-Flat catalog-derived cache of all `Λ`-independent derived state for an [`ImportanceSamplingProblem`](@ref),
-built once by [`build_model_context`](@ref) and reused by every likelihood/model call:
-
-- proposal caches at the fiducial point: `proposal_prior` (the fiducial
-  `single_event_prior` itself, used by [`logprobdiff`](@ref) for the egal component
-  skip), `proposal_log_prob` (a `NamedTuple` of per-component log-density vectors),
-  and `dl_fid_sq` (squared EM luminosity distance at the fiducial cosmology),
-- redshift state: `redshift_grid` and the proposal `sample_interpolant`,
-- detector/observation state grouped in [`ObservationContext`](@ref), and
-- `local_merger_rate` (events Gpc⁻³ yr⁻¹).
-
-A `ModelContext` is built for a specific cosmology family `C`; calling cached atomics with
-a different `C` would silently mix mismatched caches. Coherence is guaranteed by
-construction: `build_model_context` and the model that uses it close over a single literal
-`C`.
-"""
-struct ModelContext{P <: ProductNamedTupleDistribution, L <: NamedTuple}
-    proposal_prior::P
-    proposal_log_prob::L
-    dl_fid_sq::Vector{Float64}
-    redshift_grid::Vector{Float64}
-    sample_interpolant::GridQuery
-    observation::ObservationContext
-    local_merger_rate::Float64
 end

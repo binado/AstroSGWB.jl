@@ -11,13 +11,15 @@ per-sample intrinsic parameters with precomputed luminosity distances, and a
 fiducial `(D_L/D_gw)²` factor).
 
 Callers define their population model, fiducial hyperparameters, and catalog sample
-adapter in Julia, then construct a pure [`ImportanceSamplingProblem`](@ref). Derived
-`Λ`-independent caches (proposal log-prob, redshift interpolant, detector PSDs) are built
-into a [`ModelContext`](@ref) by [`build_model_context`](@ref).
+adapter in Julia, then construct a pure [`ImportanceSamplingProblem`](@ref). The
+cosmology-specific derived caches (proposal log-prob, `dl_fid_sq`, redshift interpolant)
+live on a caller-owned *prepared model*, assembled from the exported kernels; the
+detector/observation state lives in an [`ObservationContext`](@ref).
 
 Inference state is a flat hyperparameter `NamedTuple` validated against the
-[`PopulationModel`](@ref) contract; the cosmology family `C` is threaded through atomic
-calls rather than stored on the problem.
+[`PopulationModel`](@ref) contract. The package is cosmology-agnostic: the cosmology choice
+enters only through the model-dispatched [`merger_rate_and_log_weights`](@ref) joint that
+model authors implement outside the package.
 """
 module AstroSGWB
 
@@ -43,14 +45,13 @@ include("importance.jl")
 include("spectral_density.jl")
 include("snr.jl")
 include("diagnostics.jl")
-include("context.jl")
+include("contract.jl")
 include("posterior.jl")
 
 # Types
 export ImportanceSamplingProblem,
-       ModelContext,
-       build_model_context,
        ObservationContext,
+       with_redshift_interpolant,
        PopulationModel,
        hyperparameters,
        single_event_prior,
@@ -80,7 +81,7 @@ export FrequencyGrid,
        load_catalog,
        save_catalog
 
-# Detector network (ORF / PSD effective strain PSD; used by `build_model_context`)
+# Detector network (ORF / PSD effective strain PSD; used by `build_observation_context`)
 export Detector,
        PowerSpectralDensity,
        default_detector_data_dir,
@@ -151,7 +152,7 @@ export OrderedUniformSourceMassPair,
        logprobdiff!
 
 # Importance sampling
-export compute_importance_weights,
+export importance_log_weights,
        spectral_density,
        inner_product,
        spectral_snr_squared,
@@ -162,7 +163,8 @@ export compute_importance_weights,
 export normalized_ess
 
 # Posterior
-export loglikelihood,
+export merger_rate_and_log_weights,
+       loglikelihood,
        merger_rate,
        fiducial_hyperparameters,
        fiducial_spectral_density

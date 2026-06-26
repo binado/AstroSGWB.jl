@@ -11,17 +11,30 @@ begin
     Pkg.instantiate()
     using AstroSGWB
     using AstroSGWB:
-                     build_model_context,
                      canonical_hyperparameters,
-                     compute_importance_weights,
                      cosmology_type,
                      Detector,
-                     full_hyperparameters,
                      PopulationModel,
                      AbstractCosmology,
+                     AbstractPropagation,
                      ImportanceSamplingProblem,
-                     load_catalog,
+                     ObservationContext,
+                     CosmologyCache,
+                     GridQuery,
+                     DEFAULT_Z_GRID,
+                     FrequencyGrid,
+                     frequencies,
+                     in_band_mask,
+                     build_observation_context,
+                     cosmology,
+                     propagation,
+                     luminosity_distance,
+                     component_logpdfs,
+                     logprobdiff,
                      merger_rate,
+                     importance_log_weights,
+                     with_redshift_interpolant,
+                     load_catalog,
                      OrderedUniformSourceMassPair,
                      AlignedSpinChiSimple,
                      redshift_prior,
@@ -82,7 +95,8 @@ At the level of the code, the user must implement a concrete `PopulationModel` s
 
 # ╔═╡ 2c6d5e4f-7b8a-4d9c-0e3f-4a5b6c7d8e9f
 begin
-    import AstroSGWB: hyperparameters, single_event_prior
+    import AstroSGWB: hyperparameters, single_event_prior,
+                      merger_rate_and_log_weights, full_hyperparameters
 
     struct BNSPopulationModel <: PopulationModel end
 
@@ -100,6 +114,84 @@ begin
             Λ₁ = Uniform(0.0, 5000.0),
             Λ₂ = Uniform(0.0, 5000.0)
         ))
+    end
+
+    # Prepared model: out-of-package assembly of the cosmology-agnostic inference contract.
+    # The background cosmology `C` and propagation `P` are type parameters, so the package
+    # never sees a cosmology token; it dispatches solely on this model.
+    struct BNSPreparedModel{
+            C <: AbstractCosmology,
+            P <: AbstractPropagation,
+            Pop <: PopulationModel,
+            PR,
+            L <: NamedTuple
+        }
+        pop::Pop
+        redshift_grid::Vector{Float64}
+        sample_interpolant::GridQuery
+        proposal_prior::PR
+        proposal_log_prob::L
+        dl_fid_sq::Vector{Float64}
+        local_merger_rate::Float64
+        observation_time::Float64
+    end
+
+    function prepare_bns_model(
+            problem::ImportanceSamplingProblem,
+            ::Type{C},
+            ::Type{P},
+            grid::FrequencyGrid,
+            detectors::AbstractVector{<:Detector},
+            observation_time::Real,
+            local_merger_rate::Real;
+            z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
+    ) where {C <: AbstractCosmology, P <: AbstractPropagation}
+        pop = problem.population_model
+        Λ_fid = problem.fiducial_hyperparameters
+        z = problem.samples.redshift
+
+        observation = build_observation_context(
+            frequencies(grid), Vector{Detector}(collect(detectors)),
+            in_band_mask(grid), Float64(observation_time))
+
+        c_fid = cosmology(C, Λ_fid)
+        dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
+        redshift_grid = collect(Float64, z_grid)
+        interp = GridQuery(z, redshift_grid)
+
+        cache_fid = CosmologyCache(c_fid, redshift_grid)
+        proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
+        samples = with_redshift_interpolant(problem.samples, interp)
+        proposal_log_prob = component_logpdfs(proposal_prior, samples)
+
+        model = BNSPreparedModel{C, P, typeof(pop),
+            typeof(proposal_prior), typeof(proposal_log_prob)}(
+            pop, redshift_grid, interp, proposal_prior, proposal_log_prob,
+            dl_fid_sq, Float64(local_merger_rate), Float64(observation_time))
+        return (; model = model, observation = observation)
+    end
+
+    function full_hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
+        return full_hyperparameters(C, P, model.pop)
+    end
+
+    function merger_rate_and_log_weights(
+            model::BNSPreparedModel{C, P}, Λ::NamedTuple, samples
+    ) where {C, P}
+        Λc = canonical_hyperparameters(
+            full_hyperparameters(model), Λ; context = "joint hyperparameters",
+            eltype = nothing)
+        cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
+        prior = single_event_prior(model.pop, cache, Λc)
+        prop = propagation(P, Λc)
+        samples_interp = with_redshift_interpolant(samples, model.sample_interpolant)
+        log_ratio = logprobdiff(
+            model.pop, prior, model.proposal_prior, model.proposal_log_prob, samples_interp)
+        log_weights = importance_log_weights(
+            log_ratio, model.dl_fid_sq, samples.redshift,
+            model.sample_interpolant, cache, prop)
+        rate = merger_rate(prior, model.local_merger_rate, model.observation_time)
+        return (rate, log_weights)
     end
 
     function bns_samples_from_catalog(catalog_samples::NamedTuple)
@@ -213,19 +305,22 @@ begin
     @info hyperparameters(C)
     samples = bns_samples_from_catalog(catalog.samples)
     problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
-    ctx = build_model_context(
+    prepared = prepare_bns_model(
         problem,
         C,
+        P,
         loaded.metadata.grid,
         detectors,
         observation_time,
         local_merger_rate
     )
+    model = prepared.model
+    observation = prepared.observation
     order = full_hyperparameters(C, P, pop)
     @info order
     sample_only_tup = sample_only === nothing ? nothing : Tuple(sample_only)
 
-    @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(
+    @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(
         problem.samples.redshift,
     )
 
@@ -269,16 +364,15 @@ In the cells below, we plot ``\Omega_{\mathrm{GW}}(f)`` as a function of the fre
 """
 
 # ╔═╡ d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a
-function plot_fiducial_omega_gw(problem, C, P, fiducials, ctx)
-    weights0 = compute_importance_weights(problem, C, P, fiducials, ctx)
-    rate0 = merger_rate(problem, C, fiducials, ctx)
-    Sh0 = spectral_density(problem.fluxes, rate0; weights = weights0)
-    f = ctx.observation.frequencies
+function plot_fiducial_omega_gw(model, problem, fiducials, observation)
+    rate0, log_weights0 = merger_rate_and_log_weights(model, fiducials, problem.samples)
+    Sh0 = spectral_density(problem.fluxes, rate0; weights = exp.(log_weights0))
+    f = observation.frequencies
     df = frequency_bin_width(f)
     snr = spectral_snr(
         Sh0,
-        ctx.observation.effective_psd,
-        year_to_second(ctx.observation.observation_time),
+        observation.effective_psd,
+        year_to_second(observation.observation_time),
         df
     )
 
@@ -304,7 +398,7 @@ function plot_fiducial_omega_gw(problem, C, P, fiducials, ctx)
 end
 
 # ╔═╡ 5f9a8b7c-0e1d-4a2f-3b6c-7d8e9f0a1b2c
-plot_fiducial_omega_gw(problem, C, P, fiducials, ctx)
+plot_fiducial_omega_gw(model, problem, fiducials, observation)
 
 # ╔═╡ ccf43d43-7f31-41e9-85db-12842561973c
 md"""
@@ -327,10 +421,9 @@ begin
 
         @info "starting NUTS" nadapts=sampler.nadapts nsamples=sampler.nsamples target_acceptance=sampler.target_acceptance ad_backend=sampler.ad_backend sample_only=sample_only_tup
         turing_model = build_turing_model(
+            model,
             problem,
-            C,
-            P,
-            ctx,
+            observation,
             hyperprior;
             track = false
         )

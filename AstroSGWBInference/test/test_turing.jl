@@ -16,22 +16,21 @@ include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"
 @testset "Turing model smoke test" begin
     for variant in (:posterior, :full_intrinsic)
         loaded = parity_problem_context(variant, [Detector("H1"), Detector("L1")])
-        cache, C,
-        P, ctx = loaded.problem, loaded.cosmology_type,
-        loaded.propagation_type, loaded.ctx
+        prepared, problem, observation = loaded.model, loaded.problem, loaded.observation
         theta0 = PARITY_THETA
         priors = PARITY_PRIORS
         order = _PARITY_ORDER
 
-        model = build_turing_model(cache, C, P, ctx, priors; track = false)
-        observed = fiducial_spectral_density(cache, C, P, ctx)
-        Λ_fid = canonical_hyperparameters(order, fiducial_hyperparameters(cache))
-        weights_fid = compute_importance_weights(cache, C, P, Λ_fid, ctx)
-        rate_fid = merger_rate(cache, C, Λ_fid, ctx)
-        Sh_fid = spectral_density(cache.fluxes, rate_fid; weights = weights_fid)
+        model = build_turing_model(prepared, problem, observation, priors; track = false)
+        observed = fiducial_spectral_density(prepared, problem)
+        Λ_fid = canonical_hyperparameters(order, fiducial_hyperparameters(problem))
+        rate_fid,
+        log_weights_fid = merger_rate_and_log_weights(
+            prepared, Λ_fid, problem.samples)
+        Sh_fid = spectral_density(problem.fluxes, rate_fid; weights = exp.(log_weights_fid))
         @test observed ≈ Sh_fid
         @test Turing.logjoint(model, theta0) ≈
-              logposterior(theta0, cache, C, P, ctx, priors, observed) rtol = 1e-6
+              logposterior(theta0, prepared, problem, observation, priors, observed) rtol = 1e-6
         @test condition_turing_model(
             model, theta0, priors, nothing; order = order) ===
               model
@@ -40,7 +39,8 @@ include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"
         @test_throws ArgumentError condition_turing_model(
             model, theta0, priors, (:unknown,); order = order)
 
-        model_track = build_turing_model(cache, C, P, ctx, priors; track = true)
+        model_track = build_turing_model(
+            prepared, problem, observation, priors; track = true)
         returned_nt = Turing.returned(model_track, theta0)
         @test haskey(returned_nt, :effective_sample_size)
         @test isfinite(returned_nt.effective_sample_size)
@@ -105,12 +105,10 @@ end
 
 @testset "submodel boundary lifts VarNames to parent (flat)" begin
     loaded = parity_problem_context(:posterior, [Detector("H1"), Detector("L1")])
-    cache, C, P,
-    ctx = loaded.problem, loaded.cosmology_type,
-    loaded.propagation_type, loaded.ctx
+    prepared, problem, observation = loaded.model, loaded.problem, loaded.observation
     priors = PARITY_PRIORS
 
-    turing_model = build_turing_model(cache, C, P, ctx, priors)
+    turing_model = build_turing_model(prepared, problem, observation, priors)
     vi = VarInfo(turing_model)
     present = _varinfo_symbols(vi)
     for n in (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
@@ -122,14 +120,12 @@ end
 
 @testset "condition_turing_model across submodel boundary" begin
     loaded = parity_problem_context(:posterior, [Detector("H1"), Detector("L1")])
-    cache, C, P,
-    ctx = loaded.problem, loaded.cosmology_type,
-    loaded.propagation_type, loaded.ctx
+    prepared, problem, observation = loaded.model, loaded.problem, loaded.observation
     priors = PARITY_PRIORS
     order = _PARITY_ORDER
     theta0 = PARITY_THETA
 
-    turing_model = build_turing_model(cache, C, P, ctx, priors)
+    turing_model = build_turing_model(prepared, problem, observation, priors)
     @test condition_turing_model(turing_model, theta0, priors, nothing; order = order) ===
           turing_model
 
