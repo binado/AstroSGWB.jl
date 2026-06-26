@@ -1,11 +1,38 @@
 using LinearAlgebra
 
-# Per-sample importance weight as a product of three physically independent factors:
-# the population prior ratio `exp(log_ratio)`, the FLRW background distance ratio
-# `(D_L,fid/D_L,θ)²`, and the modified-propagation factor `(1/Ξ_θ)²`. The raw catalog flux
-# carries `1/D_L,fid²`, so multiplying by `dl_fid_sq / (D_L,θ² · Ξ_θ²)` recovers the
-# physically correct `1/D_gw,θ²` dilution.
-@inline function _importance_weight_at_sample(
+"""
+    merger_rate_and_log_weights(model, Λ::NamedTuple, samples) -> (rate, log_weights)
+
+The single model-dispatched importance-sampling contract that makes the forward-model
+surface cosmology-agnostic. **Model authors implement this method outside the package**, by
+dispatch on their concrete prepared model type. It fuses the two cosmology-specific steps
+— the detector-frame [`merger_rate`](@ref) and the per-sample importance weighting — into
+one self-contained call:
+
+- `rate::Real` — the detector-frame merger rate in events/sec at hyperparameters `Λ`.
+- `log_weights::AbstractVector` — per-sample **log** importance weights (consumers
+  exponentiate immediately before `spectral_density`/`normalized_ess`).
+
+A typical implementation assembles the exported kernels: rebuild the [`CosmologyCache`](@ref)
+and [`single_event_prior`](@ref) at `Λ`, form the prior log-ratio with [`logprobdiff`](@ref)
+against the prepared proposal caches, call [`importance_log_weights`](@ref) for the weights,
+and [`merger_rate`](@ref) for the rate. Everything *above* this boundary (cache, prior,
+propagation factor `Ξ(z)`, distances) is cosmology-specific and lives on the model;
+everything *below* it (`spectral_density`, Gaussian likelihoods, SNR tracking) is
+cosmology-agnostic.
+
+See also [`full_hyperparameters`](@ref)`(model)`, the companion method model authors
+implement to declare the flat HMC/Turing vector layout.
+"""
+function merger_rate_and_log_weights end
+
+# Per-sample *log* importance weight as a sum of three physically independent log-factors:
+# the population prior log-ratio `log_ratio[i]`, the FLRW background distance log-ratio
+# `log(D_L,fid²) − 2 log(D_L,θ)`, and the modified-propagation log-factor `−2 log(Ξ_θ)`.
+# The raw catalog flux carries `1/D_L,fid²`, so adding `log(dl_fid_sq) − 2 log(D_L,θ) − 2 log(Ξ_θ)`
+# recovers the physically correct `1/D_gw,θ²` dilution once exponentiated. Kept in log-space so
+# the logpdf arithmetic upstream never round-trips through `exp`/`log`.
+@inline function _importance_log_weight_at_sample(
         log_ratio::AbstractVector,
         dl_fid_sq::AbstractVector{<:Real},
         z::AbstractVector{<:Real},
@@ -16,17 +43,27 @@ using LinearAlgebra
 )
     d_l = luminosity_distance_at_sample(cosmology_cache, interp, z, sample_index)
     Ξ_theta = gw_em_distance_ratio(z[sample_index], prop)
-    return exp(log_ratio[sample_index]) * dl_fid_sq[sample_index] / (d_l^2 * Ξ_theta^2)
+    return log_ratio[sample_index] + log(dl_fid_sq[sample_index]) -
+           2 * log(d_l) - 2 * log(Ξ_theta)
 end
 
-# Shared kernel for both the naive and cached `compute_importance_weights` methods. Inputs
-# are explicit arrays so the only difference between the two backends is where the fiducial
-# caches come from (recomputed vs read from a `ModelContext`) and how `log_ratio` (per-sample
-# `log p_target − log p_proposal`) was produced (`logprobdiff` vs full two-sided
-# `batched_logpdf`). Built with `map` over the index range: this keeps the result type stable
-# (a properly-typed empty vector for n == 0, rather than a `Union` with `Float64[]`) so the
-# AD/`Dual` likelihood path stays inferrable.
-function _importance_weights_core(
+"""
+    importance_log_weights(log_ratio, dl_fid_sq, z, interp, cache, prop) -> Vector
+
+Per-sample **log** importance weights from explicit arrays: the population prior
+log-ratio `log_ratio` (per-sample `log p_target − log p_proposal`), the squared fiducial
+EM luminosity distances `dl_fid_sq`, the sample redshifts `z`, the proposal redshift
+interpolant `interp`, a [`CosmologyCache`](@ref) at the target hyperparameters, and the
+target propagation `prop`. Returns `log_ratio[i] + log(dl_fid_sq[i]) − 2 log(D_L,θ) − 2 log(Ξ_θ)`.
+
+This is the reusable physics kernel that model authors assemble into their
+[`merger_rate_and_log_weights`](@ref) joint. Built with `map` over the index range so the
+result type stays stable (a properly-typed empty vector for `n == 0`, rather than a `Union`
+with `Float64[]`), keeping the AD/`Dual` likelihood path inferrable. Exponentiate
+(`exp.(...)`) at the call site for the linear weights `spectral_density`/`normalized_ess`
+need.
+"""
+function importance_log_weights(
         log_ratio::AbstractVector,
         dl_fid_sq::AbstractVector{<:Real},
         z::AbstractVector{<:Real},
@@ -37,104 +74,7 @@ function _importance_weights_core(
     length(z) == length(log_ratio) ||
         throw(ArgumentError("population prior logpdf length must match proposal sample count"))
     return map(eachindex(z)) do i
-        _importance_weight_at_sample(
+        _importance_log_weight_at_sample(
             log_ratio, dl_fid_sq, z, interp, cosmology_cache, prop, i)
     end
-end
-
-"""
-    compute_importance_weights(problem, C, P, Λ, ctx::ModelContext) -> Vector
-
-Per-sample importance weights at hyperparameters `Λ` (cosmology family `C`, propagation
-family `P`), reading the fiducial proposal caches from `ctx`. This is the hot path used by
-the likelihood and the generative model.
-"""
-function compute_importance_weights(
-        problem::ImportanceSamplingProblem,
-        ::Type{C},
-        ::Type{P},
-        Λ::NamedTuple,
-        ctx::ModelContext
-) where {C <: AbstractCosmology, P <: AbstractPropagation}
-    cache = CosmologyCache(cosmology(C, Λ), ctx.redshift_grid)
-    prior = single_event_prior(problem.population_model, cache, Λ)
-    prop = propagation(P, Λ)
-    return compute_importance_weights(problem, cache, prop, prior, ctx)
-end
-
-"""
-    compute_importance_weights(problem, cache::CosmologyCache, prop, prior, ctx::ModelContext) -> Vector
-
-Importance weights from a prebuilt `cache`, propagation `prop`, and single-event `prior`. The
-forward model builds the cache once, shares it with `single_event_prior` (which uses it for the
-redshift prior), and passes it here for the per-sample luminosity distance — so the cumulative
-cosmology integral is computed once per evaluation rather than rebuilt in both places. This
-is the bare form the forward model calls directly.
-"""
-function compute_importance_weights(
-        problem::ImportanceSamplingProblem,
-        cache::CosmologyCache,
-        prop::AbstractPropagation,
-        prior,
-        ctx::ModelContext
-)
-    # `logprobdiff` skips components whose target distribution is egal to the fiducial
-    # proposal's (Λ-independent factors cancel exactly), and the redshift component reuses
-    # the precomputed per-sample grid locations to skip the grid search every gradient
-    # evaluation.
-    samples = _with_redshift_interpolant(problem.samples, ctx.sample_interpolant)
-    log_ratio = logprobdiff(
-        problem.population_model,
-        prior,
-        ctx.proposal_prior,
-        ctx.proposal_log_prob,
-        samples
-    )
-    return _importance_weights_core(
-        log_ratio,
-        ctx.dl_fid_sq,
-        problem.samples.redshift,
-        ctx.sample_interpolant,
-        cache,
-        prop
-    )
-end
-
-"""
-    compute_importance_weights(problem, C, P, Λ) -> Vector
-
-Naive importance weights: recompute the fiducial proposal caches (`proposal_log_prob`,
-`dl_fid_sq`, redshift interpolant) from scratch at `problem.fiducial_hyperparameters`,
-then weight at `Λ` (cosmology family `C`, propagation family `P`). Slower than the `ctx`
-method but free of any precomputed state — it deliberately uses the full two-sided
-`batched_logpdf` rather than `logprobdiff`, so it serves as the correctness oracle for the
-cached path (including its component skipping).
-"""
-function compute_importance_weights(
-        problem::ImportanceSamplingProblem,
-        ::Type{C},
-        ::Type{P},
-        Λ::NamedTuple
-) where {C <: AbstractCosmology, P <: AbstractPropagation}
-    Λ_fid = problem.fiducial_hyperparameters
-    z = problem.samples.redshift
-    c_fid = cosmology(C, Λ_fid)
-    prior_fid = single_event_prior(problem.population_model, c_fid, Λ_fid)
-    proposal_log_prob = batched_logpdf(prior_fid, problem.samples)
-    dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
-    redshift_grid = collect(Float64, DEFAULT_Z_GRID)
-    interp = GridQuery(z, redshift_grid)
-
-    cosmology_cache = CosmologyCache(cosmology(C, Λ), redshift_grid)
-    prior = single_event_prior(problem.population_model, cosmology_cache, Λ)
-    prop = propagation(P, Λ)
-    log_ratio = batched_logpdf(prior, problem.samples) .- proposal_log_prob
-    return _importance_weights_core(
-        log_ratio,
-        dl_fid_sq,
-        z,
-        interp,
-        cosmology_cache,
-        prop
-    )
 end

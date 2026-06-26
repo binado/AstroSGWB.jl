@@ -14,13 +14,27 @@ const _REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 using AstroSGWB
 using AstroSGWB:
-                 build_model_context,
                  canonical_hyperparameters,
-                 full_hyperparameters,
                  load_catalog,
                  AbstractCosmology,
+                 AbstractPropagation,
                  PopulationModel,
-                 ImportanceSamplingProblem,
+                 ObservationContext,
+                 CosmologyCache,
+                 GridQuery,
+                 DEFAULT_Z_GRID,
+                 FrequencyGrid,
+                 frequencies,
+                 in_band_mask,
+                 build_observation_context,
+                 cosmology,
+                 propagation,
+                 luminosity_distance,
+                 component_logpdfs,
+                 logprobdiff,
+                 merger_rate,
+                 importance_log_weights,
+                 with_redshift_interpolant,
                  ModifiedPropagation,
                  GR,
                  W0CDM,
@@ -30,7 +44,8 @@ using AstroSGWB:
                  redshift_prior,
                  MadauDickinsonSourceFrame,
                  stack_source_masses
-import AstroSGWB: hyperparameters, single_event_prior
+import AstroSGWB: hyperparameters, single_event_prior,
+                  merger_rate_and_log_weights, full_hyperparameters
 using AstroSGWBInference:
                           build_turing_model,
                           condition_turing_model,
@@ -57,8 +72,8 @@ struct BNSPopulationModel <: PopulationModel end
 
 hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
 
-function single_event_prior(::BNSPopulationModel, cosmo::AbstractCosmology, Λ::NamedTuple)
-    z_d = redshift_prior(MadauDickinsonSourceFrame(), cosmo, Λ)
+function single_event_prior(::BNSPopulationModel, cache::CosmologyCache, Λ::NamedTuple)
+    z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
     spin = AlignedSpinChiSimple()
     return product_distribution((
         mass = OrderedUniformSourceMassPair(),
@@ -68,6 +83,85 @@ function single_event_prior(::BNSPopulationModel, cosmo::AbstractCosmology, Λ::
         Λ₁ = Uniform(0.0, 5000.0),
         Λ₂ = Uniform(0.0, 5000.0)
     ))
+end
+
+# --------------------------------------------------------------------------
+# Prepared model (out-of-package assembly of the cosmology-agnostic contract)
+# --------------------------------------------------------------------------
+
+struct BNSPreparedModel{
+    C <: AbstractCosmology,
+    P <: AbstractPropagation,
+    Pop <: PopulationModel,
+    PR,
+    L <: NamedTuple
+}
+    pop::Pop
+    redshift_grid::Vector{Float64}
+    sample_interpolant::GridQuery
+    proposal_prior::PR
+    proposal_log_prob::L
+    dl_fid_sq::Vector{Float64}
+    local_merger_rate::Float64
+    observation_time::Float64
+end
+
+function prepare_bns_model(
+        pop::PopulationModel,
+        samples::NamedTuple,
+        fiducials::NamedTuple,
+        ::Type{C},
+        ::Type{P},
+        grid::FrequencyGrid,
+        detectors::AbstractVector{<:Detector},
+        observation_time::Real,
+        local_merger_rate::Real;
+        z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
+) where {C <: AbstractCosmology, P <: AbstractPropagation}
+    Λ_fid = fiducials
+    z = samples.redshift
+
+    observation = build_observation_context(
+        frequencies(grid), Vector{Detector}(collect(detectors)),
+        in_band_mask(grid), Float64(observation_time))
+
+    c_fid = cosmology(C, Λ_fid)
+    dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
+    redshift_grid = collect(Float64, z_grid)
+    interp = GridQuery(z, redshift_grid)
+
+    cache_fid = CosmologyCache(c_fid, redshift_grid)
+    proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
+    samples_interp = with_redshift_interpolant(samples, interp)
+    proposal_log_prob = component_logpdfs(proposal_prior, samples_interp)
+
+    model = BNSPreparedModel{C, P, typeof(pop),
+        typeof(proposal_prior), typeof(proposal_log_prob)}(
+        pop, redshift_grid, interp, proposal_prior, proposal_log_prob,
+        dl_fid_sq, Float64(local_merger_rate), Float64(observation_time))
+    return (; model = model, observation = observation)
+end
+
+function full_hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
+    return full_hyperparameters(C, P, model.pop)
+end
+
+function merger_rate_and_log_weights(
+        model::BNSPreparedModel{C, P}, Λ::NamedTuple, samples
+) where {C, P}
+    Λc = canonical_hyperparameters(
+        full_hyperparameters(model), Λ; context = "joint hyperparameters", eltype = nothing)
+    cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
+    prior = single_event_prior(model.pop, cache, Λc)
+    prop = propagation(P, Λc)
+    samples_interp = with_redshift_interpolant(samples, model.sample_interpolant)
+    log_ratio = logprobdiff(
+        model.pop, prior, model.proposal_prior, model.proposal_log_prob, samples_interp)
+    log_weights = importance_log_weights(
+        log_ratio, model.dl_fid_sq, samples.redshift,
+        model.sample_interpolant, cache, prop)
+    rate = merger_rate(prior, model.local_merger_rate, model.observation_time)
+    return (rate, log_weights)
 end
 
 function bns_samples_from_catalog(catalog_samples::NamedTuple)
@@ -169,17 +263,21 @@ function run_mcmc(config_file::String)
     loaded = load_catalog(catalog_path)
     catalog = loaded.catalog
     samples = bns_samples_from_catalog(catalog.samples)
-    problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, fiducials)
-    ctx = build_model_context(
-        problem,
+    prepared = prepare_bns_model(
+        pop,
+        samples,
+        fiducials,
         C,
+        P,
         loaded.metadata.grid,
         detectors,
         cfg.observation_time,
         cfg.local_merger_rate
     )
-    @info "catalog loaded" n_frequency_bins=length(ctx.observation.frequencies) n_proposal_samples=length(
-        problem.samples.redshift,
+    model = prepared.model
+    observation = prepared.observation
+    @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(
+        samples.redshift,
     )
 
     mkpath(output_dir)
@@ -194,10 +292,11 @@ function run_mcmc(config_file::String)
     adtype = _resolve_adtype(cfg.sampler.ad_backend)
     @info "starting NUTS" nadapts=cfg.sampler.nadapts nsamples=cfg.sampler.nsamples target_acceptance=cfg.sampler.target_acceptance ad_backend=cfg.sampler.ad_backend sample_only nchains
     turing_model = build_turing_model(
-        problem,
-        C,
-        P,
-        ctx,
+        model,
+        catalog.fluxes,
+        samples,
+        fiducials,
+        observation,
         HYPERPRIOR;
         track = true
     )

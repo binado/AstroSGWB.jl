@@ -2,19 +2,9 @@ module InferenceImpl
 
 using AstroSGWB
 using AstroSGWB:
-                 ImportanceSamplingProblem,
-                 ModelContext,
+                 ObservationContext,
                  PopulationModel,
-                 AbstractCosmology,
-                 AbstractPropagation,
-                 SUPPORTED_COSMOLOGIES,
-                 SUPPORTED_PROPAGATIONS,
-                 loglikelihood,
-                 cosmology,
-                 propagation,
-                 single_event_prior,
-                 compute_importance_weights,
-                 merger_rate,
+                 merger_rate_and_log_weights,
                  spectral_density,
                  fiducial_spectral_density,
                  canonical_hyperparameters,
@@ -28,10 +18,12 @@ using Distributions: MvNormal, ProductNamedTupleDistribution, logpdf
 using LinearAlgebra: Diagonal
 using Turing
 
+include("likelihood.jl")
 include("turing_model.jl")
 
 export build_turing_model,
        condition_turing_model,
+       loglikelihood,
        logposterior,
        validate_hyperprior
 

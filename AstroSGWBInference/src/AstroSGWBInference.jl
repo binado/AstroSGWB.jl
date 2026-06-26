@@ -4,11 +4,13 @@ include("InferenceImpl.jl")
 using .InferenceImpl:
                       build_turing_model,
                       condition_turing_model,
+                      loglikelihood,
                       logposterior,
                       validate_hyperprior
 
 export build_turing_model,
        condition_turing_model,
+       loglikelihood,
        logposterior,
        validate_hyperprior,
        atomic_save_chain,

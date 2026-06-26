@@ -86,26 +86,26 @@ end
     @test all(isfinite, scale) && all(scale .> 0)
 end
 
-@testset "build_model_context reconstructs effective_psd from detectors" begin
+@testset "prepared model reconstructs effective_psd from detectors" begin
     if !@isdefined parity_catalog_dir
         include(joinpath(@__DIR__, "parity_test_cache.jl"))
     end
     d1 = Detector("H1")
     d2 = Detector("L1")
-    obs = parity_problem_context(:posterior_v2_minimal, [d1, d2]).ctx.observation
+    obs = parity_problem_context(:posterior_v2_minimal, [d1, d2]).observation
     @test length(obs.effective_psd) == length(obs.frequencies)
     # In-band bins have finite PSD; f=0 Hz (DC) is excluded by in_band_mask and may be Inf.
     @test all(isfinite, obs.effective_psd[obs.in_band_mask])
     @test length(obs.sgwb_scale) == length(obs.frequencies)
 end
 
-@testset "build_model_context is deterministic for the same paths and detectors" begin
+@testset "prepared model observation is deterministic for the same paths and detectors" begin
     if !@isdefined parity_catalog_dir
         include(joinpath(@__DIR__, "parity_test_cache.jl"))
     end
     dets = [Detector("H1"), Detector("L1")]
-    obs1 = parity_problem_context(:posterior, dets).ctx.observation
-    obs2 = parity_problem_context(:posterior, dets).ctx.observation
+    obs1 = parity_problem_context(:posterior, dets).observation
+    obs2 = parity_problem_context(:posterior, dets).observation
     @test obs1.effective_psd == obs2.effective_psd
     @test obs1.sgwb_scale == obs2.sgwb_scale
 end

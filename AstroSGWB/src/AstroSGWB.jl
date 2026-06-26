@@ -2,7 +2,7 @@
     AstroSGWB
 
 Astrophysical stochastic gravitational-wave background modeling: importance
-sampling, redshift grids, and likelihoods. Turing model construction lives in the
+sampling, redshift grids, and spectral-density forward models. Turing model construction lives in the
 `AstroSGWBInference` package (see the `AstroSGWBInference/` directory in the repository).
 
 The primary inference artifact is **`catalog.h5`** ([`WaveformCatalogFile`](@ref)):
@@ -11,13 +11,16 @@ per-sample intrinsic parameters with precomputed luminosity distances, and a
 fiducial `(D_L/D_gw)²` factor).
 
 Callers define their population model, fiducial hyperparameters, and catalog sample
-adapter in Julia, then construct a pure [`ImportanceSamplingProblem`](@ref). Derived
-`Λ`-independent caches (proposal log-prob, redshift interpolant, detector PSDs) are built
-into a [`ModelContext`](@ref) by [`build_model_context`](@ref).
+adapter in Julia, then pass raw catalog `fluxes`, restructured `samples`, and fiducials
+explicitly. The
+cosmology-specific derived caches (proposal log-prob, `dl_fid_sq`, redshift interpolant)
+live on a caller-owned *prepared model*, assembled from the exported kernels; the
+detector/observation state lives in an [`ObservationContext`](@ref).
 
 Inference state is a flat hyperparameter `NamedTuple` validated against the
-[`PopulationModel`](@ref) contract; the cosmology family `C` is threaded through atomic
-calls rather than stored on the problem.
+[`PopulationModel`](@ref) contract. The package is cosmology-agnostic: the cosmology choice
+enters only through the model-dispatched [`merger_rate_and_log_weights`](@ref) joint that
+model authors implement outside the package.
 """
 module AstroSGWB
 
@@ -33,7 +36,7 @@ include("models/base.jl")
 include("catalog/grid.jl")
 include("catalog/catalog.jl")
 include("catalog/io.jl")
-include("inference_types.jl")
+include("samples.jl")
 include("detector/psd.jl")
 include("detector/detector.jl")
 include("detector/overlap.jl")
@@ -43,14 +46,11 @@ include("importance.jl")
 include("spectral_density.jl")
 include("snr.jl")
 include("diagnostics.jl")
-include("context.jl")
-include("posterior.jl")
+include("forward_model.jl")
 
 # Types
-export ImportanceSamplingProblem,
-       ModelContext,
-       build_model_context,
-       ObservationContext,
+export ObservationContext,
+       with_redshift_interpolant,
        PopulationModel,
        hyperparameters,
        single_event_prior,
@@ -80,7 +80,7 @@ export FrequencyGrid,
        load_catalog,
        save_catalog
 
-# Detector network (ORF / PSD effective strain PSD; used by `build_model_context`)
+# Detector network (ORF / PSD effective strain PSD; used by `build_observation_context`)
 export Detector,
        PowerSpectralDensity,
        default_detector_data_dir,
@@ -151,7 +151,8 @@ export OrderedUniformSourceMassPair,
        logprobdiff!
 
 # Importance sampling
-export compute_importance_weights,
+export importance_log_weights,
+       merger_rate_and_log_weights,
        spectral_density,
        inner_product,
        spectral_snr_squared,
@@ -161,10 +162,8 @@ export compute_importance_weights,
 # Diagnostics
 export normalized_ess
 
-# Posterior
-export loglikelihood,
-       merger_rate,
-       fiducial_hyperparameters,
+# Forward-model helpers
+export merger_rate,
        fiducial_spectral_density
 
 # Time conversions

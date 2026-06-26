@@ -174,10 +174,15 @@ function parity_bns_samples_from_catalog(catalog_samples::NamedTuple)
 end
 
 """
-    parity_problem_context(variant, detectors) -> (; problem, cosmology_type, propagation_type, ctx)
+    parity_problem_context(variant, detectors)
+        -> (; pop, fluxes, samples, fiducials, model, observation, cosmology_type, propagation_type)
 
-Load the parity catalog for `variant`, restructure its samples, build the pure
-[`ImportanceSamplingProblem`](@ref), and build its [`ModelContext`](@ref).
+Load the parity catalog for `variant`, restructure its samples, and assemble the
+out-of-package prepared model ([`PreparedParityModel`](@ref)) plus its
+[`ObservationContext`](@ref). The raw catalog `fluxes`, restructured `samples`, and
+fiducials are returned explicitly. The cosmology and propagation families are returned for
+tests that still construct family-token hyperparameter orders, but they are *not* part of
+the inference surface.
 """
 function parity_problem_context(variant::Symbol, detectors)
     dir = parity_catalog_dir(variant)
@@ -194,17 +199,26 @@ function parity_problem_context(variant::Symbol, detectors)
     end
     catalog = loaded.catalog
     samples = parity_bns_samples_from_catalog(catalog.samples)
-    problem = ImportanceSamplingProblem(pop, catalog.fluxes, samples, Λ)
     kw = parity_observation_kwargs(variant)
-    ctx = build_model_context(
-        problem,
+    prepared = prepare_parity_model(
+        pop,
+        samples,
+        Λ,
         C,
+        P,
         loaded.metadata.grid,
         detectors,
         kw.observation_time,
         kw.local_merger_rate
     )
-    return (; problem = problem, cosmology_type = C, propagation_type = P, ctx = ctx)
+    return (;
+        pop = pop,
+        fluxes = catalog.fluxes,
+        samples = samples,
+        fiducials = Λ,
+        model = prepared.model,
+        observation = prepared.observation,
+        cosmology_type = C, propagation_type = P)
 end
 
 """

@@ -10,18 +10,6 @@ function validate_hyperprior(order::Tuple{Vararg{Symbol}}, prior::ProductNamedTu
     return nothing
 end
 
-function logposterior(
-        Λ::NamedTuple,
-        problem::ImportanceSamplingProblem,
-        ::Type{C},
-        ::Type{P},
-        ctx::ModelContext,
-        prior::ProductNamedTupleDistribution,
-        observed::AbstractVector{<:Real}
-) where {C <: AbstractCosmology, P <: AbstractPropagation}
-    return logpdf(prior, Λ) + loglikelihood(Λ, problem, C, P, ctx, observed)
-end
-
 function condition_turing_model(
         turing_model,
         theta0::NamedTuple,
@@ -53,14 +41,14 @@ end
 
 @model function astrosgwb_importance_turing_model(
         track::Bool,
-        problem::ImportanceSamplingProblem,
-        ::Val{C},
-        ::Val{P},
-        ctx::ModelContext,
+        model,
+        fluxes::AbstractMatrix{<:Real},
+        samples::NamedTuple,
+        observation::ObservationContext,
         prior::ProductNamedTupleDistribution,
         observed_in_band::AbstractVector{<:Real}
-) where {C, P}
-    order = full_hyperparameters(C, P, problem.population_model)
+)
+    order = full_hyperparameters(model)
     Λ ~ to_submodel(sample_hyperparameters(order, prior.dists), false)
     Λc = canonical_hyperparameters(
         order,
@@ -69,29 +57,21 @@ end
         eltype = nothing
     )
 
-    cache = CosmologyCache(cosmology(C, Λc), ctx.redshift_grid)
-    event_prior = single_event_prior(problem.population_model, cache, Λc)
-    prop = propagation(P, Λc)
-    weights = compute_importance_weights(problem, cache, prop, event_prior, ctx)
-    rate = merger_rate(
-        event_prior,
-        ctx.local_merger_rate,
-        ctx.observation.observation_time
-    )
-    Sh = spectral_density(problem.fluxes, rate; weights = weights)
+    rate, log_weights = merger_rate_and_log_weights(model, Λc, samples)
+    weights = exp.(log_weights)
+    Sh = spectral_density(fluxes, rate; weights = weights)
 
-    obs = ctx.observation
     observed_in_band ~ MvNormal(
-        Sh[obs.in_band_mask],
-        Diagonal(obs.sgwb_scale_in_band .^ 2)
+        Sh[observation.in_band_mask],
+        Diagonal(observation.sgwb_scale_in_band .^ 2)
     )
 
     track || return nothing
-    m = obs.in_band_mask
-    df = frequency_bin_width(obs.frequencies)
-    obs_sec = year_to_second(obs.observation_time)
+    m = observation.in_band_mask
+    df = frequency_bin_width(observation.frequencies)
+    obs_sec = year_to_second(observation.observation_time)
     snr_sq = spectral_snr_squared(
-        Sh[m], obs.effective_psd[m], obs_sec, df)
+        Sh[m], observation.effective_psd[m], obs_sec, df)
     return (;
         number_of_sources = rate * obs_sec,
         effective_sample_size = normalized_ess(weights),
@@ -101,28 +81,29 @@ end
 end
 
 function build_turing_model(
-        problem::ImportanceSamplingProblem,
-        ::Type{C},
-        ::Type{P},
-        ctx::ModelContext,
+        model,
+        fluxes::AbstractMatrix{<:Real},
+        samples::NamedTuple,
+        fiducial_hyperparameters::NamedTuple,
+        observation::ObservationContext,
         prior::ProductNamedTupleDistribution;
         track::Bool = false,
         observed::Union{Nothing, AbstractVector{<:Real}} = nothing
-) where {C <: AbstractCosmology, P <: AbstractPropagation}
-    order = full_hyperparameters(C, P, problem.population_model)
+)
+    order = full_hyperparameters(model)
     validate_hyperprior(order, prior)
     observed_data = if observed === nothing
-        fiducial_spectral_density(problem, C, P, ctx)
+        fiducial_spectral_density(model, fluxes, samples, fiducial_hyperparameters)
     else
         observed
     end
     return astrosgwb_importance_turing_model(
         track,
-        problem,
-        Val(C),
-        Val(P),
-        ctx,
+        model,
+        fluxes,
+        samples,
+        observation,
         prior,
-        observed_data[ctx.observation.in_band_mask]
+        observed_data[observation.in_band_mask]
     )
 end
