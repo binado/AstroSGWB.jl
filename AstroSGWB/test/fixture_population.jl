@@ -1,22 +1,23 @@
 # Test-only reference population implementing the PopulationModel contract, plus the
 # canonical out-of-package "prepared model" that implements the cosmology-agnostic inference
-# contract (`merger_rate_and_log_weights` + `full_hyperparameters`). The framework owns no
+# contract (`merger_rate_and_log_weights` + `hyperparameters`). The framework owns no
 # concrete population or prepared-model types; callers define the concrete models used by
-# their notebooks or scripts. This file is that example.
+# their notebooks or scripts. This file is that example, mirroring the slim
+# `BNSImportanceModel` in notebooks/mcmc.jl.
 using AstroSGWB: CosmologyCache, GridQuery, DEFAULT_Z_GRID,
                  OrderedUniformSourceMassPair, AlignedSpinChiSimple,
                  redshift_prior, MadauDickinsonSourceFrame,
                  ObservationContext, FrequencyGrid, Detector, frequencies, in_band_mask,
                  build_observation_context,
-                 cosmology, propagation, luminosity_distance,
-                 component_logpdfs, logprobdiff, merger_rate_per_sec,
-                 importance_log_weights, with_redshift_interpolant,
-                 canonical_hyperparameters
+                 cosmology, propagation,
+                 build_redshift_prior, source_frame_distribution, redshift_integral,
+                 redshift_logpdf_eltype, _normalized_log_density, interpolate,
+                 luminosity_distance_at_sample, gw_em_distance_ratio, merger_rate_per_sec
 using CBCDistributions: PopulationModel, full_hyperparameters, single_event_prior
 import Cosmology
 using Cosmology: AbstractCosmology, AbstractPropagation
 import CBCDistributions: single_event_prior
-using Distributions: Uniform, product_distribution, ProductNamedTupleDistribution
+using Distributions: Uniform, product_distribution
 
 struct ParityBNSPopulation <: PopulationModel end
 
@@ -30,6 +31,9 @@ function parity_population_hyperprior()
     ))
 end
 
+# Population sampler contract (used by the population-injection workflow): the per-event
+# intrinsic prior as a product distribution. The slim prepared model below does not use it
+# (the Λ-independent components cancel exactly), but it documents the sampler interface.
 function single_event_prior(::ParityBNSPopulation, cache::CosmologyCache, Λ::NamedTuple)
     z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
     spin = AlignedSpinChiSimple()
@@ -46,27 +50,18 @@ end
 """
     PreparedParityModel
 
-Canonical out-of-package prepared model: the cosmology-specific half of what used to be a
-`ModelContext`, fused onto the model the author owns. Carries the population, the fiducial
-proposal caches (`proposal_prior`, per-component `proposal_log_prob`, `dl_fid_sq`), the
-redshift grid + interpolant, and the `local_merger_rate`/`observation_time` that make
-[`merger_rate_and_log_weights`](@ref) self-contained. The background cosmology family `C`
-and GW propagation family `P` are *type parameters* (model-internal), so the package never
-sees a cosmology token.
+Canonical out-of-package prepared model: a single concrete struct implementing the
+two-method inference contract, mirroring `BNSImportanceModel`. The six-component prior
+collapses to a redshift log-ratio (mass/spin/tidal are Λ-independent and cancel exactly)
+plus a distance/propagation factor, so `merger_rate_and_log_weights` inlines the redshift +
+importance-weight math. The background cosmology family `C` and GW propagation family `P`
+are *type parameters* (model-internal), so the package never sees a cosmology token.
 """
-struct PreparedParityModel{
-    C,
-    P,
-    Pop,
-    PR <: ProductNamedTupleDistribution,
-    L <: NamedTuple
-}
+struct PreparedParityModel{C, P, Pop}
     pop::Pop
-    redshift_grid::Vector{Float64}
-    sample_interpolant::GridQuery
-    proposal_prior::PR
-    proposal_log_prob::L
-    dl_fid_sq::Vector{Float64}
+    z_grid::Vector{Float64}
+    query::GridQuery
+    proposal_log_pdf::Vector{Float64}
     local_merger_rate::Float64
     observation_time::Float64
 end
@@ -76,12 +71,9 @@ end
         local_merger_rate; z_grid)
         -> (; model, observation)
 
-Assemble a [`PreparedParityModel`](@ref) and its [`ObservationContext`](@ref) from the
-caller-owned population, catalog samples, fiducials, cosmology/propagation families `C`/`P`,
-catalog [`FrequencyGrid`](@ref), and detector network. Mirrors the precompute the retired
-`build_model_context` did, but partitions it: the cosmology-specific caches go on the
-model, the detector/observation state goes in `observation`. The proposal caches are
-rebuilt at the fiducial cosmology so stale on-disk values are never trusted.
+Assemble a [`PreparedParityModel`](@ref) and its [`ObservationContext`](@ref). The fiducial
+proposal redshift log-density is evaluated once; the `samples` NamedTuple is the single
+source of truth for the fiducial EM `luminosity_distance`.
 """
 function prepare_parity_model(
         pop,
@@ -98,41 +90,25 @@ function prepare_parity_model(
     length(detectors) < 2 && throw(ArgumentError(
         "prepare_parity_model: at least two detectors are required to build effective_psd and sgwb_scale"))
 
-    Λ_fid = fiducials
     z = samples.redshift
-
-    all_freq = frequencies(grid)
-    mask = in_band_mask(grid)
-    det_vec = Vector{Detector}(collect(detectors))
     observation = build_observation_context(
-        all_freq, det_vec, mask, Float64(observation_time))
+        frequencies(grid), Vector{Detector}(collect(detectors)),
+        in_band_mask(grid), Float64(observation_time))
+    zg = collect(Float64, z_grid)
+    query = GridQuery(z, zg)
 
-    c_fid = cosmology(C, Λ_fid)
-    # Per-sample squared EM luminosity distance at the fiducial cosmology. The (Ξ₀, Ξₙ)
-    # propagation factor is applied live in the importance weights, not baked in here.
-    dl_fid_sq = luminosity_distance.(z, c_fid) .^ 2
+    prior_fid = build_redshift_prior(
+        zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, fiducials),
+        CosmologyCache(cosmology(C, fiducials), zg))
+    norm_fid = redshift_integral(prior_fid)
+    tiny = floatmin(Float64)
+    proposal_log_pdf = [_normalized_log_density(
+                            interpolate(prior_fid.dN_dz, query, i), norm_fid, tiny)
+                        for i in eachindex(z)]
 
-    redshift_grid = collect(Float64, z_grid)
-    interp = GridQuery(z, redshift_grid)
-
-    # Fiducial proposal prior and its per-component log-densities, computed with the same
-    # interpolant the hot path uses, so the redshift log-ratio at Λ_fid is exactly zero.
-    cache_fid = CosmologyCache(c_fid, redshift_grid)
-    proposal_prior = single_event_prior(pop, cache_fid, Λ_fid)
-    samples_interp = with_redshift_interpolant(samples, interp)
-    proposal_log_prob = component_logpdfs(proposal_prior, samples_interp)
-
-    model = PreparedParityModel{C, P, typeof(pop),
-        typeof(proposal_prior), typeof(proposal_log_prob)}(
-        pop,
-        redshift_grid,
-        interp,
-        proposal_prior,
-        proposal_log_prob,
-        dl_fid_sq,
-        Float64(local_merger_rate),
-        Float64(observation_time)
-    )
+    model = PreparedParityModel{C, P, typeof(pop)}(
+        pop, zg, query, proposal_log_pdf,
+        Float64(local_merger_rate), Float64(observation_time))
     return (; model = model, observation = observation)
 end
 
@@ -145,22 +121,31 @@ if @isdefined AstroSGWBInference
     end
 
     function merger_rate_and_log_weights(
-            model::PreparedParityModel{C, P}, Λ::NamedTuple, samples
+            m::PreparedParityModel{C, P}, Λ::NamedTuple, samples
     ) where {C, P}
-        Λc = canonical_hyperparameters(
-            AstroSGWBInference.hyperparameters(model), Λ;
-            context = "joint hyperparameters", eltype = nothing)
-        cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
-        prior = single_event_prior(model.pop, cache, Λc)
-        prop = propagation(P, Λc)
-        samples_interp = with_redshift_interpolant(samples, model.sample_interpolant)
-        log_ratio = logprobdiff(
-            model.pop, prior, model.proposal_prior, model.proposal_log_prob, samples_interp)
-        log_weights = importance_log_weights(
-            log_ratio, model.dl_fid_sq, samples.redshift,
-            model.sample_interpolant, cache, prop)
-        rate = merger_rate_per_sec(
-            prior.dists.redshift.prior, model.local_merger_rate, model.observation_time)
+        z = samples.redshift
+        d_l_fid = samples.luminosity_distance
+        cache = CosmologyCache(cosmology(C, Λ), m.z_grid)
+        prop = propagation(P, Λ)
+
+        prior = build_redshift_prior(
+            zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, Λ), cache)
+        norm = redshift_integral(prior)
+        tiny = floatmin(real(eltype(prior.dN_dz.y)))
+
+        T = promote_type(redshift_logpdf_eltype(prior),
+            typeof(gw_em_distance_ratio(zero(eltype(z)), prop)))
+        log_weights = Vector{T}(undef, length(z))
+        @inbounds for i in eachindex(z)
+            log_p_target = _normalized_log_density(
+                interpolate(prior.dN_dz, m.query, i), norm, tiny)
+            d_l_θ = luminosity_distance_at_sample(cache, m.query, z, i)
+            Ξ_θ = gw_em_distance_ratio(z[i], prop)
+            log_weights[i] = (log_p_target - m.proposal_log_pdf[i]) +
+                             2 * log(d_l_fid[i]) - 2 * log(d_l_θ) - 2 * log(Ξ_θ)
+        end
+
+        rate = merger_rate_per_sec(prior, m.local_merger_rate, m.observation_time)
         return (rate, log_weights)
     end
 end

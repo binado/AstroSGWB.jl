@@ -3,8 +3,10 @@ using Turing
 using Turing.DynamicPPL: VarInfo, getsym
 using FlexiChains
 using AstroSGWB
-using AstroSGWBInference: build_turing_model, condition_turing_model, logposterior
+using AstroSGWBInference: build_turing_model, condition_turing_model, logposterior,
+                          merger_rate_and_log_weights
 using Distributions: product_distribution, Uniform
+using ForwardDiff
 
 _varinfo_symbols(vi) = Set(getsym(vn) for vn in keys(vi))
 
@@ -149,4 +151,34 @@ end
     for n in (:Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
         @test !(n in sampled_H0)
     end
+end
+
+# The slim prepared model preallocates `log_weights` to the promoted element type, so it
+# must stay AD-safe even with zero samples: an empty result keeps the `ForwardDiff.Dual`
+# eltype rather than collapsing to `Float64[]` and breaking gradient inference downstream.
+@testset "importance weights are AD-safe and shape-correct" begin
+    C, P = LambdaCDM, ModifiedPropagation
+    pop = ParityBNSPopulation()
+    fiducials = _parity_hyperparameters(C, P, pop, (γ = 2.7, κ = 3.0, zpeak = 2.0))
+    grid = _PARITY_FREQUENCY_GRID
+    dets = [Detector("H1"), Detector("L1")]
+
+    dual(x) = ForwardDiff.Dual{Nothing}(x, one(x))
+    Λ_dual = NamedTuple{keys(fiducials)}(map(dual, values(fiducials)))
+
+    empty_samples = (redshift = Float64[], luminosity_distance = Float64[])
+    one_sample = (redshift = [0.1], luminosity_distance = [500.0])
+
+    empty_model = prepare_parity_model(
+        pop, empty_samples, fiducials, C, P, grid, dets, 1.0, 1.0).model
+    one_model = prepare_parity_model(
+        pop, one_sample, fiducials, C, P, grid, dets, 1.0, 1.0).model
+
+    _, empty_lw = merger_rate_and_log_weights(empty_model, Λ_dual, empty_samples)
+    _, one_lw = merger_rate_and_log_weights(one_model, Λ_dual, one_sample)
+
+    @test isempty(empty_lw)
+    @test eltype(empty_lw) <: ForwardDiff.Dual
+    @test all(isfinite, one_lw)
+    @test eltype(one_lw) <: ForwardDiff.Dual
 end

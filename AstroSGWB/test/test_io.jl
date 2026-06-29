@@ -73,10 +73,7 @@ end
 
     @test loaded.pop isa ParityBNSPopulation
     @test redshift(loaded.samples) ≈ [0.1, 0.2]
-    @test Vector(loaded.samples.mass[1, :]) ≈ [1.4, 1.4]
-    @test Vector(loaded.samples.mass[2, :]) ≈ [1.2, 1.2]
-    @test loaded.samples.χ₁ ≈ [0.0, 0.0]
-    @test loaded.samples.Λ₁ ≈ [100.0, 100.0]
+    @test loaded.samples.luminosity_distance ≈ [430.0, 880.0]
     @test loaded.fluxes ≈ Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
 
     Λ = loaded.fiducials
@@ -91,12 +88,12 @@ end
     model = loaded.model
     observation = loaded.observation
 
-    @test keys(model.proposal_log_prob) == keys(model.proposal_prior.dists)
-    @test all(lp -> all(isfinite, lp), values(model.proposal_log_prob))
-    @test all(isfinite, model.dl_fid_sq)
-    @test all(>(0), model.dl_fid_sq)
+    @test length(model.proposal_log_pdf) == length(loaded.samples.redshift)
+    @test all(isfinite, model.proposal_log_pdf)
+    @test all(isfinite, loaded.samples.luminosity_distance)
+    @test all(>(0), loaded.samples.luminosity_distance)
 
-    @test length(model.redshift_grid) == length(DEFAULT_Z_GRID)
+    @test length(model.z_grid) == length(DEFAULT_Z_GRID)
     @test observation.frequencies ≈ [0.0, 20.0, 40.0]
     @test observation.in_band_mask == BitVector([false, true, true])
     @test length(observation.effective_psd) == length(observation.frequencies)

@@ -41,14 +41,12 @@ include("detector/detector.jl")
 include("detector/overlap.jl")
 include("detector/effective_psd.jl")
 include("detector/observation.jl")
-include("importance.jl")
 include("spectral_density.jl")
 include("snr.jl")
 include("diagnostics.jl")
 
 # Types
 export ObservationContext,
-       with_redshift_interpolant,
        canonical_hyperparameters,
        validate_hyperparameters,
        validate_subset,
@@ -137,14 +135,10 @@ export OrderedUniformSourceMassPair,
        sample_meta,
        add_logpdfvec!,
        batched_logpdf,
-       component_logpdfs,
-       validate_samples,
-       logprobdiff,
-       logprobdiff!
+       validate_samples
 
-# Importance sampling
-export importance_log_weights,
-       spectral_density,
+# Spectral density
+export spectral_density,
        inner_product,
        spectral_snr_squared,
        spectral_snr,

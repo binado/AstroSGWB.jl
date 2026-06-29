@@ -158,18 +158,13 @@ end
 """
     parity_bns_samples_from_catalog(catalog_samples) -> NamedTuple
 
-Test-side mirror of the caller's BNS sample restructuring: stack source masses and rename
-the ASCII spin/tidal columns to their Unicode prior keys.
+Test-side mirror of the caller's slim BNS sample restructuring: keep only the `redshift`
+and `luminosity_distance` columns the importance-weight loop reads.
 """
 function parity_bns_samples_from_catalog(catalog_samples::NamedTuple)
     return (
-        mass = stack_source_masses(
-            catalog_samples.mass_1_source, catalog_samples.mass_2_source),
         redshift = copy(catalog_samples.redshift),
-        χ₁ = copy(catalog_samples.chi_1),
-        χ₂ = copy(catalog_samples.chi_2),
-        Λ₁ = copy(catalog_samples.lambda_1),
-        Λ₂ = copy(catalog_samples.lambda_2)
+        luminosity_distance = copy(catalog_samples.luminosity_distance)
     )
 end
 

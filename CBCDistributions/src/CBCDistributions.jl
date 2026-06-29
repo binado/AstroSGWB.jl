@@ -10,7 +10,7 @@ export PopulationModel, hyperparameters, single_event_prior,
        full_hyperparameters,
        canonical_hyperparameters, validate_hyperparameters,
        SampleField, sample_values, sample_meta,
-       add_logpdfvec!, batched_logpdf, component_logpdfs, logprobdiff, logprobdiff!
+       add_logpdfvec!, batched_logpdf
 export stack_source_masses, validate_samples
 export MadauDickinsonSourceFrame, source_frame_distribution, redshift_prior, DEFAULT_Z_GRID
 export GridQuery, luminosity_distance_at_sample
