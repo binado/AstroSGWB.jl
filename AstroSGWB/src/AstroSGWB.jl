@@ -50,8 +50,6 @@ export ObservationContext,
        canonical_hyperparameters,
        validate_hyperparameters,
        validate_subset,
-       stack_source_masses,
-       validate_samples,
        CATALOG_SOURCE_TYPE_ATTR,
        CATALOG_SOURCE_TYPE_BNS,
        CumulativeIntegral1D,
@@ -129,13 +127,7 @@ export madau_dickinson_source_frame_distribution,
 # Priors
 export OrderedUniformSourceMassPair,
        AlignedSpinChiSimple,
-       RedshiftInterpolatedDistribution,
-       SampleField,
-       sample_values,
-       sample_meta,
-       add_logpdfvec!,
-       batched_logpdf,
-       validate_samples
+       RedshiftInterpolatedDistribution
 
 # Spectral density
 export spectral_density,

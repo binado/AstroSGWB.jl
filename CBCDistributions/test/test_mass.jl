@@ -185,17 +185,6 @@ end
     @test z_conditional≈1.0 rtol=1e-7
 end
 
-@testset "DefaultBBHMassPair batched logpdf" begin
-    d = _default_bbh_pair()
-    prior = product_distribution((mass = d,))
-    samples = (mass = [35.0 40.0 60.0; 25.0 38.0 20.0],)
-
-    batched = batched_logpdf(prior, samples)
-    scalar = [logpdf(d, (samples.mass[1, i], samples.mass[2, i]))
-              for i in axes(samples.mass, 2)]
-    @test batched ≈ scalar
-end
-
 @testset "DefaultBBHMassPair rand support and shape" begin
     rng = MersenneTwister(1234)
     d = _default_bbh_pair()
