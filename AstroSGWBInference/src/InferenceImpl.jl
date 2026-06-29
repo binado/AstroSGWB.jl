@@ -3,12 +3,6 @@ module InferenceImpl
 using AstroSGWB
 using AstroSGWB:
                  ObservationContext,
-                 PopulationModel,
-                 merger_rate_and_log_weights,
-                 spectral_density,
-                 fiducial_spectral_density,
-                 canonical_hyperparameters,
-                 full_hyperparameters,
                  validate_subset,
                  normalized_ess,
                  spectral_snr_squared,
@@ -18,13 +12,16 @@ using Distributions: MvNormal, ProductNamedTupleDistribution, logpdf
 using LinearAlgebra: Diagonal
 using Turing
 
+include("model.jl")
 include("likelihood.jl")
 include("turing_model.jl")
 
-export build_turing_model,
+export hyperparameters,
+       merger_rate_and_log_weights,
+       fiducial_spectral_density,
+       build_turing_model,
        condition_turing_model,
        loglikelihood,
-       logposterior,
-       validate_hyperprior
+       logposterior
 
 end

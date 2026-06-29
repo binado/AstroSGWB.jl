@@ -2,7 +2,7 @@
 # inside a NUTS gradient evaluation.
 #
 # Run from the repository root, for example:
-#   julia --project=AstroSGWBInference scripts/profile_turing.jl --config-file=config/profile_turing.toml
+#   julia --project=scripts/run scripts/profile_turing.jl --config-file=config/profile_turing.toml
 #
 # Optional: --seconds=2.0 --profile-samples=500 --alloc --profile-out=profile.dat
 #
@@ -18,18 +18,12 @@ module AstroSGWBProfileCLI
 
 using Distributions: logpdf, product_distribution, Uniform
 using AstroSGWB
-using AstroSGWBInference: build_turing_model, logposterior, validate_hyperprior
+using AstroSGWBInference: build_turing_model, fiducial_spectral_density, hyperparameters,
+                          logposterior, merger_rate_and_log_weights
 using AstroSGWB:
-                 merger_rate,
                  merger_rate_per_sec,
-                 merger_rate_and_log_weights,
                  importance_log_weights,
                  spectral_density,
-                 fiducial_spectral_density,
-                 single_event_prior,
-                 PopulationModel,
-                 AbstractCosmology,
-                 AbstractPropagation,
                  ObservationContext,
                  OrderedUniformSourceMassPair,
                  AlignedSpinChiSimple,
@@ -55,8 +49,10 @@ using AstroSGWB:
                  ModifiedPropagation,
                  LambdaCDM,
                  Detector
-import AstroSGWB: hyperparameters, single_event_prior,
-                  merger_rate_and_log_weights, full_hyperparameters
+using CBCDistributions: PopulationModel, full_hyperparameters, single_event_prior
+import CBCDistributions
+import CBCDistributions: single_event_prior
+using Cosmology: AbstractCosmology, AbstractPropagation
 using BenchmarkTools
 using DelimitedFiles
 using LogDensityProblems
@@ -71,7 +67,7 @@ using Turing: DynamicPPL
 
 struct BNSPopulationModel <: PopulationModel end
 
-hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
+CBCDistributions.hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
 
 function single_event_prior(::BNSPopulationModel, cache::CosmologyCache, Λ::NamedTuple)
     z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
@@ -88,9 +84,9 @@ end
 
 # Prepared model: out-of-package assembly of the cosmology-agnostic inference contract.
 struct BNSPreparedModel{
-    C <: AbstractCosmology,
-    P <: AbstractPropagation,
-    Pop <: PopulationModel,
+    C,
+    P,
+    Pop,
     PR,
     L <: NamedTuple
 }
@@ -105,7 +101,7 @@ struct BNSPreparedModel{
 end
 
 function prepare_bns_model(
-        pop::PopulationModel,
+        pop,
         samples::NamedTuple,
         fiducials::NamedTuple,
         ::Type{C},
@@ -115,7 +111,7 @@ function prepare_bns_model(
         observation_time::Real,
         local_merger_rate::Real;
         z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
-) where {C <: AbstractCosmology, P <: AbstractPropagation}
+) where {C, P}
     Λ_fid = fiducials
     z = samples.redshift
 
@@ -140,7 +136,7 @@ function prepare_bns_model(
     return (; model = model, observation = observation)
 end
 
-function full_hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
+function hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
     return full_hyperparameters(C, P, model.pop)
 end
 
@@ -148,7 +144,7 @@ function merger_rate_and_log_weights(
         model::BNSPreparedModel{C, P}, Λ::NamedTuple, samples
 ) where {C, P}
     Λc = canonical_hyperparameters(
-        full_hyperparameters(model), Λ; context = "joint hyperparameters", eltype = nothing)
+        hyperparameters(model), Λ; context = "joint hyperparameters", eltype = nothing)
     cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
     prior = single_event_prior(model.pop, cache, Λc)
     prop = propagation(P, Λc)
@@ -158,7 +154,8 @@ function merger_rate_and_log_weights(
     log_weights = importance_log_weights(
         log_ratio, model.dl_fid_sq, samples.redshift,
         model.sample_interpolant, cache, prop)
-    rate = merger_rate(prior, model.local_merger_rate, model.observation_time)
+    rate = merger_rate_per_sec(
+        prior.dists.redshift.prior, model.local_merger_rate, model.observation_time)
     return (rate, log_weights)
 end
 
@@ -408,8 +405,6 @@ function _run(;
     # ------------------------------------------------------------------
     # Build callables
     # ------------------------------------------------------------------
-
-    validate_hyperprior(order, priors)
 
     # Turing / DynamicPPL path
     turing_model = build_turing_model(

@@ -3,22 +3,14 @@ using LinearAlgebra: Diagonal
 using Turing
 using Turing: DynamicPPL
 
-function validate_hyperprior(order::Tuple{Vararg{Symbol}}, prior::ProductNamedTupleDistribution)
-    keys(prior.dists) == order || throw(
-        ArgumentError("hyperprior must match order $(order), got $(keys(prior.dists))"),
-    )
-    return nothing
-end
-
 function condition_turing_model(
         turing_model,
         theta0::NamedTuple,
         prior::ProductNamedTupleDistribution,
-        sample_only::Union{Nothing, Tuple{Vararg{Symbol}}};
-        order::Tuple{Vararg{Symbol}}
+        sample_only::Union{Nothing, Tuple{Vararg{Symbol}}}
 )
-    validate_hyperprior(order, prior)
-    ordered_theta0 = canonical_hyperparameters(order, theta0; context = "initial hyperparameters")
+    order = keys(prior.dists)
+    _validate_parameter_names(order, keys(theta0); context = "initial hyperparameters")
     sample_only === nothing && return turing_model
     isempty(sample_only) && throw(
         ArgumentError(
@@ -28,7 +20,7 @@ function condition_turing_model(
     validate_subset(sample_only, order)
     fixed = Tuple(s for s in order if s ∉ sample_only)
     isempty(fixed) && return turing_model
-    return turing_model | (; (s => ordered_theta0[s] for s in fixed)...)
+    return turing_model | (; (s => theta0[s] for s in fixed)...)
 end
 
 @model function sample_hyperparameters(order::Tuple{Vararg{Symbol}}, dists)
@@ -48,18 +40,10 @@ end
         prior::ProductNamedTupleDistribution,
         observed_in_band::AbstractVector{<:Real}
 )
-    order = full_hyperparameters(model)
+    order = keys(prior.dists)
     Λ ~ to_submodel(sample_hyperparameters(order, prior.dists), false)
-    Λc = canonical_hyperparameters(
-        order,
-        Λ;
-        context = "sampled hyperparameters",
-        eltype = nothing
-    )
-
-    rate, log_weights = merger_rate_and_log_weights(model, Λc, samples)
-    weights = exp.(log_weights)
-    Sh = spectral_density(fluxes, rate; weights = weights)
+    forward = _forward_model(model, fluxes, samples, Λ)
+    Sh = forward.spectral_density
 
     observed_in_band ~ MvNormal(
         Sh[observation.in_band_mask],
@@ -73,8 +57,8 @@ end
     snr_sq = spectral_snr_squared(
         Sh[m], observation.effective_psd[m], obs_sec, df)
     return (;
-        number_of_sources = rate * obs_sec,
-        effective_sample_size = normalized_ess(weights),
+        number_of_sources = forward.rate * obs_sec,
+        effective_sample_size = normalized_ess(forward.weights),
         spectral_snr_squared = snr_sq,
         spectral_snr = sqrt(snr_sq)
     )
@@ -90,8 +74,10 @@ function build_turing_model(
         track::Bool = false,
         observed::Union{Nothing, AbstractVector{<:Real}} = nothing
 )
-    order = full_hyperparameters(model)
-    validate_hyperprior(order, prior)
+    names = _hyperparameter_names(model)
+    _validate_parameter_names(names, keys(prior.dists); context = "hyperprior")
+    _validate_parameter_names(
+        names, keys(fiducial_hyperparameters); context = "fiducial hyperparameters")
     observed_data = if observed === nothing
         fiducial_spectral_density(model, fluxes, samples, fiducial_hyperparameters)
     else

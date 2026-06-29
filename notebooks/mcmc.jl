@@ -14,9 +14,6 @@ begin
                      canonical_hyperparameters,
                      cosmology_type,
                      Detector,
-                     PopulationModel,
-                     AbstractCosmology,
-                     AbstractPropagation,
                      ObservationContext,
                      CosmologyCache,
                      GridQuery,
@@ -30,7 +27,6 @@ begin
                      luminosity_distance,
                      component_logpdfs,
                      logprobdiff,
-                     merger_rate,
                      importance_log_weights,
                      with_redshift_interpolant,
                      load_catalog,
@@ -42,7 +38,12 @@ begin
                      spectral_density,
                      year_to_second,
                      Ωgw
-    using AstroSGWBInference: build_turing_model, condition_turing_model
+    using AstroSGWBInference: build_turing_model, condition_turing_model, hyperparameters,
+                              merger_rate_and_log_weights
+    using CBCDistributions: PopulationModel, full_hyperparameters, merger_rate_per_sec,
+                            single_event_prior
+    import CBCDistributions
+    import CBCDistributions: single_event_prior
     using AstroSGWBInference: MCMCConfig, SamplerConfig, save_config
     using AstroSGWBInference.ChainIO: atomic_save_chain
     using Distributions: Uniform, product_distribution
@@ -84,7 +85,7 @@ md"""
 
 Inference requires specifying a population model, parametrized by a vector ``\Lambda`` ,  which characterizes the distribution of the intrinsic parameters ``p(\theta | \Lambda)``.
 
-At the level of the code, the user must implement a concrete `PopulationModel` subtype (see `AstroSGWB/src/models/base.jl`), overriding the following two methods:
+This example uses the optional `CBCDistributions.PopulationModel` abstraction, overriding the following two methods:
 
 - **`hyperparameters`** — declares which population hyperparameters (beyond cosmology) enter the model. For instance, for a Madau-Dickinson like redshift distribution, that would be `:γ`, `:κ`, `:zpeak`.
 - **`single_event_prior`** — defines the per-event intrinsic prior as a `product_distribution` over mass, redshift, spin, and (for BNS) tidal parameters.
@@ -94,12 +95,9 @@ At the level of the code, the user must implement a concrete `PopulationModel` s
 
 # ╔═╡ 2c6d5e4f-7b8a-4d9c-0e3f-4a5b6c7d8e9f
 begin
-    import AstroSGWB: hyperparameters, single_event_prior,
-                      merger_rate_and_log_weights, full_hyperparameters
-
     struct BNSPopulationModel <: PopulationModel end
 
-    hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
+    CBCDistributions.hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
 
     function single_event_prior(
             ::BNSPopulationModel, cache::CosmologyCache, Λ::NamedTuple)
@@ -119,9 +117,9 @@ begin
     # The background cosmology `C` and propagation `P` are type parameters, so the package
     # never sees a cosmology token; it dispatches solely on this model.
     struct BNSPreparedModel{
-        C <: AbstractCosmology,
-        P <: AbstractPropagation,
-        Pop <: PopulationModel,
+        C,
+        P,
+        Pop,
         PR,
         L <: NamedTuple
     }
@@ -136,7 +134,7 @@ begin
     end
 
     function prepare_bns_model(
-            pop::PopulationModel,
+            pop,
             samples::NamedTuple,
             fiducials::NamedTuple,
             ::Type{C},
@@ -146,7 +144,7 @@ begin
             observation_time::Real,
             local_merger_rate::Real;
             z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
-    ) where {C <: AbstractCosmology, P <: AbstractPropagation}
+    ) where {C, P}
         Λ_fid = fiducials
         z = samples.redshift
 
@@ -171,7 +169,7 @@ begin
         return (; model = model, observation = observation)
     end
 
-    function full_hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
+    function hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
         return full_hyperparameters(C, P, model.pop)
     end
 
@@ -179,7 +177,7 @@ begin
             model::BNSPreparedModel{C, P}, Λ::NamedTuple, samples
     ) where {C, P}
         Λc = canonical_hyperparameters(
-            full_hyperparameters(model), Λ; context = "joint hyperparameters",
+            hyperparameters(model), Λ; context = "joint hyperparameters",
             eltype = nothing)
         cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
         prior = single_event_prior(model.pop, cache, Λc)
@@ -190,7 +188,8 @@ begin
         log_weights = importance_log_weights(
             log_ratio, model.dl_fid_sq, samples.redshift,
             model.sample_interpolant, cache, prop)
-        rate = merger_rate(prior, model.local_merger_rate, model.observation_time)
+        rate = merger_rate_per_sec(
+            prior.dists.redshift.prior, model.local_merger_rate, model.observation_time)
         return (rate, log_weights)
     end
 
@@ -434,8 +433,7 @@ begin
             turing_model,
             fiducials,
             hyperprior,
-            sample_only_tup;
-            order = order
+            sample_only_tup
         )
         nuts = Turing.NUTS(
             sampler.nadapts,

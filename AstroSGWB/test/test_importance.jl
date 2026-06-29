@@ -41,32 +41,35 @@ function _importance_type_test_fixture(n::Integer)
     return fluxes, samples, model, Λ
 end
 
-@testset "prepared-model joint: rate + log weights + spectral density" begin
+@testset "importance weights feed spectral-density kernel" begin
     loaded = parity_problem_context(:posterior, [Detector("H1"), Detector("L1")])
     model = loaded.model
-    theta = PARITY_THETA
-
-    rate, log_weights = merger_rate_and_log_weights(model, theta, loaded.samples)
+    log_weights = importance_log_weights(
+        zeros(length(loaded.samples.redshift)),
+        model.dl_fid_sq,
+        loaded.samples.redshift,
+        model.sample_interpolant,
+        CosmologyCache(cosmology(_IMP_C, loaded.fiducials), model.redshift_grid),
+        propagation(_IMP_P, loaded.fiducials)
+    )
     @test length(log_weights) == length(loaded.samples.redshift)
     @test all(isfinite, log_weights)
-    @test isfinite(rate)
 
     weights = exp.(log_weights)
-    Sh = spectral_density(loaded.fluxes, rate; weights = weights)
+    Sh = spectral_density(loaded.fluxes, 1.0; weights = weights)
     @test all(isfinite, Sh)
+end
 
-    # Fiducial spectrum reconstructs the same forward model at the fiducial point.
-    Λ_fid = loaded.fiducials
-    rate_fid, log_weights_fid = merger_rate_and_log_weights(model, Λ_fid, loaded.samples)
-    Sh_fid = spectral_density(loaded.fluxes, rate_fid; weights = exp.(log_weights_fid))
-    @test fiducial_spectral_density(
-        model, loaded.fluxes, loaded.samples, loaded.fiducials) ≈ Sh_fid
-
-    rate_fid_unweighted = merger_rate(
-        model.proposal_prior, model.local_merger_rate, model.observation_time)
-    if Λ_fid.Ξ₀ != 1.0
-        @test !(spectral_density(loaded.fluxes, rate_fid_unweighted) ≈ Sh_fid)
-    end
+function _direct_importance_log_weights(model::PreparedParityModel{C, P}, Λ, samples) where {
+        C, P}
+    cache = CosmologyCache(cosmology(C, Λ), model.redshift_grid)
+    prior = single_event_prior(model.pop, cache, Λ)
+    samples_interp = with_redshift_interpolant(samples, model.sample_interpolant)
+    log_ratio = logprobdiff(
+        model.pop, prior, model.proposal_prior, model.proposal_log_prob, samples_interp)
+    return importance_log_weights(
+        log_ratio, model.dl_fid_sq, samples.redshift,
+        model.sample_interpolant, cache, propagation(P, Λ))
 end
 
 @testset "empty importance weights preserve AD element types" begin
@@ -84,28 +87,10 @@ end
     _, empty_samples, empty_model, _ = _importance_type_test_fixture(0)
     _, populated_samples, populated_model, _ = _importance_type_test_fixture(1)
 
-    _,
-    empty_log_weights = merger_rate_and_log_weights(
-        empty_model, theta, empty_samples)
-    _,
-    populated_log_weights = merger_rate_and_log_weights(
-        populated_model, theta, populated_samples)
+    empty_log_weights = _direct_importance_log_weights(empty_model, theta, empty_samples)
+    populated_log_weights = _direct_importance_log_weights(populated_model, theta, populated_samples)
 
     @test isempty(empty_log_weights)
     @test all(isfinite, populated_log_weights)
     @test eltype(populated_log_weights) <: ForwardDiff.Dual
-end
-
-@testset "fiducial observed spectrum applies modified-propagation weights" begin
-    loaded = parity_problem_context(:importance_context, [Detector("H1"), Detector("L1")])
-    Λ_fid = merge(loaded.fiducials, (Ξ₀ = 1.2,))
-    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
-    prepared = prepare_parity_model(
-        loaded.pop, loaded.samples, Λ_fid, loaded.cosmology_type, loaded.propagation_type,
-        grid, [Detector("H1"), Detector("L1")], 1.0, 161.0)
-    model = prepared.model
-    Sh_fid = fiducial_spectral_density(model, loaded.fluxes, loaded.samples, Λ_fid)
-    rate_fid = merger_rate(
-        model.proposal_prior, model.local_merger_rate, model.observation_time)
-    @test !(spectral_density(loaded.fluxes, rate_fid) ≈ Sh_fid)
 end

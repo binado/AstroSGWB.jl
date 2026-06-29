@@ -35,12 +35,14 @@ include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"
               logposterior(
             theta0, prepared, fluxes, samples, observation, priors, observed) rtol = 1e-6
         @test condition_turing_model(
-            model, theta0, priors, nothing; order = order) ===
+            model, theta0, priors, nothing) ===
               model
         @test_throws ArgumentError condition_turing_model(
-            model, theta0, priors, (); order = order)
+            model, theta0, priors, ())
         @test_throws ArgumentError condition_turing_model(
-            model, theta0, priors, (:unknown,); order = order)
+            model, theta0, priors, (:unknown,))
+        @test_throws ArgumentError condition_turing_model(
+            model, theta0, priors, (:H0, :H0))
 
         model_track = build_turing_model(
             prepared, fluxes, samples, fiducials, observation, priors; track = true)
@@ -57,7 +59,7 @@ include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"
         @test returned_nt.spectral_snr^2 ≈ returned_nt.spectral_snr_squared
 
         sampled_model = condition_turing_model(
-            model, theta0, priors, nothing; order = order)
+            model, theta0, priors, nothing)
         chain = sample(
             sampled_model,
             Turing.NUTS(3, 0.8),
@@ -74,7 +76,7 @@ include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"
               sort(collect(keys(theta0)))
 
         cond_h0 = condition_turing_model(
-            model, theta0, priors, (:H0,); order = order)
+            model, theta0, priors, (:H0,))
         chain_h0 = sample(
             cond_h0,
             Turing.NUTS(3, 0.8),
@@ -131,17 +133,17 @@ end
 
     turing_model = build_turing_model(
         prepared, loaded.fluxes, loaded.samples, loaded.fiducials, observation, priors)
-    @test condition_turing_model(turing_model, theta0, priors, nothing; order = order) ===
+    @test condition_turing_model(turing_model, theta0, priors, nothing) ===
           turing_model
 
-    cond_Ξ₀ = condition_turing_model(turing_model, theta0, priors, (:Ξ₀,); order = order)
+    cond_Ξ₀ = condition_turing_model(turing_model, theta0, priors, (:Ξ₀,))
     sampled = _varinfo_symbols(VarInfo(cond_Ξ₀))
     @test :Ξ₀ in sampled
     for n in (:H0, :Ωm, :Ξₙ, :γ, :κ, :zpeak)
         @test !(n in sampled)
     end
 
-    cond_H0 = condition_turing_model(turing_model, theta0, priors, (:H0,); order = order)
+    cond_H0 = condition_turing_model(turing_model, theta0, priors, (:H0,))
     sampled_H0 = _varinfo_symbols(VarInfo(cond_H0))
     @test :H0 in sampled_H0
     for n in (:Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)

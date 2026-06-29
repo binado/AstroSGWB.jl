@@ -33,9 +33,6 @@ begin
                      canonical_hyperparameters,
                      cosmology_type,
                      Detector,
-                     PopulationModel,
-                     AbstractCosmology,
-                     AbstractPropagation,
                      ObservationContext,
                      CosmologyCache,
                      GridQuery,
@@ -49,7 +46,6 @@ begin
                      luminosity_distance,
                      component_logpdfs,
                      logprobdiff,
-                     merger_rate,
                      importance_log_weights,
                      with_redshift_interpolant,
                      load_catalog,
@@ -58,9 +54,14 @@ begin
                      redshift_prior,
                      MadauDickinsonSourceFrame,
                      stack_source_masses,
-                     spectral_density,
-                     fiducial_spectral_density
-    using AstroSGWBInference: build_turing_model, condition_turing_model
+                     spectral_density
+    using AstroSGWBInference: build_turing_model, condition_turing_model,
+                              fiducial_spectral_density, hyperparameters,
+                              merger_rate_and_log_weights
+    using CBCDistributions: PopulationModel, full_hyperparameters, merger_rate_per_sec,
+                            single_event_prior
+    import CBCDistributions
+    import CBCDistributions: single_event_prior
     using Distributions: Uniform, product_distribution
     using Turing
     using Turing: DynamicPPL
@@ -79,12 +80,9 @@ end
 
 # ╔═╡ ab6c5d4e-7f8a-4b9c-bd0e-2f3a4b5c6d7e
 begin
-    import AstroSGWB: hyperparameters, single_event_prior,
-                      merger_rate_and_log_weights, full_hyperparameters
-
     struct BNSPopulationModel <: PopulationModel end
 
-    hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
+    CBCDistributions.hyperparameters(::BNSPopulationModel) = (:γ, :κ, :zpeak)
 
     function single_event_prior(
             ::BNSPopulationModel, cache::CosmologyCache, Λ::NamedTuple)
@@ -102,9 +100,9 @@ begin
 
     # Prepared model: out-of-package assembly of the cosmology-agnostic inference contract.
     struct BNSPreparedModel{
-        C <: AbstractCosmology,
-        P <: AbstractPropagation,
-        Pop <: PopulationModel,
+        C,
+        P,
+        Pop,
         PR,
         L <: NamedTuple
     }
@@ -119,7 +117,7 @@ begin
     end
 
     function prepare_bns_model(
-            pop::PopulationModel,
+            pop,
             samples::NamedTuple,
             fiducials::NamedTuple,
             ::Type{C},
@@ -129,7 +127,7 @@ begin
             observation_time::Real,
             local_merger_rate::Real;
             z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
-    ) where {C <: AbstractCosmology, P <: AbstractPropagation}
+    ) where {C, P}
         Λ_fid = fiducials
         z = samples.redshift
 
@@ -154,7 +152,7 @@ begin
         return (; model = model, observation = observation)
     end
 
-    function full_hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
+    function hyperparameters(model::BNSPreparedModel{C, P}) where {C, P}
         return full_hyperparameters(C, P, model.pop)
     end
 
@@ -162,7 +160,7 @@ begin
             model::BNSPreparedModel{C, P}, Λ::NamedTuple, samples
     ) where {C, P}
         Λc = canonical_hyperparameters(
-            full_hyperparameters(model), Λ; context = "joint hyperparameters",
+            hyperparameters(model), Λ; context = "joint hyperparameters",
             eltype = nothing)
         cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
         prior = single_event_prior(model.pop, cache, Λc)
@@ -173,7 +171,8 @@ begin
         log_weights = importance_log_weights(
             log_ratio, model.dl_fid_sq, samples.redshift,
             model.sample_interpolant, cache, prop)
-        rate = merger_rate(prior, model.local_merger_rate, model.observation_time)
+        rate = merger_rate_per_sec(
+            prior.dists.redshift.prior, model.local_merger_rate, model.observation_time)
         return (rate, log_weights)
     end
 
@@ -280,8 +279,7 @@ begin
     model = build_turing_model(
         prepared_model, catalog.fluxes, samples, fiducials, observation, hyperprior;
         track = false, observed = observed)
-    conditioned = condition_turing_model(
-        model, fiducials, hyperprior, sample_only_tup; order = order)
+    conditioned = condition_turing_model(model, fiducials, hyperprior, sample_only_tup)
     lf = DynamicPPL.LogDensityFunction(conditioned)
 
     free_order = if sample_only_tup === nothing

@@ -2,17 +2,21 @@ module AstroSGWBInference
 
 include("InferenceImpl.jl")
 using .InferenceImpl:
+                      hyperparameters,
+                      merger_rate_and_log_weights,
+                      fiducial_spectral_density,
                       build_turing_model,
                       condition_turing_model,
                       loglikelihood,
-                      logposterior,
-                      validate_hyperprior
+                      logposterior
 
-export build_turing_model,
+export hyperparameters,
+       merger_rate_and_log_weights,
+       fiducial_spectral_density,
+       build_turing_model,
        condition_turing_model,
        loglikelihood,
        logposterior,
-       validate_hyperprior,
        atomic_save_chain,
        MCMCConfig,
        SamplerConfig,

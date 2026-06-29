@@ -3,23 +3,24 @@
 # contract (`merger_rate_and_log_weights` + `full_hyperparameters`). The framework owns no
 # concrete population or prepared-model types; callers define the concrete models used by
 # their notebooks or scripts. This file is that example.
-using AstroSGWB: PopulationModel, AbstractCosmology, AbstractPropagation,
-                 CosmologyCache, GridQuery, DEFAULT_Z_GRID,
+using AstroSGWB: CosmologyCache, GridQuery, DEFAULT_Z_GRID,
                  OrderedUniformSourceMassPair, AlignedSpinChiSimple,
                  redshift_prior, MadauDickinsonSourceFrame,
                  ObservationContext, FrequencyGrid, Detector, frequencies, in_band_mask,
                  build_observation_context,
                  cosmology, propagation, luminosity_distance,
-                 component_logpdfs, logprobdiff, merger_rate,
+                 component_logpdfs, logprobdiff, merger_rate_per_sec,
                  importance_log_weights, with_redshift_interpolant,
                  canonical_hyperparameters
-import AstroSGWB: hyperparameters, single_event_prior, merger_rate_and_log_weights,
-                  full_hyperparameters
+using CBCDistributions: PopulationModel, full_hyperparameters, single_event_prior
+import Cosmology
+using Cosmology: AbstractCosmology, AbstractPropagation
+import CBCDistributions: single_event_prior
 using Distributions: Uniform, product_distribution, ProductNamedTupleDistribution
 
 struct ParityBNSPopulation <: PopulationModel end
 
-hyperparameters(::ParityBNSPopulation) = (:γ, :κ, :zpeak)
+Cosmology.hyperparameters(::ParityBNSPopulation) = (:γ, :κ, :zpeak)
 
 function parity_population_hyperprior()
     return product_distribution((
@@ -54,9 +55,9 @@ and GW propagation family `P` are *type parameters* (model-internal), so the pac
 sees a cosmology token.
 """
 struct PreparedParityModel{
-    C <: AbstractCosmology,
-    P <: AbstractPropagation,
-    Pop <: PopulationModel,
+    C,
+    P,
+    Pop,
     PR <: ProductNamedTupleDistribution,
     L <: NamedTuple
 }
@@ -83,7 +84,7 @@ model, the detector/observation state goes in `observation`. The proposal caches
 rebuilt at the fiducial cosmology so stale on-disk values are never trusted.
 """
 function prepare_parity_model(
-        pop::PopulationModel,
+        pop,
         samples::NamedTuple,
         fiducials::NamedTuple,
         ::Type{C},
@@ -93,7 +94,7 @@ function prepare_parity_model(
         observation_time::Real,
         local_merger_rate::Real;
         z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
-) where {C <: AbstractCosmology, P <: AbstractPropagation}
+) where {C, P}
     length(detectors) < 2 && throw(ArgumentError(
         "prepare_parity_model: at least two detectors are required to build effective_psd and sgwb_scale"))
 
@@ -135,37 +136,31 @@ function prepare_parity_model(
     return (; model = model, observation = observation)
 end
 
-"""
-    full_hyperparameters(model::PreparedParityModel) -> NTuple{N,Symbol}
+if @isdefined AstroSGWBInference
+    import AstroSGWBInference: merger_rate_and_log_weights
 
-Flat HMC/Turing vector layout `(cosmo…, prop…, pop…)` for the prepared model, reusing the
-`CBCDistributions` family-token helper now that `C`/`P` are model-internal.
-"""
-function full_hyperparameters(model::PreparedParityModel{C, P}) where {C, P}
-    return full_hyperparameters(C, P, model.pop)
-end
+    function AstroSGWBInference.hyperparameters(
+            model::PreparedParityModel{C, P}) where {C, P}
+        return full_hyperparameters(C, P, model.pop)
+    end
 
-"""
-    merger_rate_and_log_weights(model::PreparedParityModel, Λ, samples) -> (rate, log_weights)
-
-The fused cosmology-specific hot path: rebuild the redshift `CosmologyCache` and
-`single_event_prior` at `Λ` (shared between the rate and the weights), form the prior
-log-ratio against the fiducial proposal caches, and return `(rate, log_weights)`.
-"""
-function merger_rate_and_log_weights(
-        model::PreparedParityModel{C, P}, Λ::NamedTuple, samples
-) where {C, P}
-    Λc = canonical_hyperparameters(
-        full_hyperparameters(model), Λ; context = "joint hyperparameters", eltype = nothing)
-    cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
-    prior = single_event_prior(model.pop, cache, Λc)
-    prop = propagation(P, Λc)
-    samples_interp = with_redshift_interpolant(samples, model.sample_interpolant)
-    log_ratio = logprobdiff(
-        model.pop, prior, model.proposal_prior, model.proposal_log_prob, samples_interp)
-    log_weights = importance_log_weights(
-        log_ratio, model.dl_fid_sq, samples.redshift,
-        model.sample_interpolant, cache, prop)
-    rate = merger_rate(prior, model.local_merger_rate, model.observation_time)
-    return (rate, log_weights)
+    function merger_rate_and_log_weights(
+            model::PreparedParityModel{C, P}, Λ::NamedTuple, samples
+    ) where {C, P}
+        Λc = canonical_hyperparameters(
+            AstroSGWBInference.hyperparameters(model), Λ;
+            context = "joint hyperparameters", eltype = nothing)
+        cache = CosmologyCache(cosmology(C, Λc), model.redshift_grid)
+        prior = single_event_prior(model.pop, cache, Λc)
+        prop = propagation(P, Λc)
+        samples_interp = with_redshift_interpolant(samples, model.sample_interpolant)
+        log_ratio = logprobdiff(
+            model.pop, prior, model.proposal_prior, model.proposal_log_prob, samples_interp)
+        log_weights = importance_log_weights(
+            log_ratio, model.dl_fid_sq, samples.redshift,
+            model.sample_interpolant, cache, prop)
+        rate = merger_rate_per_sec(
+            prior.dists.redshift.prior, model.local_merger_rate, model.observation_time)
+        return (rate, log_weights)
+    end
 end
