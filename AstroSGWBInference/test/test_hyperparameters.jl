@@ -1,75 +1,78 @@
 using Test
-using Bijectors
+using Turing
 using Distributions: product_distribution, Uniform
-using AstroSGWB:
-                 ModifiedPropagation, GR,
-                 LambdaCDM, W0CDM, W0WaCDM,
-                 full_hyperparameters,
-                 canonical_hyperparameters,
-                 validate_hyperparameters
-using AstroSGWBInference: validate_hyperprior
+using AstroSGWBInference: build_turing_model, hyperparameters,
+                          merger_rate_and_log_weights
+import AstroSGWBInference: hyperparameters, merger_rate_and_log_weights
 
-if !@isdefined ParityBNSPopulation
-    include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "fixture_population.jl"))
+if !@isdefined parity_catalog_dir
+    include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_test_cache.jl"))
 end
 if !@isdefined PARITY_PRIORS
     include(joinpath(@__DIR__, "..", "..", "AstroSGWB", "test", "parity_fixtures.jl"))
 end
 
-@testset "caller-defined population hyperparameter contract" begin
-    C, P = LambdaCDM, ModifiedPropagation
-    pop = ParityBNSPopulation()
-    order = full_hyperparameters(C, P, pop)
+struct InvalidNamesModel{Names}
+    names::Names
+end
 
-    @test order == (:H0, :Ωm, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
+hyperparameters(model::InvalidNamesModel) = model.names
+function merger_rate_and_log_weights(::InvalidNamesModel, Λ, samples)
+    (1.0, zeros(length(samples.redshift)))
+end
 
-    prior_a = PARITY_PRIORS
-    prior_b = product_distribution((
-        zpeak = Uniform(0.0, 5.0),
-        κ = Uniform(0.0, 10.0),
-        Ξₙ = Uniform(-1.0, 1.0),
-        Ξ₀ = Uniform(0.0, 2.0),
-        γ = Uniform(0.0, 5.0),
-        Ωm = Uniform(0.0, 1.0),
-        H0 = Uniform(20.0, 140.0)
-    ))
+@testset "caller-owned model hyperparameter contract" begin
+    loaded = parity_problem_context(:posterior, [Detector("H1"), Detector("L1")])
+    model = loaded.model
+    expected = Set(hyperparameters(model))
 
-    @test validate_hyperprior(order, prior_a) === nothing
-    @test_throws ArgumentError validate_hyperprior(order, prior_b)
+    reversed_prior = product_distribution((;
+        (name => PARITY_PRIORS.dists[name]
+    for name in reverse(keys(PARITY_PRIORS.dists)))...))
+    reversed_fiducials = (;
+        (name => loaded.fiducials[name] for name in reverse(keys(loaded.fiducials)))...)
 
-    θ = canonical_hyperparameters(
-        order,
-        (;
-            H0 = 70.0,
-            Ωm = 0.3,
-            Ξ₀ = 1.0,
-            Ξₙ = 0.0,
-            γ = 2.0,
-            κ = 3.0,
-            zpeak = 1.5
-        )
-    )
-    θ_unordered = (;
-        zpeak = θ.zpeak,
-        κ = θ.κ,
-        γ = θ.γ,
-        Ξₙ = θ.Ξₙ,
-        Ξ₀ = θ.Ξ₀,
-        Ωm = θ.Ωm,
-        H0 = θ.H0
-    )
+    @test Set(keys(reversed_prior.dists)) == expected
+    @test keys(reversed_prior.dists) != hyperparameters(model)
+    @test build_turing_model(
+        model,
+        loaded.fluxes,
+        loaded.samples,
+        reversed_fiducials,
+        loaded.observation,
+        reversed_prior
+    ) !== nothing
 
-    @test_throws ArgumentError validate_hyperparameters(order, θ_unordered)
-    @test canonical_hyperparameters(order, θ_unordered) == θ
-    @test canonical_hyperparameters(order, θ_unordered; eltype = BigFloat).H0 isa BigFloat
-    @test_throws ArgumentError validate_hyperparameters(order, (; H0 = 70.0, Ωm = 0.3))
-    @test_throws ArgumentError validate_hyperparameters(order, merge(θ, (; extra = 1.0)))
-    @test collect(Bijectors.link(prior_a, θ)) isa Vector
+    missing_prior = product_distribution((;
+        (name => PARITY_PRIORS.dists[name]
+    for name in keys(PARITY_PRIORS.dists) if name != :zpeak)...))
+    extra_prior = product_distribution(merge(PARITY_PRIORS.dists, (extra = Uniform(0, 1),)))
+    missing_fiducials = Base.structdiff(loaded.fiducials, NamedTuple{(:zpeak,)})
+    extra_fiducials = merge(loaded.fiducials, (extra = 1.0,))
 
-    @test full_hyperparameters(W0CDM, ModifiedPropagation, ParityBNSPopulation()) ==
-          (:H0, :Ωm, :w0, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-    @test full_hyperparameters(W0WaCDM, ModifiedPropagation, ParityBNSPopulation()) ==
-          (:H0, :Ωm, :w0, :wa, :Ξ₀, :Ξₙ, :γ, :κ, :zpeak)
-    @test full_hyperparameters(LambdaCDM, GR, ParityBNSPopulation()) ==
-          (:H0, :Ωm, :γ, :κ, :zpeak)
+    @test_throws ArgumentError build_turing_model(
+        model, loaded.fluxes, loaded.samples, loaded.fiducials,
+        loaded.observation, missing_prior)
+    @test_throws ArgumentError build_turing_model(
+        model, loaded.fluxes, loaded.samples, loaded.fiducials,
+        loaded.observation, extra_prior)
+    @test_throws ArgumentError build_turing_model(
+        model, loaded.fluxes, loaded.samples, missing_fiducials,
+        loaded.observation, PARITY_PRIORS)
+    @test_throws ArgumentError build_turing_model(
+        model, loaded.fluxes, loaded.samples, extra_fiducials,
+        loaded.observation, PARITY_PRIORS)
+
+    for invalid in (InvalidNamesModel((:x, :x)), InvalidNamesModel((:x, "y")))
+        err = try
+            build_turing_model(
+                invalid, loaded.fluxes, loaded.samples, (x = 1.0,),
+                loaded.observation, product_distribution((x = Uniform(0, 2),)))
+            nothing
+        catch exception
+            exception
+        end
+        @test err isa ArgumentError
+        @test occursin("hyperparameters(model)", sprint(showerror, err))
+    end
 end

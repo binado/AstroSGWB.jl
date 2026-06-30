@@ -193,7 +193,7 @@ end
     validate_fiducials(cfg::MCMCConfig, order)
 
 Check that the fiducial keys exactly match the model's expected hyperparameters,
-where `order = full_hyperparameters(C, P, pop)`. Kept separate from construction so
+where the configured names match `hyperparameters(model)`. Kept separate from construction so
 `MCMCConfig` stays decoupled from the cosmology/propagation families and population
 model; the caller invokes it once all are in scope. Throws on any missing/extra/typo'd key
 (e.g. `zpeak` vs `z_peak`).

@@ -17,10 +17,9 @@ cosmology-specific derived caches (proposal log-prob, `dl_fid_sq`, redshift inte
 live on a caller-owned *prepared model*, assembled from the exported kernels; the
 detector/observation state lives in an [`ObservationContext`](@ref).
 
-Inference state is a flat hyperparameter `NamedTuple` validated against the
-[`PopulationModel`](@ref) contract. The package is cosmology-agnostic: the cosmology choice
-enters only through the model-dispatched [`merger_rate_and_log_weights`](@ref) joint that
-model authors implement outside the package.
+Inference state is a flat hyperparameter `NamedTuple`. The caller-owned model contract and
+Turing integration live in `AstroSGWBInference`; this package provides the reusable physics
+and array kernels used to implement that contract.
 """
 module AstroSGWB
 
@@ -42,24 +41,15 @@ include("detector/detector.jl")
 include("detector/overlap.jl")
 include("detector/effective_psd.jl")
 include("detector/observation.jl")
-include("importance.jl")
 include("spectral_density.jl")
 include("snr.jl")
 include("diagnostics.jl")
-include("forward_model.jl")
 
 # Types
 export ObservationContext,
-       with_redshift_interpolant,
-       PopulationModel,
-       hyperparameters,
-       single_event_prior,
-       full_hyperparameters,
        canonical_hyperparameters,
        validate_hyperparameters,
        validate_subset,
-       stack_source_masses,
-       validate_samples,
        CATALOG_SOURCE_TYPE_ATTR,
        CATALOG_SOURCE_TYPE_BNS,
        CumulativeIntegral1D,
@@ -94,11 +84,9 @@ export Detector,
 
 # Cosmology
 export E,
-       AbstractCosmology,
        LambdaCDM,
        W0CDM,
        W0WaCDM,
-       AbstractPropagation,
        GR,
        ModifiedPropagation,
        dark_energy_eos,
@@ -139,21 +127,10 @@ export madau_dickinson_source_frame_distribution,
 # Priors
 export OrderedUniformSourceMassPair,
        AlignedSpinChiSimple,
-       RedshiftInterpolatedDistribution,
-       SampleField,
-       sample_values,
-       sample_meta,
-       add_logpdfvec!,
-       batched_logpdf,
-       component_logpdfs,
-       validate_samples,
-       logprobdiff,
-       logprobdiff!
+       RedshiftInterpolatedDistribution
 
-# Importance sampling
-export importance_log_weights,
-       merger_rate_and_log_weights,
-       spectral_density,
+# Spectral density
+export spectral_density,
        inner_product,
        spectral_snr_squared,
        spectral_snr,
@@ -161,10 +138,6 @@ export importance_log_weights,
 
 # Diagnostics
 export normalized_ess
-
-# Forward-model helpers
-export merger_rate,
-       fiducial_spectral_density
 
 # Time conversions
 export JULIAN_YEAR_SEC,

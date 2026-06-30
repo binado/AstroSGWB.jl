@@ -2,8 +2,8 @@
 # Catalog fixtures are materialized on demand via `parity_catalog_dir` (see `parity_test_cache.jl`).
 # Included from test files that need `PARITY_THETA` (not from `runtests.jl`).
 
-using AstroSGWB: canonical_hyperparameters, full_hyperparameters, ModifiedPropagation,
-                 LambdaCDM
+using AstroSGWB: canonical_hyperparameters, ModifiedPropagation, LambdaCDM
+using CBCDistributions: full_hyperparameters
 using Distributions: Uniform, product_distribution
 
 if !@isdefined ParityBNSPopulation

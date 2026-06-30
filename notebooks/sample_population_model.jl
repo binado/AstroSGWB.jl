@@ -10,7 +10,6 @@ begin
     Pkg.activate(@__DIR__)
     Pkg.instantiate()
     using AstroSGWB:
-                     PopulationModel,
                      CosmologyCache,
                      LambdaCDM,
                      cosmology,
@@ -19,7 +18,9 @@ begin
                      MadauDickinsonSourceFrame,
                      redshift_prior,
                      luminosity_distance
-    using CBCDistributions: DefaultBBHMassPair
+    using CBCDistributions: DefaultBBHMassPair, PopulationModel, hyperparameters,
+                            single_event_prior
+    import CBCDistributions: hyperparameters, single_event_prior
     using Distributions: Uniform, product_distribution, ProductNamedTupleDistribution
     using DataFrames
     using CSV
@@ -73,8 +74,6 @@ All we need to do to define a population model is to create a struct which subty
 
 # ╔═╡ a1b2c3d4-0004-4e5f-9a0b-1c2d3e4f5a6b
 begin
-    import AstroSGWB: single_event_prior, hyperparameters
-
     struct BNSUniformMassAlignedSpinTidalSFR <: PopulationModel end
     struct BBHAlignedSpinModel <: PopulationModel end
 

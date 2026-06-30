@@ -17,9 +17,7 @@ function loglikelihood(
         observation::ObservationContext,
         observed::AbstractVector{<:Real}
 )
-    rate, log_weights = merger_rate_and_log_weights(model, Λ, samples)
-    weights = exp.(log_weights)
-    Sh = spectral_density(fluxes, rate; weights = weights)
+    Sh = _forward_spectral_density(model, fluxes, samples, Λ)
 
     mask = observation.in_band_mask
     σ = observation.sgwb_scale_in_band

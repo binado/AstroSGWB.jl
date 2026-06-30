@@ -73,10 +73,7 @@ end
 
     @test loaded.pop isa ParityBNSPopulation
     @test redshift(loaded.samples) ≈ [0.1, 0.2]
-    @test Vector(loaded.samples.mass[1, :]) ≈ [1.4, 1.4]
-    @test Vector(loaded.samples.mass[2, :]) ≈ [1.2, 1.2]
-    @test loaded.samples.χ₁ ≈ [0.0, 0.0]
-    @test loaded.samples.Λ₁ ≈ [100.0, 100.0]
+    @test loaded.samples.luminosity_distance ≈ [430.0, 880.0]
     @test loaded.fluxes ≈ Float64[0.0 0.0; 1.0 1.5; 2.0 2.5]
 
     Λ = loaded.fiducials
@@ -91,12 +88,12 @@ end
     model = loaded.model
     observation = loaded.observation
 
-    @test keys(model.proposal_log_prob) == keys(model.proposal_prior.dists)
-    @test all(lp -> all(isfinite, lp), values(model.proposal_log_prob))
-    @test all(isfinite, model.dl_fid_sq)
-    @test all(>(0), model.dl_fid_sq)
+    @test length(model.proposal_log_pdf) == length(loaded.samples.redshift)
+    @test all(isfinite, model.proposal_log_pdf)
+    @test all(isfinite, loaded.samples.luminosity_distance)
+    @test all(>(0), loaded.samples.luminosity_distance)
 
-    @test length(model.redshift_grid) == length(DEFAULT_Z_GRID)
+    @test length(model.z_grid) == length(DEFAULT_Z_GRID)
     @test observation.frequencies ≈ [0.0, 20.0, 40.0]
     @test observation.in_band_mask == BitVector([false, true, true])
     @test length(observation.effective_psd) == length(observation.frequencies)
@@ -106,46 +103,4 @@ end
     @test year_to_second(observation.observation_time) ≈ 365.25 * 24 * 3600
     @test model.local_merger_rate == 161.0
 
-    fs = fiducial_spectral_density(
-        model, loaded.fluxes, loaded.samples, loaded.fiducials)
-    @test all(isfinite, fs)
-    @test length(fs) == length(observation.frequencies)
-end
-
-@testset "fiducial spectral density differs across cosmologies" begin
-    loaded_w0 = _load_variant(:w0cdm)
-    @test loaded_w0.cosmology_type === W0CDM
-    @test loaded_w0.propagation_type === ModifiedPropagation
-    P = loaded_w0.propagation_type
-    fs_w0 = fiducial_spectral_density(
-        loaded_w0.model, loaded_w0.fluxes, loaded_w0.samples, loaded_w0.fiducials)
-    @test all(isfinite, fs_w0)
-
-    # Build a LambdaCDM prepared model from the same raw inputs and confirm the fiducial
-    # spectrum is not identical (the cosmology genuinely feeds through the caches).
-    Λ = loaded_w0.fiducials
-    C_lcdm = LambdaCDM
-    order_lcdm = full_hyperparameters(C_lcdm, P, loaded_w0.pop)
-    Λ_lcdm = canonical_hyperparameters(order_lcdm, (; (k => Λ[k] for k in order_lcdm)...))
-    grid = FrequencyGrid(0.05, 80.0, 20.0, 15.0, 40.0)
-    prepared_lcdm = prepare_parity_model(
-        loaded_w0.pop,
-        loaded_w0.samples,
-        Λ_lcdm,
-        C_lcdm,
-        P,
-        grid,
-        _TEST_LOAD_DETS,
-        1.0,
-        161.0
-    )
-    model_lcdm = prepared_lcdm.model
-    rate_lcdm = merger_rate(
-        model_lcdm.proposal_prior,
-        model_lcdm.local_merger_rate,
-        model_lcdm.observation_time
-    )
-    @test !(fs_w0 ≈ spectral_density(loaded_w0.fluxes, rate_lcdm))
-    @test !(fs_w0 ≈ fiducial_spectral_density(
-        model_lcdm, loaded_w0.fluxes, loaded_w0.samples, Λ_lcdm))
 end
