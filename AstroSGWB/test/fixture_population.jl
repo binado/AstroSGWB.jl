@@ -9,10 +9,11 @@ using AstroSGWB: CosmologyCache, GridQuery, DEFAULT_Z_GRID,
                  redshift_prior, MadauDickinsonSourceFrame,
                  ObservationContext, FrequencyGrid, Detector, frequencies, in_band_mask,
                  build_observation_context,
-                 cosmology, propagation,
-                 build_redshift_prior, source_frame_distribution, redshift_integral,
+                 cosmology, propagation, differential_comoving_volume,
+                 redshift_density, source_frame_distribution, normalizer,
                  redshift_logpdf_eltype, _normalized_log_density, interpolate,
-                 luminosity_distance_at_sample, gw_em_distance_ratio, merger_rate_per_sec
+                 luminosity_distance_at_sample, gw_em_distance_ratio,
+                 integrated_merger_rate
 using CBCDistributions: PopulationModel, full_hyperparameters, single_event_prior
 import Cosmology
 using Cosmology: AbstractCosmology, AbstractPropagation
@@ -35,7 +36,7 @@ end
 # intrinsic prior as a product distribution. The slim prepared model below does not use it
 # (the Λ-independent components cancel exactly), but it documents the sampler interface.
 function single_event_prior(::ParityBNSPopulation, cache::CosmologyCache, Λ::NamedTuple)
-    z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
+    z_d = redshift_prior(MadauDickinsonSourceFrame(), Λ, cache)
     spin = AlignedSpinChiSimple()
     return product_distribution((
         mass = OrderedUniformSourceMassPair(),
@@ -97,13 +98,13 @@ function prepare_parity_model(
     zg = collect(Float64, z_grid)
     query = GridQuery(z, zg)
 
-    prior_fid = build_redshift_prior(
-        zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, fiducials),
-        CosmologyCache(cosmology(C, fiducials), zg))
-    norm_fid = redshift_integral(prior_fid)
+    cache_fid = CosmologyCache(cosmology(C, fiducials), zg)
+    dvc_fid = differential_comoving_volume.(zg, Ref(cache_fid))
+    dN_dz_fid = redshift_density(zg, dvc_fid, MadauDickinsonSourceFrame(), fiducials)
+    norm_fid = normalizer(dN_dz_fid)
     tiny = floatmin(Float64)
     proposal_log_pdf = [_normalized_log_density(
-                            interpolate(prior_fid.dN_dz, query, i), norm_fid, tiny)
+                            interpolate(dN_dz_fid, query, i), norm_fid, tiny)
                         for i in eachindex(z)]
 
     model = PreparedParityModel{C, P, typeof(pop)}(
@@ -128,24 +129,24 @@ if @isdefined AstroSGWBInference
         cache = CosmologyCache(cosmology(C, Λ), m.z_grid)
         prop = propagation(P, Λ)
 
-        prior = build_redshift_prior(
-            zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, Λ), cache)
-        norm = redshift_integral(prior)
-        tiny = floatmin(real(eltype(prior.dN_dz.y)))
+        dvc_grid = differential_comoving_volume.(m.z_grid, Ref(cache))
+        dN_dz = redshift_density(m.z_grid, dvc_grid, MadauDickinsonSourceFrame(), Λ)
+        norm = normalizer(dN_dz)
+        tiny = floatmin(real(eltype(dN_dz.y)))
 
-        T = promote_type(redshift_logpdf_eltype(prior),
+        T = promote_type(redshift_logpdf_eltype(dN_dz),
             typeof(gw_em_distance_ratio(zero(eltype(z)), prop)))
         log_weights = Vector{T}(undef, length(z))
         @inbounds for i in eachindex(z)
             log_p_target = _normalized_log_density(
-                interpolate(prior.dN_dz, m.query, i), norm, tiny)
+                interpolate(dN_dz, m.query, i), norm, tiny)
             d_l_θ = luminosity_distance_at_sample(cache, m.query, z, i)
             Ξ_θ = gw_em_distance_ratio(z[i], prop)
             log_weights[i] = (log_p_target - m.proposal_log_pdf[i]) +
                              2 * log(d_l_fid[i]) - 2 * log(d_l_θ) - 2 * log(Ξ_θ)
         end
 
-        rate = merger_rate_per_sec(prior, m.local_merger_rate, m.observation_time)
+        rate = integrated_merger_rate(dN_dz, m.local_merger_rate)
         return (rate, log_weights)
     end
 end
