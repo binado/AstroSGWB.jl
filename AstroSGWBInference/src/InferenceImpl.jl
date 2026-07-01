@@ -3,7 +3,6 @@ module InferenceImpl
 using AstroSGWB
 using AstroSGWB:
                  ObservationContext,
-                 validate_subset,
                  normalized_ess,
                  spectral_snr_squared,
                  frequency_bin_width,

@@ -31,7 +31,6 @@ import Cosmology: cosmology, cosmology_type, gravitational_wave_distance,
                   propagation, propagation_type
 
 include("types.jl")
-include("models/base.jl")
 include("catalog/grid.jl")
 include("catalog/catalog.jl")
 include("catalog/io.jl")
@@ -49,7 +48,6 @@ include("diagnostics.jl")
 export ObservationContext,
        canonical_hyperparameters,
        validate_hyperparameters,
-       validate_subset,
        CATALOG_SOURCE_TYPE_ATTR,
        CATALOG_SOURCE_TYPE_BNS,
        CumulativeIntegral1D,
