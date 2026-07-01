@@ -14,7 +14,8 @@ export AbstractCosmology, LambdaCDM, W0CDM, W0WaCDM,
        gw_em_distance_ratio, gravitational_wave_distance,
        CumulativeIntegral1D, GridQuery, interpolate, cdf, normalizer
 
-include("cumulative_integral.jl")
+using CumulativeIntegrals: CumulativeIntegral1D, GridQuery, interpolate, cdf, normalizer
+
 include("model.jl")
 include("distance.jl")
 

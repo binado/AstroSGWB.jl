@@ -46,17 +46,14 @@ end
     z_grid = collect(LinRange(0.0, 2.0, 101))
     cosmo = cosmology(C, theta)
     cosmology_cache = CosmologyCache(cosmo, z_grid)
-    redshift_prior_dist = build_redshift_prior(
-        z -> madau_dickinson_source_frame_distribution(z; γ = theta.γ, κ = theta.κ,
-            zpeak = theta.zpeak),
-        cosmology_cache
-    )
+    dvc_grid = differential_comoving_volume.(z_grid, Ref(cosmology_cache))
+    dN_dz = redshift_density(z_grid, dvc_grid, MadauDickinsonSourceFrame(), theta)
     samples = [0.0, 0.137, 0.9, 2.0]
     query = GridQuery(samples, z_grid)
 
-    @test [interpolate(redshift_prior_dist.dN_dz, query, i)
+    @test [interpolate(dN_dz, query, i)
            for i in eachindex(samples)] ≈
-          [interpolate(redshift_prior_dist.dN_dz, z) for z in samples]
+          [interpolate(dN_dz, z) for z in samples]
     @test [cdf(cosmology_cache.inv_E_integral, query, i)
            for i in eachindex(samples)] ≈
           [cdf(cosmology_cache.inv_E_integral, z) for z in samples]

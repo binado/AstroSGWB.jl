@@ -93,7 +93,7 @@ begin
             cache::CosmologyCache,
             Λ::NamedTuple
     )
-        z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
+        z_d = redshift_prior(MadauDickinsonSourceFrame(), Λ, cache)
         spin = AlignedSpinChiSimple(a_max = Λ.a_max)
         return product_distribution((
             mass = OrderedUniformSourceMassPair(low = Λ.m_low, high = Λ.m_high),
@@ -110,7 +110,7 @@ begin
             cache::CosmologyCache,
             Λ::NamedTuple
     )
-        z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
+        z_d = redshift_prior(MadauDickinsonSourceFrame(), Λ, cache)
         spin = AlignedSpinChiSimple(a_max = Λ.a_max)
         return product_distribution((
             mass = DefaultBBHMassPair(;

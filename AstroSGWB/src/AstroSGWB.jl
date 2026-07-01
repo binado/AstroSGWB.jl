@@ -57,7 +57,6 @@ export ObservationContext,
        interpolate,
        cdf,
        normalizer,
-       RedshiftPrior,
        redshift
 
 # Catalog I/O
@@ -112,17 +111,16 @@ export E,
 
 # Redshift & population
 export madau_dickinson_source_frame_distribution,
-       detector_frame_merger_rate_density,
-       build_redshift_prior,
        redshift_prior,
+       redshift_density,
        MadauDickinsonSourceFrame,
        source_frame_distribution,
        DEFAULT_Z_GRID,
-       redshift_log_prob,
+       unnormalized_merger_rate_density,
+       redshift_logpdf_unnormalized,
+       redshift_logpdf_normalized,
        redshift_logpdf_eltype,
-       redshift_integral,
-       expected_number_of_events,
-       merger_rate_per_sec
+       integrated_merger_rate
 
 # Priors
 export OrderedUniformSourceMassPair,

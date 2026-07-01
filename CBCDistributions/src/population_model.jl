@@ -10,7 +10,7 @@ must implement the two-method contract:
 - `single_event_prior(pop, cache::CosmologyCache, Λ) -> ProductNamedTupleDistribution`
   — per-event distribution conditioned on the cosmology carried by `cache` and
   hyperparameters `Λ`. Build the redshift component with
-  `redshift_prior(sf_model, cache, Λ)` so the cache is reused. A generic
+  `redshift_prior(sf_model, Λ, cache)` so the cache is reused. A generic
   `single_event_prior(pop, cosmo::AbstractCosmology, Λ; z_grid)` adapter is provided
   for callers that only hold a bare cosmology.
 

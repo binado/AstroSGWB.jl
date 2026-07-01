@@ -42,15 +42,15 @@ begin
                      cosmology,
                      propagation,
                      luminosity_distance,
-                     build_redshift_prior,
+                     differential_comoving_volume,
+                     redshift_density,
                      source_frame_distribution,
-                     redshift_integral,
+                     normalizer,
                      redshift_logpdf_eltype,
-                     _normalized_log_density,
                      interpolate,
                      luminosity_distance_at_sample,
                      gw_em_distance_ratio,
-                     merger_rate_per_sec,
+                     integrated_merger_rate,
                      load_catalog,
                      MadauDickinsonSourceFrame,
                      W0CDM,
@@ -120,14 +120,14 @@ begin
         query = GridQuery(z, zg)
 
         # Fiducial proposal redshift log-density, evaluated once (≙ mcmc.py `log_p_proposal`).
-        prior_fid = build_redshift_prior(
-            zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, fiducials),
-            CosmologyCache(cosmology(C, fiducials), zg))
-        norm_fid = redshift_integral(prior_fid)
-        tiny = floatmin(Float64)
-        proposal_log_pdf = [_normalized_log_density(
-                                interpolate(prior_fid.dN_dz, query, i), norm_fid, tiny)
-                            for i in eachindex(z)]
+        cache_fid = CosmologyCache(cosmology(C, fiducials), zg)
+        dvc_fid = differential_comoving_volume.(zg, Ref(cache_fid))
+        dN_dz_fid = redshift_density(zg, dvc_fid, MadauDickinsonSourceFrame(), fiducials)
+        norm_fid = normalizer(dN_dz_fid)
+        proposal_log_pdf = [
+            log(interpolate(dN_dz_fid, query, i)) - log(norm_fid)
+            for i in eachindex(z)
+        ]
 
         model = BNSImportanceModel{C, P}(zg, query, proposal_log_pdf,
             Float64(local_merger_rate), Float64(observation_time))
@@ -142,27 +142,26 @@ begin
         cache = CosmologyCache(cosmology(C, Λ), m.z_grid)
         prop = propagation(P, Λ)
 
-        prior = build_redshift_prior(             # target detector-frame dN/dz on the grid
-            zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, Λ), cache)
-        norm = redshift_integral(prior)
-        tiny = floatmin(real(eltype(prior.dN_dz.y)))  # AD-safe (Dual under ForwardDiff)
+        dvc_grid = differential_comoving_volume.(m.z_grid, Ref(cache))
+        dN_dz = redshift_density(                 # target detector-frame dN/dz on the grid
+            m.z_grid, dvc_grid, MadauDickinsonSourceFrame(), Λ)
+        norm = normalizer(dN_dz)
 
         # Preallocate to the promoted element type so the explicit loop stays type-stable
         # under ForwardDiff. Promote the redshift logpdf eltype with the propagation factor
         # to also cover the Ξ-only-sampled case; `zero(eltype(z))` is empty-safe.
-        T = promote_type(redshift_logpdf_eltype(prior),
+        T = promote_type(redshift_logpdf_eltype(dN_dz),
             typeof(gw_em_distance_ratio(zero(eltype(z)), prop)))
         log_weights = Vector{T}(undef, length(z))
         @inbounds for i in eachindex(z)           # single fused pass (≙ mcmc.py weights)
-            log_p_target = _normalized_log_density(
-                interpolate(prior.dN_dz, m.query, i), norm, tiny)
+            log_p_target = log(interpolate(dN_dz, m.query, i)) - log(norm)
             d_l_θ = luminosity_distance_at_sample(cache, m.query, z, i)
             Ξ_θ = gw_em_distance_ratio(z[i], prop)
             log_weights[i] = (log_p_target - m.proposal_log_pdf[i]) +
                              2 * log(d_l_fid[i]) - 2 * log(d_l_θ) - 2 * log(Ξ_θ)
         end
 
-        rate = merger_rate_per_sec(prior, m.local_merger_rate, m.observation_time)
+        rate = integrated_merger_rate(dN_dz, m.local_merger_rate)
         return (rate, log_weights)
     end
 

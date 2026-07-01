@@ -21,7 +21,7 @@ using AstroSGWB
 using AstroSGWBInference: build_turing_model, fiducial_spectral_density, logposterior
 import AstroSGWBInference: hyperparameters, merger_rate_and_log_weights
 using AstroSGWB:
-                 merger_rate_per_sec,
+                 integrated_merger_rate,
                  spectral_density,
                  ObservationContext,
                  MadauDickinsonSourceFrame,
@@ -33,11 +33,11 @@ using AstroSGWB:
                  cosmology,
                  propagation,
                  luminosity_distance,
-                 build_redshift_prior,
+                 differential_comoving_volume,
+                 redshift_density,
                  source_frame_distribution,
-                 redshift_integral,
+                 normalizer,
                  redshift_logpdf_eltype,
-                 _normalized_log_density,
                  interpolate,
                  luminosity_distance_at_sample,
                  gw_em_distance_ratio,
@@ -98,14 +98,14 @@ function prepare_bns_model(
     zg = collect(Float64, z_grid)
     query = GridQuery(z, zg)
 
-    prior_fid = build_redshift_prior(
-        zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, fiducials),
-        CosmologyCache(cosmology(C, fiducials), zg))
-    norm_fid = redshift_integral(prior_fid)
-    tiny = floatmin(Float64)
-    proposal_log_pdf = [_normalized_log_density(
-                            interpolate(prior_fid.dN_dz, query, i), norm_fid, tiny)
-                        for i in eachindex(z)]
+    cache_fid = CosmologyCache(cosmology(C, fiducials), zg)
+    dvc_fid = differential_comoving_volume.(zg, Ref(cache_fid))
+    dN_dz_fid = redshift_density(zg, dvc_fid, MadauDickinsonSourceFrame(), fiducials)
+    norm_fid = normalizer(dN_dz_fid)
+    proposal_log_pdf = [
+        log(interpolate(dN_dz_fid, query, i)) - log(norm_fid)
+        for i in eachindex(z)
+    ]
 
     model = BNSImportanceModel{C, P}(zg, query, proposal_log_pdf,
         Float64(local_merger_rate), Float64(observation_time))
@@ -120,24 +120,22 @@ function merger_rate_and_log_weights(
     cache = CosmologyCache(cosmology(C, Λ), m.z_grid)
     prop = propagation(P, Λ)
 
-    prior = build_redshift_prior(
-        zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, Λ), cache)
-    norm = redshift_integral(prior)
-    tiny = floatmin(real(eltype(prior.dN_dz.y)))
+    dvc_grid = differential_comoving_volume.(m.z_grid, Ref(cache))
+    dN_dz = redshift_density(m.z_grid, dvc_grid, MadauDickinsonSourceFrame(), Λ)
+    norm = normalizer(dN_dz)
 
-    T = promote_type(redshift_logpdf_eltype(prior),
+    T = promote_type(redshift_logpdf_eltype(dN_dz),
         typeof(gw_em_distance_ratio(zero(eltype(z)), prop)))
     log_weights = Vector{T}(undef, length(z))
     @inbounds for i in eachindex(z)
-        log_p_target = _normalized_log_density(
-            interpolate(prior.dN_dz, m.query, i), norm, tiny)
+        log_p_target = log(interpolate(dN_dz, m.query, i)) - log(norm)
         d_l_θ = luminosity_distance_at_sample(cache, m.query, z, i)
         Ξ_θ = gw_em_distance_ratio(z[i], prop)
         log_weights[i] = (log_p_target - m.proposal_log_pdf[i]) +
                          2 * log(d_l_fid[i]) - 2 * log(d_l_θ) - 2 * log(Ξ_θ)
     end
 
-    rate = merger_rate_per_sec(prior, m.local_merger_rate, m.observation_time)
+    rate = integrated_merger_rate(dN_dz, m.local_merger_rate)
     return (rate, log_weights)
 end
 
@@ -401,8 +399,8 @@ function _run(;
     h = θ0
     c0 = cosmology(C, h)
     cache0 = CosmologyCache(c0, model.z_grid)
-    sfn0 = zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, h)
-    redshift_prior0 = build_redshift_prior(sfn0, cache0)
+    dvc0 = differential_comoving_volume.(model.z_grid, Ref(cache0))
+    dN_dz0 = redshift_density(model.z_grid, dvc0, MadauDickinsonSourceFrame(), h)
     rate0, log_weights0 = merger_rate_and_log_weights(model, h, samples)
     weights0 = exp.(log_weights0)
     z_samples = redshift(samples)
@@ -444,16 +442,15 @@ function _run(;
         gcsample = true)
 
     suite["stage"] = BenchmarkGroup()
-    suite["stage"]["redshift"] = @benchmarkable build_redshift_prior(
-        $sfn0, $cache0)
+    suite["stage"]["redshift"] = @benchmarkable redshift_density(
+        $(model.z_grid), $dvc0, MadauDickinsonSourceFrame(), $h)
     # The fused joint replaces the separate weight/rate atomics: it returns
     # (rate, log_weights) in one cosmology-specific pass.
     suite["stage"]["rate_and_log_weights"] = @benchmarkable merger_rate_and_log_weights(
         $model, $h, $samples)
-    suite["stage"]["rate"] = @benchmarkable merger_rate_per_sec(
-        $redshift_prior0,
-        $(model.local_merger_rate),
-        $(model.observation_time)
+    suite["stage"]["rate"] = @benchmarkable integrated_merger_rate(
+        $dN_dz0,
+        $(model.local_merger_rate)
     )
     suite["stage"]["spectral"] = @benchmarkable spectral_density(
         $fluxes,
