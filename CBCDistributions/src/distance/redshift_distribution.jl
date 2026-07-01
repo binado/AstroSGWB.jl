@@ -31,8 +31,8 @@ end
 
 function Distributions.logpdf(d::RedshiftInterpolatedDistribution, value::Real)
     insupport(d, value) || return -Inf
-    tiny = floatmin(real(eltype(d.dN_dz.y)))
-    return _normalized_log_density(interpolate(d.dN_dz, value), d.norm, tiny)
+    pdf = interpolate(d.dN_dz, value)
+    return log(pdf) - log(d.norm)
 end
 
 function Random.rand(rng::AbstractRNG, d::RedshiftInterpolatedDistribution)

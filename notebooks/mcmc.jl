@@ -382,10 +382,10 @@ begin
         dvc_fid = differential_comoving_volume.(zg, Ref(cache_fid))
         dN_dz_fid = redshift_density(zg, dvc_fid, MadauDickinsonSourceFrame(), fiducials)
         norm_fid = normalizer(dN_dz_fid)
-        tiny = floatmin(Float64)
-        proposal_log_pdf = [_normalized_log_density(
-                                interpolate(dN_dz_fid, query, i), norm_fid, tiny)
-                            for i in eachindex(z)]
+        proposal_log_pdf = [
+            log(interpolate(dN_dz_fid, query, i)) - log(norm_fid)
+            for i in eachindex(z)
+        ]
 
         model = BNSImportanceModel{C, P}(zg, query, proposal_log_pdf,
             Float64(local_merger_rate), Float64(observation_time))
@@ -404,7 +404,6 @@ begin
         dN_dz = redshift_density(                 # target detector-frame dN/dz on the grid
             m.z_grid, dvc_grid, MadauDickinsonSourceFrame(), Λ)
         norm = normalizer(dN_dz)
-        tiny = floatmin(real(eltype(dN_dz.y)))    # AD-safe (Dual under ForwardDiff)
 
         # Preallocate to the promoted element type so the explicit loop stays type-stable
         # under ForwardDiff. Promote the redshift logpdf eltype with the propagation factor
@@ -413,8 +412,7 @@ begin
             typeof(gw_em_distance_ratio(zero(eltype(z)), prop)))
         log_weights = Vector{T}(undef, length(z))
         @inbounds for i in eachindex(z)           # single fused pass (≙ mcmc.py weights)
-            log_p_target = _normalized_log_density(
-                interpolate(dN_dz, m.query, i), norm, tiny)
+            log_p_target = log(interpolate(dN_dz, m.query, i)) - log(norm)
             d_l_θ = luminosity_distance_at_sample(cache, m.query, z, i)
             Ξ_θ = gw_em_distance_ratio(z[i], prop)
             log_weights[i] = (log_p_target - m.proposal_log_pdf[i]) +
@@ -463,7 +461,6 @@ begin
                      source_frame_distribution,
                      normalizer,
                      redshift_logpdf_eltype,
-                     _normalized_log_density,
                      interpolate,
                      luminosity_distance_at_sample,
                      gw_em_distance_ratio,

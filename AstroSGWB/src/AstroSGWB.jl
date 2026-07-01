@@ -120,8 +120,7 @@ export madau_dickinson_source_frame_distribution,
        redshift_logpdf_unnormalized,
        redshift_logpdf_normalized,
        redshift_logpdf_eltype,
-       integrated_merger_rate,
-       _normalized_log_density
+       integrated_merger_rate
 
 # Priors
 export OrderedUniformSourceMassPair,

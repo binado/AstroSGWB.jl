@@ -5,7 +5,6 @@ export source_frame_distribution,
        redshift_density,
        integrated_merger_rate,
        redshift_logpdf_eltype,
-       _normalized_log_density,
        DEFAULT_Z_GRID
 
 """
@@ -111,10 +110,6 @@ function integrated_merger_rate(
         local_rate::Real
 )
     return integrated_merger_rate(redshift_density(z_grid, dvc_grid, sf, Λ), local_rate)
-end
-
-@inline function _normalized_log_density(pdf_at_value, norm, tiny)
-    return log(max(pdf_at_value / max(norm, tiny), tiny))
 end
 
 """
