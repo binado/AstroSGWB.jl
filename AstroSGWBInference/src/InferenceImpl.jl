@@ -11,7 +11,7 @@ using Distributions: MvNormal, ProductNamedTupleDistribution, logpdf
 using LinearAlgebra: Diagonal
 using Turing
 
-include("model.jl")
+include("models/base.jl")
 include("likelihood.jl")
 include("turing_model.jl")
 
