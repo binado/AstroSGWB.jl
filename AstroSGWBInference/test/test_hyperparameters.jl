@@ -63,7 +63,11 @@ end
         model, loaded.fluxes, loaded.samples, extra_fiducials,
         loaded.observation, PARITY_PRIORS)
 
-    for invalid in (InvalidNamesModel((:x, :x)), InvalidNamesModel((:x, "y")))
+    for invalid in (
+        InvalidNamesModel((:x, :x)),
+        InvalidNamesModel((:x, "y")),
+        InvalidNamesModel([:x])
+    )
         err = try
             build_turing_model(
                 invalid, loaded.fluxes, loaded.samples, (x = 1.0,),
