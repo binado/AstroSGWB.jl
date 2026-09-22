@@ -31,7 +31,7 @@ begin
     using Turing
     using FlexiChains
     using FlexiChains: Extra, FlexiChain
-    using AstroSGWB
+    using GWBackground
 end
 
 # %%
@@ -51,7 +51,7 @@ const FIDUCIALS = (;
 # ## Loading chains
 
 # %%
-filepath = get(ENV, "AstroSGWB_CHAIN_FILE", "chains/chains-H0-seed13-20260508-183716-slim-flexi.jld2")
+filepath = get(ENV, "GWBackground_CHAIN_FILE", "chains/chains-H0-seed13-20260508-183716-slim-flexi.jld2")
 
 chain_path = (realpath ∘ joinpath)(@__DIR__, "..", filepath)
 
@@ -59,7 +59,12 @@ chain_path = (realpath ∘ joinpath)(@__DIR__, "..", filepath)
 chain = load_chain(chain_path)
 
 # %%
-chain_params = FlexiChains.parameters(chain)
+# `parameters(chain)` now also returns the model's `:=` sites (`total_merger_rate`,
+# `importance_relative_ess`, and the amplitude statistics under a marginalized run), which
+# have no fiducial value to plot a truth line against. Restrict to the hyperparameters
+# `FIDUCIALS` actually declares.
+chain_params = filter(
+    p -> haskey(FIDUCIALS, Symbol(p)), FlexiChains.parameters(chain))
 
 # %% [markdown]
 # ## Data
@@ -88,7 +93,10 @@ end
 
 # %%
 begin
-    chn = FlexiChains.subset_parameters(chain)
+    # `chain_params` is already filtered to the hyperparameters with fiducials, so index
+    # the chain by it rather than by `subset_parameters`, which would drag the `:=` sites
+    # into the pairplot with no matching truth line.
+    chn = chain[FlexiChains.Parameter.(chain_params)]
     fig = if length(chain_params) >= 2
         truths = PairPlots.Truth(
             (; (k => FIDUCIALS[k] for k in chain_params)...);

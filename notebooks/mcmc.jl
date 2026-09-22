@@ -27,19 +27,21 @@ Inference requires an importance adapter, parametrized by a vector ``\Lambda``, 
 characterizes the distribution of the intrinsic parameters ``p(\theta | \Lambda)``.
 
 The canonical adapter is `BNSMadauDickinsonImportanceModel{C, P}` from
-`AstroSGWBImportanceModels`. It implements the two-method inference contract:
+`GWBackgroundImportanceModels`. The entire inference contract is that the prepared model is
+**callable**:
 
-- **`hyperparameters(model)`** — declares the joint hyperparameter names: cosmology (`C`), propagation (`P`), and the Madau–Dickinson redshift parameters `:γ`, `:κ`, `:zpeak`.
-- **`merger_rate_and_log_weights(model, Λ, samples)`** — inlines the redshift log-ratio, importance weights, and rate normalization. For this BNS population the Λ-independent mass/spin/tidal priors cancel exactly, so only the redshift + distance/propagation terms survive.
+- **`model(Λ, samples) -> (rate, log_weights)`** — inlines the redshift log-ratio, importance weights, and rate normalization. For this BNS population the Λ-independent mass/spin/tidal priors cancel exactly, so only the redshift + distance/propagation terms survive.
 
-`bns_samples_from_catalog` keeps only the catalog columns the weight loop reads (`redshift` and `luminosity_distance`); when the catalog omits `luminosity_distance` it is generated once from redshift at the fiducial cosmology, so the `samples` NamedTuple stays the single source of truth for the EM distance.
+Hyperparameter *names* are declared by `bns_hyperprior` / `bns_hyperprior_amplitude_marginalized`
+(and the hyperprior distributions below): a name the
+model reads but the prior omits throws a `KeyError` on `Λ.name` at the first evaluation.
 """
 
 # ╔═╡ b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e
 md"""
 ## Configuration
 
-Edit runtime settings here: `catalog_path`, detectors, observation time, merger rate, fiducials, `hyperprior_dists` / `hyperprior`, sampler (`nsamples`, `nadapts`, `ad_backend`, `nchains`), output paths, `chain_input_jld2`, and `DEBUG`.
+Edit runtime settings here: `catalog_path`, detectors, observation time, merger rate, fiducials, `hyperprior_dists` / `hyperprior`, sampler (`nsamples`, `nadapts`, `ad_backend`, `nchains`), output paths, and `DEBUG`.
 """
 
 # ╔═╡ c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f
@@ -50,9 +52,12 @@ begin
     function resolve_adtype(name::AbstractString)
         if name == "ForwardDiff"
             return ADTypes.AutoForwardDiff()
+        elseif name == "Enzyme"
+            return ADTypes.AutoEnzyme(;
+                mode = Enzyme.set_runtime_activity(Enzyme.Reverse))
         else
             throw(ArgumentError(
-                "this notebook supports only ad_backend = \"ForwardDiff\"; got $(repr(name))",
+                "unsupported ad_backend $(repr(name)); supported: \"ForwardDiff\", \"Enzyme\"",
             ))
         end
     end
@@ -64,12 +69,29 @@ begin
     detectors = map(Detector ∘ string, detnames)
     sample_only = (:H0,)
 
+    # Likelihood: `"default"` samples every name in `sample_only`;
+    # `"amplitude_marginalized"` integrates `amplitude_parameter` out of the Gaussian
+    # likelihood and reconstructs it in post-processing. The marginalized parameter must
+    # be one of `GWBackgroundImportanceModels.AMPLITUDE_PARAMETERS` (`:H0` or `:R₀`) and must
+    # *not* be in `sample_only` -- it gets no latent variable at all, though it does end
+    # up in the saved posterior.
+    likelihood = "default"
+    amplitude_parameter = nothing   # e.g. :H0
+    amplitude_num_nodes = 1024
+    amplitude_prior_span_sigma = 10.0
+
     seed = 42
     @info "seeding RNG" rng_seed = seed
     Random.seed!(seed)
 
     local_merger_rate = 161.0 # Matches COBA simulations
     observation_time = 1.0
+
+    # Analysis band (Hz). The catalog carries no band information: slice
+    # `frequencies` and the rows of `polarization_power` with this cut before computing the
+    # effective PSD. Matches the generator band of the production catalog.
+    minimum_frequency = 2.0
+    maximum_frequency = 4096.0
 
     output_dir = joinpath(_repo_root, "chains")
     output_prefix = "chains"
@@ -78,14 +100,13 @@ begin
         nsamples = 3000,
         nadapts = 3000,
         target_acceptance = 0.9,
-        ad_backend = "ForwardDiff",
+        ad_backend = "ForwardDiff",  # or "Enzyme"
         nchains = 0
     )
 
     cosmology_parameters = (;
         H0 = 67.66,
         Ωm = 0.3096,
-        w0 = -1,
         Ξ₀ = 1.0,
         Ξₙ = 1.91
     )
@@ -93,28 +114,31 @@ begin
         cosmology_parameters...,
         γ = 2.7,
         κ = 3.0,
-        zpeak = 2.0
+        zpeak = 2.0,
+        # S7: the local merger rate (Gpc^-3 yr^-1) is an ordinary hyperparameter read as
+        # `Λ.R₀`, not a prepare-time keyword. The MCMC cell pins it at this fiducial by
+        # conditioning; name it in `sample_only` to sample it.
+        R₀ = local_merger_rate
     )
 
-    # Edit hyperprior bounds here (order: cosmology, then population).
+    # Edit hyperprior bounds here (order: cosmology, then population). Distributions live
+    # here; `bns_hyperprior` / `bns_hyperprior_amplitude_marginalized` declare the `~` layout.
     hyperprior_dists = (
         H0 = Uniform(20.0, 140.0),
         Ωm = Uniform(0.05, 0.95),
-        w0 = Uniform(-3, 1),
         Ξ₀ = Uniform(0.5, 5.0),
         Ξₙ = Uniform(0.3, 3.0),
         γ = Uniform(0.5, 10.0),
         κ = Uniform(0.05, 10.0),
-        zpeak = Uniform(0.05, 10.0)
+        zpeak = Uniform(0.05, 10.0),
+        R₀ = Uniform(10.0, 1000.0)
     )
-    hyperprior = product_distribution(hyperprior_dists)
+    hyperprior = hyperprior_dists
 
     # Defining cosmology and propagation. Background expansion `C` and GW propagation `P`
     # are orthogonal axes (use `GR` for standard propagation).
-    C = W0CDM
+    C = LambdaCDM
     P = ModifiedPropagation
-
-    chain_input_jld2 = nothing
 
     nchains = sampler.nchains > 0 ? sampler.nchains : num_threads
 end
@@ -126,45 +150,85 @@ begin
     end
 
     @info "loading catalog" catalog_path detectors = join((d.name for d in detectors), ",")
-    loaded = load_catalog(catalog_path)
-    catalog = loaded.catalog
+    catalog = load_catalog(catalog_path)
 
-    samples = bns_samples_from_catalog(catalog.samples, C, fiducials)
-    model = prepare_bns_madau_dickinson_model(
-        samples,
-        fiducials,
-        C,
-        P;
-        observation_time = observation_time,
-        local_merger_rate = local_merger_rate
-    )
-    observation = build_observation_context(
-        frequencies(loaded.metadata.grid), detectors,
-        in_band_mask(loaded.metadata.grid), observation_time)
-    order = hyperparameters(model)
+    # Inclination-averaging convention derived from the catalog's `inclination`
+    # column: all-zero means face-on waveforms (analytic 2/5 average), anything
+    # else means the catalog already averages over ι. A catalog with no such
+    # column falls back to `AnalyticInclination()`. Replace with an explicit
+    # `AnalyticInclination()` / `CatalogInclination()` to override.
+    resolved_average_mode = average_mode(catalog)
+    @info "average mode" mode=string(resolved_average_mode) has_inclination_column=haskey(
+        catalog.samples, :inclination)
+
+    samples = catalog.samples
+
+    # Re-reference the stored EM-distance polarization power to the fiducial GW distance, matching the
+    # `+2 log Ξ_fid` term the prepared model's log-weights carry. No-op under Ξ₀ = 1.
+    # The out-of-place form is deliberate: Pluto re-runs cells reactively and the
+    # correction is not idempotent, so mutating `catalog.polarization_power` here would compound to
+    # Ξ⁻⁴, Ξ⁻⁶, ... on every re-execution. Downstream cells use `polarization_power`, not
+    # `catalog.polarization_power`.
+    polarization_power = apply_gw_distance_correction(
+        catalog.polarization_power, catalog.samples.redshift, propagation(P, fiducials))
+
+    # Band selection is the caller's job: restrict to the analysis band before
+    # computing the effective PSD, so every bin handed to the model is scored.
+    band = (catalog.frequencies .>= minimum_frequency) .&
+           (catalog.frequencies .<= maximum_frequency)
+    polarization_power = polarization_power[band, :]
+    frequencies = catalog.frequencies[band]
+
+    model = prepare_bns_madau_dickinson_model(samples, fiducials, C, P)
+    eff_psd = effective_psd(frequencies, detectors)
+    # S2: the prior declares the hyperparameter names; there is no model to ask.
+    order = keys(hyperprior_dists)
     @info order
     sample_only_tup = sample_only === nothing ? nothing : Tuple(sample_only)
 
-    @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(
+    # Everything the marginalized likelihood needs, built once so the model and the
+    # post-processing reconstruction cannot be paired with different conditionals.
+    amplitude = if likelihood == "amplitude_marginalized"
+        scalings = bns_amplitude_scalings(amplitude_parameter)
+        amplitude_prior = hyperprior[amplitude_parameter]
+        (;
+            name = amplitude_parameter,
+            fiducial = NamedTuple{(amplitude_parameter,)}((fiducials[amplitude_parameter],)),
+            prior = amplitude_prior,
+            scalings.amplitude_fn,
+            scalings.merger_rate_fn,
+            grid = quadrature_grid(amplitude_prior;
+                num_nodes = amplitude_num_nodes,
+                span_sigma = amplitude_prior_span_sigma)
+        )
+    else
+        nothing
+    end
+
+    @info "catalog loaded" n_frequency_bins=length(frequencies) n_proposal_samples=length(
         samples.redshift,
     )
 
     mkpath(output_dir)
     timestamp = format(now(), "yyyymmdd-HHMMSS")
     det_suffix = join((d.name for d in detectors), ",")
-    params_suffix = sample_only === nothing ? "all" : join(sample_only, "-")
+    # The *saved* parameters: under marginalization the chain carries one parameter NUTS
+    # never proposed.
+    saved_params = amplitude === nothing ? sample_only :
+                   (sample_only === nothing ? (amplitude.name,) :
+                    (sample_only..., amplitude.name))
+    params_suffix = saved_params === nothing ? "all" : join(saved_params, "-")
     base = "$(output_prefix)-$(params_suffix)-det=$(det_suffix)-seed$(seed)-$(timestamp)"
-    output_jld2 = joinpath(output_dir, "$base.jld2")
+    output_nc = joinpath(output_dir, "$base.nc")
     output_toml = joinpath(output_dir, "$base.toml")
 
     # Reproducible record of this run's settings, dumped on a successful run.
     run_config = MCMCConfig(
-        1,
+        3,
         catalog_path,
         string.(detnames),
         seed,
         observation_time,
-        local_merger_rate,
         SamplerConfig(
             sampler.nsamples,
             sampler.nadapts,
@@ -174,6 +238,10 @@ begin
         ),
         Dict{Symbol, Float64}(k => Float64(v) for (k, v) in pairs(fiducials)),
         sample_only_tup === nothing ? nothing : collect(Symbol, sample_only_tup),
+        likelihood,
+        amplitude_parameter,
+        amplitude_num_nodes,
+        amplitude_prior_span_sigma,
         output_dir,
         output_prefix
     )
@@ -189,15 +257,16 @@ In the cells below, we plot ``\Omega_{\mathrm{GW}}(f)`` as a function of the fre
 """
 
 # ╔═╡ d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a
-function plot_fiducial_omega_gw(model, fluxes, samples, fiducials, observation)
-    rate0, log_weights0 = merger_rate_and_log_weights(model, fiducials, samples)
-    Sh0 = spectral_density(fluxes, rate0; weights = exp.(log_weights0))
-    f = observation.frequencies
+function plot_fiducial_omega_gw(
+        model, polarization_power, samples, fiducials, frequencies, eff_psd, observation_time)
+    forward = forward_model(model, polarization_power, samples, fiducials)
+    rate0, Sh0 = forward.rate, forward.spectral_density
+    f = frequencies
     df = frequency_bin_width(f)
     snr = spectral_snr(
         Sh0,
-        observation.effective_psd,
-        year_to_second(observation.observation_time),
+        eff_psd,
+        year_to_second(observation_time),
         df
     )
 
@@ -223,7 +292,8 @@ function plot_fiducial_omega_gw(model, fluxes, samples, fiducials, observation)
 end
 
 # ╔═╡ 5f9a8b7c-0e1d-4a2f-3b6c-7d8e9f0a1b2c
-plot_fiducial_omega_gw(model, catalog.fluxes, samples, fiducials, observation)
+plot_fiducial_omega_gw(
+    model, polarization_power, samples, fiducials, frequencies, eff_psd, observation_time)
 
 # ╔═╡ ccf43d43-7f31-41e9-85db-12842561973c
 md"""
@@ -232,57 +302,88 @@ md"""
 
 # ╔═╡ 7b1c0d9e-2f3a-4c4b-5d6e-7f8a9b0c1d2e
 begin
-    if chain_input_jld2 !== nothing
-        chain_path = isabspath(chain_input_jld2) ? String(chain_input_jld2) :
-                     normpath(joinpath(_repo_root, chain_input_jld2))
-        isfile(chain_path) ||
-            throw(ArgumentError("JLD2 chain file not found: $(repr(chain_path))"))
-        @info "loading chain from JLD2" path = chain_path
-        chain = load(chain_path)["chain"]
-        @info "chain loaded" chain_size = size(chain)
-    else
-        initial_params = fill(InitFromPrior(), nchains)
-        adtype = resolve_adtype(sampler.ad_backend)
+    initial_params = fill(InitFromPrior(), nchains)
+    adtype = resolve_adtype(sampler.ad_backend)
 
-        @info "starting NUTS" nadapts=sampler.nadapts nsamples=sampler.nsamples target_acceptance=sampler.target_acceptance ad_backend=sampler.ad_backend sample_only=sample_only_tup
-        turing_model = build_turing_model(
+    @info "starting NUTS" nadapts=sampler.nadapts nsamples=sampler.nsamples target_acceptance=sampler.target_acceptance ad_backend=sampler.ad_backend sample_only=sample_only_tup
+    # S3: the prior model declares every hyperparameter name; fixing one is conditioning
+    # (`model | fixed`), so the chain carries exactly the sampled variables by
+    # construction. `R₀` is pinned at its fiducial unless named in `sample_only`.
+    sampled_prior = sample_only_tup === nothing ?
+                    Base.structdiff(hyperprior, (; R₀ = hyperprior.R₀)) :
+                    NamedTuple{sample_only_tup}(hyperprior)
+    # Under the marginalized likelihood the amplitude parameter is neither a latent nor a
+    # conditioned value: the model pins it internally to build the template.
+    if amplitude !== nothing
+        sampled_prior = Base.structdiff(sampled_prior, amplitude.fiducial)
+    end
+    model_prior = amplitude === nothing ? hyperprior :
+                  Base.structdiff(hyperprior, amplitude.fiducial)
+    prior_model = amplitude === nothing ?
+                  bns_hyperprior(model_prior) :
+                  bns_hyperprior_amplitude_marginalized(model_prior, Val(amplitude.name))
+    fixed = Base.structdiff(fiducials, sampled_prior)
+    if amplitude !== nothing
+        fixed = Base.structdiff(fixed, amplitude.fiducial)
+    end
+    # No external spectrum to fit: synthesize `observed` at the fiducials. One
+    # `resolved_average_mode` reaches both this call and the model that scores it.
+    observed = forward_model(
+        model, polarization_power, samples, fiducials;
+        average_mode = resolved_average_mode).spectral_density
+    unconditioned = if amplitude === nothing
+        gwbackground_importance_turing_model(
             model,
-            catalog.fluxes,
+            polarization_power,
             samples,
-            fiducials,
-            observation,
-            hyperprior;
-            track = false
+            prior_model,
+            observed,
+            frequencies,
+            eff_psd,
+            observation_time,
+            resolved_average_mode
         )
-        conditioned = condition_turing_model(
+    else
+        gwbackground_amplitude_marginalized_turing_model(
+            model,
+            polarization_power,
+            samples,
+            prior_model,
+            observed,
+            frequencies,
+            eff_psd,
+            observation_time,
+            resolved_average_mode,
+            amplitude.fiducial,
+            amplitude.amplitude_fn,
+            amplitude.prior,
+            amplitude.grid
+        )
+    end
+    turing_model = unconditioned | fixed
+    nuts = Turing.NUTS(
+        sampler.nadapts,
+        sampler.target_acceptance;
+        metricT = AdvancedHMC.DenseEuclideanMetric,
+        adtype = adtype
+    )
+    chain = if DEBUG
+        @info "MCMC skipped for debugging"
+        nothing
+    else
+        sampled_chain = sample(
             turing_model,
-            fiducials,
-            hyperprior,
-            sample_only_tup
+            nuts,
+            MCMCThreads(),
+            sampler.nsamples,
+            nchains;
+            progress = true,
+            save_state = false,
+            chain_type = VNChain,
+            initial_params = initial_params
         )
-        nuts = Turing.NUTS(
-            sampler.nadapts,
-            sampler.target_acceptance;
-            metricT = AdvancedHMC.DenseEuclideanMetric,
-            adtype = adtype
-        )
-        if DEBUG
-            @info "MCMC skipped for debugging"
-            chain = nothing
-        else
-            chain = sample(
-                conditioned,
-                nuts,
-                MCMCThreads(),
-                sampler.nsamples,
-                nchains;
-                progress = true,
-                save_state = false,
-                chain_type = VNChain,
-                initial_params = initial_params
-            )
-            @info "NUTS finished" chain_size = size(chain)
-        end
+        @info "NUTS finished" chain_size = size(sampled_chain)
+        sampled_chain
     end
     chain
 end
@@ -294,14 +395,49 @@ md"""
 
 # ╔═╡ 9d3e2f1a-4b5c-4d6e-7f8a-9b0c1d2e3f4a
 begin
-    if chain_input_jld2 === nothing && chain != nothing
-        @info "writing chain to JLD2" path = output_jld2
-        atomic_save_chain(output_jld2, chain)
+    if chain !== nothing
+        write_chain = chain
+        if amplitude !== nothing
+            # Post-processing against the saved chain alone -- no catalog, no
+            # (nfreq, nsamples) contraction. Seeded distinctly from the sampler because
+            # these are fresh draws from the conditional.
+            @info "reconstructing marginalized parameter" parameter = amplitude.name
+            reconstruction = reconstruct_amplitude(
+                Random.Xoshiro(seed + 1),
+                Array(write_chain[Parameter(@varname(amplitude_mle))]),
+                Array(write_chain[Parameter(@varname(template_optimal_snr))]),
+                Array(write_chain[Parameter(@varname(template_merger_rate))]);
+                amplitude.amplitude_fn,
+                amplitude.merger_rate_fn,
+                prior = amplitude.prior,
+                fiducial = only(amplitude.fiducial),
+                grid = amplitude.grid
+            )
+            min_nodes = minimum(reconstruction.quadrature_effective_nodes)
+            min_nodes < 30 &&
+                @warn "quadrature grid may not resolve the conditional posterior; increase amplitude_num_nodes" min_effective_nodes=min_nodes threshold=30
+            write_chain = merge_into_posterior(
+                write_chain,
+                merge(
+                    NamedTuple{(amplitude.name,)}((reconstruction.parameter,)),
+                    (;
+                        reconstruction.total_merger_rate,
+                        reconstruction.quadrature_effective_nodes
+                    )
+                )
+            )
+            @info "reconstruction done" min_effective_nodes=min_nodes reconstructed=extrema(reconstruction.parameter)
+        end
+
+        @info "writing chain to netCDF" path = output_nc
+        # Unicode hyperparameter names become ASCII at the file boundary only.
+        idata = InferenceObjects.convert_to_inference_data(rename_posterior_for_netcdf(write_chain))
+        InferenceObjects.to_netcdf(idata, output_nc)
         @info "writing run config to TOML" path = output_toml
         save_config(run_config, output_toml)
         @info "done"
     else
-        @info "skipping JLD2 save (chain was loaded from disk)"
+        @info "skipping netCDF save (no chain; DEBUG mode)"
     end
 end
 
@@ -342,34 +478,42 @@ begin
     import Pkg
     Pkg.activate(@__DIR__)
     Pkg.instantiate()
-    using AstroSGWB
-    using AstroSGWB:
+    using GWBackground
+    using GWBackground:
                      Detector,
-                     frequencies,
-                     in_band_mask,
-                     build_observation_context,
+                     effective_psd,
                      load_catalog,
-                     W0CDM,
+                     average_mode,
+                     AnalyticInclination,
+                     CatalogInclination,
+                     LambdaCDM,
                      ModifiedPropagation,
                      spectral_density,
                      year_to_second,
                      Ωgw
-    using AstroSGWBImportanceModels:
-                                     bns_samples_from_catalog,
-                                     prepare_bns_madau_dickinson_model
-    using AstroSGWBInference: build_turing_model, condition_turing_model
-    using AstroSGWBInference: hyperparameters, merger_rate_and_log_weights
-    using AstroSGWBInference: MCMCConfig, SamplerConfig, save_config
-    using AstroSGWBInference.ChainIO: atomic_save_chain
-    using Distributions: Uniform, product_distribution
+    using GWBackgroundImportanceModels:
+                                     prepare_bns_madau_dickinson_model,
+                                     bns_amplitude_scalings,
+                                     bns_hyperprior,
+                                     bns_hyperprior_amplitude_marginalized
+    using GWBackgroundInference: gwbackground_importance_turing_model,
+                              gwbackground_amplitude_marginalized_turing_model,
+                              forward_model, quadrature_grid, reconstruct_amplitude,
+                              rename_posterior_for_netcdf, merge_into_posterior
+    using GWBackgroundInference: MCMCConfig, SamplerConfig, save_config
+    using Distributions: Uniform
+    using InferenceObjects: InferenceObjects
+    # `to_netcdf` lives in InferenceObjects' NCDatasets extension, which only
+    # activates when NCDatasets is loaded.
+    using NCDatasets: NCDatasets
     using Turing
     using AdvancedHMC
     using ADTypes
+    using Enzyme
     using Random
-    using JLD2: load
     using Logging
     using FlexiChains
-    using FlexiChains: VNChain
+    using FlexiChains: VNChain, Parameter, @varname
     using PairPlots
     using CairoMakie
     using LaTeXStrings

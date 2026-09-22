@@ -6,7 +6,7 @@
 
 module GenerateMCMCConfigsCLI
 
-using AstroSGWBInference: MCMCConfig, SamplerConfig, save_config
+using GWBackgroundInference: MCMCConfig, SamplerConfig, save_config
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const DEFAULT_OUTPUT_DIR = "config/mcmc/sweep"
@@ -24,7 +24,6 @@ const DETECTOR_NETWORKS = (
 const SAMPLE_ONLY_SETS = (
     "H0" => [:H0],
     "Omega_m" => [:H0, :Ωm],
-    "w0" => [:H0, :w0],
     "modified-propagation" => [:Ξ₀, :Ξₙ],
     "H0-MD" => [:H0, :γ, :κ, :zpeak],
     "H0-peak" => [:H0, :zpeak],
@@ -42,12 +41,12 @@ const BASE_SAMPLER = SamplerConfig(
 const BASE_FIDUCIALS = Dict{Symbol, Float64}(
     :H0 => 67.66,
     :Ωm => 0.3096,
-    :w0 => -1.0,
     :Ξ₀ => 1.0,
     :Ξₙ => 1.91,
     :γ => 2.7,
     :κ => 5.7,
-    :zpeak => 2.0
+    :zpeak => 2.0,
+    :R₀ => 161.0
 )
 
 function _resolve_output_dir(path::AbstractString)
@@ -56,15 +55,20 @@ end
 
 function _config(detectors::Vector{String}, sample_only::Vector{Symbol})
     return MCMCConfig(
-        1,
+        3,
         CATALOG_PATH,
         copy(detectors),
         42,
         1.0,
-        161.0,
         BASE_SAMPLER,
         copy(BASE_FIDUCIALS),
         copy(sample_only),
+        # The sweep is a default-likelihood sweep; amplitude marginalization is opted into
+        # per-config, since it changes which parameter has a latent variable at all.
+        "default",
+        nothing,
+        1024,
+        10.0,
         "chains",
         "chains"
     )

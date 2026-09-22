@@ -9,18 +9,18 @@ begin
     import Pkg
     Pkg.activate(@__DIR__)
     Pkg.instantiate()
-    using AstroSGWB:
-                     CosmologyCache,
+    using GWBackground:
+                     DEFAULT_Z_GRID,
                      LambdaCDM,
                      cosmology,
                      OrderedUniformSourceMassPair,
                      AlignedSpinChiSimple,
                      MadauDickinsonSourceFrame,
-                     redshift_prior,
+                     RedshiftInterpolatedDistribution,
+                     distance_and_volume_grid,
                      luminosity_distance
-    using CBCDistributions: DefaultBBHMassPair, PopulationModel, hyperparameters,
-                            single_event_prior
-    import CBCDistributions: hyperparameters, single_event_prior
+    using BackgroundCosmology: AbstractCosmology
+    using GWDistributions: DefaultBBHMassPair
     using Distributions: Uniform, product_distribution, ProductNamedTupleDistribution
     using DataFrames
     using CSV
@@ -67,33 +67,24 @@ end
 md"""
 ## Defining the model
 
-All we need to do to define a population model is to create a struct which subtypes `PopulationModel` and defines two methods:
-- a `hyperparameters(model)` method which returns a tuple of symbols of the hyperparameters of the model
-- a `single_event_prior(model, cosmology, Λ)` method which, for a given hyperparameter vector ``Λ``, returns ``p(\theta | \Lambda,~\textrm{cosmo})``
+Define a function returning a product distribution for each source population. For a given
+flat hyperparameter state ``Λ``, it returns ``p(\theta | \Lambda,~\textrm{cosmo})``.
+The caller-owned hyperprior declares the names in ``Λ``.
 """
 
 # ╔═╡ a1b2c3d4-0004-4e5f-9a0b-1c2d3e4f5a6b
 begin
-    struct BNSUniformMassAlignedSpinTidalSFR <: PopulationModel end
-    struct BBHAlignedSpinModel <: PopulationModel end
 
-    function hyperparameters(::BNSUniformMassAlignedSpinTidalSFR)
-        (:γ, :κ, :zpeak, :m_low, :m_high, :a_max, :lambda_max)
-    end
-
-    function hyperparameters(::BBHAlignedSpinModel)
-        (
-            :γ, :κ, :zpeak, :α1, :α2, :m_break, :μ1, :σ1, :μ2, :σ2,
-            :m1_low, :δm1, :λ0, :λ1, :βq, :m2_low, :δm2, :m_high, :a_max
-        )
-    end
-
-    function single_event_prior(
-            ::BNSUniformMassAlignedSpinTidalSFR,
-            cache::CosmologyCache,
-            Λ::NamedTuple
+    function bns_prior(
+            cosmo::AbstractCosmology,
+            Λ::NamedTuple;
+            z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
     )
-        z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
+        grid = distance_and_volume_grid(cosmo, z_grid)
+        z_d = RedshiftInterpolatedDistribution(
+            MadauDickinsonSourceFrame(γ = Λ.γ, κ = Λ.κ, zpeak = Λ.zpeak, R₀ = Λ.R₀),
+            grid.differential_comoving_volume,
+            z_grid)
         spin = AlignedSpinChiSimple(a_max = Λ.a_max)
         return product_distribution((
             mass = OrderedUniformSourceMassPair(low = Λ.m_low, high = Λ.m_high),
@@ -105,12 +96,16 @@ begin
         ))
     end
 
-    function single_event_prior(
-            ::BBHAlignedSpinModel,
-            cache::CosmologyCache,
-            Λ::NamedTuple
+    function bbh_prior(
+            cosmo::AbstractCosmology,
+            Λ::NamedTuple;
+            z_grid::AbstractVector{<:Real} = DEFAULT_Z_GRID
     )
-        z_d = redshift_prior(MadauDickinsonSourceFrame(), cache, Λ)
+        grid = distance_and_volume_grid(cosmo, z_grid)
+        z_d = RedshiftInterpolatedDistribution(
+            MadauDickinsonSourceFrame(γ = Λ.γ, κ = Λ.κ, zpeak = Λ.zpeak, R₀ = Λ.R₀),
+            grid.differential_comoving_volume,
+            z_grid)
         spin = AlignedSpinChiSimple(a_max = Λ.a_max)
         return product_distribution((
             mass = DefaultBBHMassPair(;
@@ -139,8 +134,8 @@ end
 
 # ╔═╡ d4a12d20-e275-4c39-a2df-1bbbc3e7d048
 begin
-    population_model(::Val{:BNS}) = BNSUniformMassAlignedSpinTidalSFR()
-    population_model(::Val{:BBH}) = BBHAlignedSpinModel()
+    population_model(::Val{:BNS}) = bns_prior
+    population_model(::Val{:BBH}) = bbh_prior
 
     function hyperparameter_values(::Val{:BNS})
         return (;
@@ -149,6 +144,7 @@ begin
             γ = 2.7,
             κ = 3.0,
             zpeak = 2.0,
+            R₀ = 161.0,
             m_low = 1.1,
             m_high = 2.5,
             a_max = 0.99,
@@ -163,6 +159,7 @@ begin
             γ = 2.7,
             κ = 3.0,
             zpeak = 2.0,
+            R₀ = 161.0,
             α1 = 1.5,
             α2 = 5.4,
             m_break = 37.5,
@@ -270,9 +267,9 @@ md"""
 begin
     Random.seed!(seed)
     cosmo = cosmology(C, Λ)
-    prior = single_event_prior(pop, cosmo, Λ)
+    prior = pop(cosmo, Λ)
 
-    @info "drawing prior samples" nsamples seed model = nameof(typeof(pop))
+    @info "drawing prior samples" nsamples seed model = source_model
     # `cols` is a NamedTuple keyed like the prior: `mass` is a (2, n) matrix
     # (rows m1 ≥ m2, source frame); the rest are length-n vectors.
     cols = sample_columns(prior, nsamples)

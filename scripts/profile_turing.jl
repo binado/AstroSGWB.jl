@@ -1,10 +1,10 @@
-# Profile the AstroSGWB Turing log-density to find the bottleneck
+# Profile the GWBackground Turing log-density to find the bottleneck
 # inside a NUTS gradient evaluation.
 #
 # Run from the repository root, for example:
 #   julia --project=scripts/run scripts/profile_turing.jl --config-file=config/profile_turing.toml
 #
-# Optional: --seconds=2.0 --profile-samples=500 --alloc --profile-out=profile.dat
+# Optional: --seconds=2.0 --profile-samples=500 --alloc --profile-out=profile.dat --ad-backend=ForwardDiff
 #
 # The catalog is a mandatory real `catalog.h5`, loaded with `load_catalog` exactly
 # as the production notebooks do. Test fixtures are deliberately *not* supported:
@@ -12,38 +12,35 @@
 # redshift-prior build dominate, which is wildly unrepresentative of production
 # runs (~10⁴ samples, ~10² bins) and produces misleading bottleneck rankings.
 #
-# This script is *measurement only*: it does not edit any AstroSGWB/src/ files.
+# This script is *measurement only*: it does not edit any GWBackground/src/ files.
 
-module AstroSGWBProfileCLI
+module GWBackgroundProfileCLI
 
-using Distributions: logpdf, product_distribution, Uniform
-using AstroSGWB
-using AstroSGWBInference: build_turing_model, fiducial_spectral_density, logposterior
-using AstroSGWBInference: merger_rate_and_log_weights
-using AstroSGWBImportanceModels:
-                                 bns_madau_dickinson_hyperparameters,
-                                 bns_samples_from_catalog,
-                                 prepare_bns_madau_dickinson_model
-using AstroSGWB:
-                 merger_rate_per_sec,
+using Distributions: logpdf, Uniform
+using GWBackground
+using GWBackgroundInference: gwbackground_importance_turing_model, forward_model
+using GWBackgroundImportanceModels:
+                                 prepare_bns_madau_dickinson_model,
+                                 bns_hyperprior
+using GWBackground:
                  spectral_density,
                  MadauDickinsonSourceFrame,
-                 CosmologyCache,
+                 RedshiftInterpolatedDistribution,
+                 normalizer,
                  redshift,
-                 canonical_hyperparameters,
                  cosmology,
                  luminosity_distance,
-                 build_redshift_prior,
-                 source_frame_distribution,
+                 distance_and_volume_grid,
                  load_catalog,
-                 frequencies,
-                 in_band_mask,
-                 build_observation_context,
+                 average_mode,
+                 effective_psd,
                  ModifiedPropagation,
                  LambdaCDM,
                  Detector
+using ADTypes: AutoForwardDiff, AutoEnzyme
 using BenchmarkTools
 using DelimitedFiles
+using Enzyme
 using LogDensityProblems
 using LogDensityProblemsAD
 using Printf
@@ -53,6 +50,13 @@ using Serialization
 using Statistics: mean
 using TOML
 using Turing: DynamicPPL
+
+# Analysis band (Hz). The catalog carries no band information: `frequencies` and the
+# rows of `polarization_power` are sliced with this cut before the effective PSD is computed, so
+# every bin handed to the model is scored. Matches the generator band of the production
+# catalog.
+const MINIMUM_FREQUENCY = 2.0
+const MAXIMUM_FREQUENCY = 4096.0
 
 # ---------------------------------------------------------------------------
 # TOML config helpers
@@ -114,7 +118,7 @@ function _uniform_bounds(priors_tbl::Dict, key::AbstractString)
 end
 
 function _priors_from_toml(priors_tbl::Dict)
-    return product_distribution((
+    return (
         H0 = Uniform(_uniform_bounds(priors_tbl, "H0")...),
         Ωm = Uniform(_uniform_bounds(priors_tbl, "Omega_m")...),
         Ξ₀ = Uniform(_uniform_bounds(priors_tbl, "Xi_0")...),
@@ -122,23 +126,31 @@ function _priors_from_toml(priors_tbl::Dict)
         γ = Uniform(_uniform_bounds(priors_tbl, "gamma")...),
         κ = Uniform(_uniform_bounds(priors_tbl, "kappa")...),
         zpeak = Uniform(_uniform_bounds(priors_tbl, "z_peak")...)
+    )
+end
+
+function _resolve_adtype(name::AbstractString)
+    name == "ForwardDiff" && return AutoForwardDiff()
+    name == "Enzyme" &&
+        return AutoEnzyme(; mode = Enzyme.set_runtime_activity(Enzyme.Reverse))
+    throw(ArgumentError(
+        "unsupported ad_backend $(repr(name)); supported: \"ForwardDiff\", \"Enzyme\"",
     ))
 end
 
 function _theta0_from_toml(init_tbl::Dict, order::Tuple{Vararg{Symbol}})
-    return canonical_hyperparameters(
-        order,
-        (;
-            H0 = init_tbl["H0"],
-            Ωm = init_tbl["Omega_m"],
-            Ξ₀ = init_tbl["Xi_0"],
-            Ξₙ = init_tbl["Xi_n"],
-            γ = init_tbl["gamma"],
-            κ = init_tbl["kappa"],
-            zpeak = init_tbl["z_peak"]
-        );
-        context = "initial hyperparameters"
+    values = (
+        H0 = init_tbl["H0"],
+        Ωm = init_tbl["Omega_m"],
+        Ξ₀ = init_tbl["Xi_0"],
+        Ξₙ = init_tbl["Xi_n"],
+        γ = init_tbl["gamma"],
+        κ = init_tbl["kappa"],
+        zpeak = init_tbl["z_peak"]
     )
+    Set(keys(values)) == Set(order) || throw(
+        ArgumentError("initial hyperparameters must match $(order)"))
+    return (; (name => Float64(values[name]) for name in order)...)
 end
 
 function _validate_init_in_priors(prior, init_tbl::Dict)
@@ -153,7 +165,7 @@ function _validate_init_in_priors(prior, init_tbl::Dict)
     )
         haskey(init_tbl, key) || continue
         v = Float64(init_tbl[key])
-        isfinite(logpdf(prior.dists[sym], v)) || throw(
+        isfinite(logpdf(prior[sym], v)) || throw(
             ArgumentError("init.$key = $v is outside the support of the corresponding prior"),
         )
     end
@@ -241,39 +253,53 @@ function _run(;
         seconds::Float64,
         profile_samples::Int,
         do_alloc::Bool,
-        profile_out::Union{Nothing, String}
+        profile_out::Union{Nothing, String},
+        ad_backend::AbstractString
 )
     t0 = time()
 
     @info "loading catalog" catalog_path detectors=join((d.name for d in detectors), ",")
-    loaded = load_catalog(catalog_path)
+    catalog = load_catalog(catalog_path)
+    resolved_average_mode = average_mode(catalog)
+    @info "average mode" mode = string(resolved_average_mode)
     C = LambdaCDM
     P = ModifiedPropagation
-    order = bns_madau_dickinson_hyperparameters(C, P)
-    θ0 = _theta0_from_toml(init_tbl, order)
-    samples = bns_samples_from_catalog(loaded.catalog.samples, C, θ0)
-    fluxes = loaded.catalog.fluxes
+    # S2: the prior declares the hyperparameter names; there is no model to ask.
+    order = keys(priors)
+    # S7: `R₀` is a live hyperparameter now. The profiler keeps it out of the config's
+    # `priors` table and pins the config's `local_merger_rate` by conditioning, matching
+    # production; the prior still declares every name, so `R₀` gets a nominal entry.
+    full_prior = merge(priors, (; R₀ = Uniform(10.0, 1000.0)))
+    θ0 = merge(_theta0_from_toml(init_tbl, order), (; R₀ = local_merger_rate))
+    samples = catalog.samples
+    # Re-reference the stored EM-distance polarization power to the fiducial GW distance, matching the
+    # `+2 log Ξ_fid` term the prepared model's log-weights carry. No-op under Ξ₀ = 1.
+    apply_gw_distance_correction!(catalog, propagation(P, θ0))
+    # Band selection is the caller's job: restrict to the analysis band before
+    # computing the effective PSD, so every bin handed to the model is scored.
+    band = (catalog.frequencies .>= MINIMUM_FREQUENCY) .&
+           (catalog.frequencies .<= MAXIMUM_FREQUENCY)
+    polarization_power = catalog.polarization_power[band, :]
+    frequencies = catalog.frequencies[band]
     model = prepare_bns_madau_dickinson_model(
         samples,
         θ0,
         C,
         P;
-        observation_time = observation_time,
-        local_merger_rate = local_merger_rate
     )
-    observation = build_observation_context(
-        frequencies(loaded.metadata.grid), detectors,
-        in_band_mask(loaded.metadata.grid), observation_time)
-    @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(samples.redshift)
+    eff_psd = effective_psd(frequencies, detectors)
+    @info "catalog loaded" n_frequency_bins=length(frequencies) n_proposal_samples=length(samples.redshift)
 
     observed = if observed_spectral_density_csv === nothing
         @info "using fiducial spectrum from catalog as observed data"
-        fiducial_spectral_density(model, fluxes, samples, θ0)
+        forward_model(
+            model, polarization_power, samples, θ0;
+            average_mode = resolved_average_mode).spectral_density
     else
         @info "loading observed spectrum from CSV" path = observed_spectral_density_csv
         _load_observed_spectral_density(
             observed_spectral_density_csv,
-            length(observation.frequencies)
+            length(frequencies)
         )
     end
 
@@ -287,26 +313,32 @@ function _run(;
     # ------------------------------------------------------------------
 
     # Turing / DynamicPPL path
-    turing_model = build_turing_model(
+    turing_model = gwbackground_importance_turing_model(
         model,
-        fluxes,
+        polarization_power,
         samples,
-        θ0,
-        observation,
-        priors;
-        track = false,
-        observed = observed
-    )
+        bns_hyperprior(full_prior),
+        observed,
+        frequencies,
+        eff_psd,
+        observation_time,
+        resolved_average_mode
+    ) | (; R₀ = local_merger_rate)
     lf, z0_turing = _build_turing_logdensity(turing_model)
-    ad_lf = LogDensityProblemsAD.ADgradient(:ForwardDiff, lf)
+    adtype = _resolve_adtype(ad_backend)
+    ad_lf = LogDensityProblemsAD.ADgradient(adtype, lf)
 
     # Intermediate values frozen at θ0 for stage-level benchmarks
     h = θ0
     c0 = cosmology(C, h)
-    cache0 = CosmologyCache(c0, model.z_grid)
-    sfn0 = zz -> source_frame_distribution(MadauDickinsonSourceFrame(), zz, h)
-    redshift_prior0 = build_redshift_prior(sfn0, cache0)
-    rate0, log_weights0 = merger_rate_and_log_weights(model, h, samples)
+    # Mirrors the importance-model hot path: one cosmology pass, volume-array
+    # RedshiftInterpolatedDistribution so normalizer is events/sec.
+    grid0 = distance_and_volume_grid(c0, model.z_grid)
+    source_model0 = MadauDickinsonSourceFrame(
+        γ = h.γ, κ = h.κ, zpeak = h.zpeak, R₀ = h.R₀)
+    redshift_dist0 = RedshiftInterpolatedDistribution(
+        source_model0, grid0.differential_comoving_volume, model.z_grid)
+    rate0, log_weights0 = model(h, samples)
     weights0 = exp.(log_weights0)
     z_samples = redshift(samples)
 
@@ -316,7 +348,8 @@ function _run(;
     @info "warming up (JIT + AD compile)"
     LogDensityProblems.logdensity(lf, z0_turing)
     LogDensityProblems.logdensity_and_gradient(ad_lf, z0_turing)
-    logposterior(h, model, fluxes, samples, observation, priors, observed)
+    forward_model(
+        model, polarization_power, samples, h; average_mode = resolved_average_mode)
 
     # ------------------------------------------------------------------
     # BenchmarkTools suite
@@ -330,14 +363,14 @@ function _run(;
 
     suite["primal"] = BenchmarkGroup()
     suite["primal"]["turing"] = @benchmarkable LogDensityProblems.logdensity($lf, $z0_turing)
-    suite["primal"]["logposterior"] = @benchmarkable logposterior(
-        $h,
+    # S4 deleted the duplicate bare `logposterior`; `forward_model` is the whole
+    # physics path the Turing model wraps, which is the meaningful comparison anyway.
+    suite["primal"]["forward"] = @benchmarkable forward_model(
         $model,
-        $fluxes,
+        $polarization_power,
         $samples,
-        $observation,
-        $priors,
-        $observed
+        $h;
+        average_mode = $resolved_average_mode
     )
 
     suite["gradient"] = BenchmarkGroup()
@@ -347,23 +380,19 @@ function _run(;
         gcsample = true)
 
     suite["stage"] = BenchmarkGroup()
-    suite["stage"]["redshift"] = @benchmarkable build_redshift_prior(
-        $sfn0, $cache0)
+    suite["stage"]["redshift"] = @benchmarkable distance_and_volume_grid(
+        $c0, $(model.z_grid))
     # The fused joint replaces the separate weight/rate atomics: it returns
     # (rate, log_weights) in one cosmology-specific pass.
-    suite["stage"]["rate_and_log_weights"] = @benchmarkable merger_rate_and_log_weights(
-        $model, $h, $samples)
-    suite["stage"]["rate"] = @benchmarkable merger_rate_per_sec(
-        $redshift_prior0,
-        $(model.local_merger_rate),
-        $(model.observation_time)
-    )
+    suite["stage"]["rate_and_log_weights"] = @benchmarkable $model($h, $samples)
+    suite["stage"]["rate"] = @benchmarkable normalizer($redshift_dist0)
     suite["stage"]["spectral"] = @benchmarkable spectral_density(
-        $fluxes,
+        $polarization_power,
         $rate0;
         weights = $weights0
     )
-    suite["stage"]["prior"] = @benchmarkable logpdf($priors, $h)
+    suite["stage"]["prior"] = @benchmarkable sum(
+        logpdf($priors[k], $h[k]) for k in keys($priors))
     # Bare luminosity_distance broadcast — isolates per-sample distance work in
     # Catalog reconstruction and importance weighting.
     suite["stage"]["lumdist"] = @benchmarkable luminosity_distance.($z_samples, $c0)
@@ -379,20 +408,20 @@ function _run(;
     # ------------------------------------------------------------------
     @info "=== primal ==="
     t_primal_turing = results["primal"]["turing"]
-    t_primal_logpost = results["primal"]["logposterior"]
+    t_primal_forward = results["primal"]["forward"]
     _print_trial_row("turing (DynamicPPL)", t_primal_turing)
-    _print_trial_row("logposterior (bare)", t_primal_logpost)
+    _print_trial_row("forward_model (bare)", t_primal_forward)
 
     @info "=== gradient ==="
     t_grad_turing = results["gradient"]["turing"]
-    _print_trial_row("turing (ForwardDiff)", t_grad_turing)
+    _print_trial_row("turing ($ad_backend)", t_grad_turing)
 
     # AD cost multiplier via BenchmarkTools.ratio
     r_turing = ratio(median(t_grad_turing), median(t_primal_turing))
     @info @sprintf("AD multiplier (gradient/primal): turing=%.2fx", time(r_turing))
 
-    @info "=== per-stage breakdown (denominator: median of logposterior primal) ==="
-    primal_ns = _median_ns(t_primal_logpost)
+    @info "=== per-stage breakdown (denominator: median of forward_model primal) ==="
+    primal_ns = _median_ns(t_primal_forward)
     for key in ("redshift", "rate_and_log_weights", "rate", "spectral", "prior", "lumdist")
         _print_trial_row(key, results["stage"][key]; pct_of = primal_ns)
     end
@@ -400,7 +429,7 @@ function _run(;
     # ------------------------------------------------------------------
     # Sampling profile on the gradient
     # ------------------------------------------------------------------
-    @info "sampling-profile: running $profile_samples Turing ForwardDiff gradient evals under Profile.@profile"
+    @info "sampling-profile: running $profile_samples Turing $ad_backend gradient evals under Profile.@profile"
     Profile.clear()
     # 100µs sampling delay: one gradient eval is ~100µs, so the default 1ms
     # delay misses almost every sample. Pair with n=10^7 so we never run out
@@ -472,7 +501,7 @@ function _run(;
     println()
     println("## Profile summary")
     println()
-    println("| section | stage | median | min | allocs | mem | %% of logposterior |")
+    println("| section | stage | median | min | allocs | mem | %% of forward_model |")
     println("|---------|-------|--------|-----|--------|-----|-------------------|")
     _mdrow(section,
         stage,
@@ -488,7 +517,7 @@ function _run(;
         pct_of === nothing ? "-" : @sprintf("%.1f%%", 100 * _median_ns(t) / pct_of),)
     )
     _mdrow("primal", "turing", t_primal_turing; pct_of = primal_ns)
-    _mdrow("primal", "logposterior", t_primal_logpost; pct_of = primal_ns)
+    _mdrow("primal", "forward", t_primal_forward; pct_of = primal_ns)
     _mdrow("gradient", "turing", t_grad_turing; pct_of = primal_ns)
     for key in ("redshift", "rate_and_log_weights", "rate", "spectral", "prior", "lumdist")
         _mdrow("stage", key, results["stage"][key]; pct_of = primal_ns)
@@ -510,7 +539,7 @@ function _run(;
 end
 
 """
-Profile the AstroSGWB Turing log-density to localize the NUTS bottleneck.
+Profile the GWBackground Turing log-density to localize the NUTS bottleneck.
 
 Uses BenchmarkTools for timing and `Profile` (stdlib) for sampling/allocation profiles.
 
@@ -525,13 +554,16 @@ Uses BenchmarkTools for timing and `Profile` (stdlib) for sampling/allocation pr
 - `--alloc`: also run an allocation profile via `Profile.Allocs`.
 
 - `--profile-out=<path>`: write raw `Profile.retrieve()` snapshot via `Serialization`.
+
+- `--ad-backend=<name>`: `"ForwardDiff"` (default) or `"Enzyme"`.
 """
 function profile_turing(;
         config_file::String,
         seconds::Float64 = 2.0,
         profile_samples::Int = 500,
         alloc::Bool = false,
-        profile_out::String = ""
+        profile_out::String = "",
+        ad_backend::String = "ForwardDiff"
 )
     @info "loading config" path = config_file
     cfg = TOML.parsefile(config_file)
@@ -539,7 +571,7 @@ function profile_turing(;
 
     raw_catalog = _require(cfg, "catalog_path")::String
     catalog_path = _resolve_catalog_path(raw_catalog, settings_dir)
-    detectors = [Detector(n) for n in _require_string_array(cfg, "detectors")]
+    detectors = Detector.(_require_string_array(cfg, "detectors"))
     seed = get(cfg, "seed", nothing)
     observed_csv = get(cfg, "observed_spectral_density_csv", nothing)
     if observed_csv !== nothing
@@ -568,7 +600,8 @@ function profile_turing(;
         seconds,
         profile_samples,
         do_alloc = alloc,
-        profile_out = isempty(profile_out) ? nothing : profile_out
+        profile_out = isempty(profile_out) ? nothing : profile_out,
+        ad_backend
     )
 end
 
@@ -583,6 +616,7 @@ function _parse_args(args::Vector{String})
     profile_samples = 500
     alloc = false
     profile_out = ""
+    ad_backend = "ForwardDiff"
 
     i = 1
     while i <= length(args)
@@ -612,6 +646,11 @@ function _parse_args(args::Vector{String})
         elseif startswith(arg, "--profile-out=")
             profile_out = arg[(lastindex("--profile-out=") + 1):end]
             i += 1
+        elseif arg == "--ad-backend"
+            ad_backend, i = _pop_value!(args, i, arg)
+        elseif startswith(arg, "--ad-backend=")
+            ad_backend = arg[(lastindex("--ad-backend=") + 1):end]
+            i += 1
         else
             throw(ArgumentError("unknown argument: $arg"))
         end
@@ -623,7 +662,8 @@ function _parse_args(args::Vector{String})
         seconds,
         profile_samples,
         alloc,
-        profile_out
+        profile_out,
+        ad_backend
     )
 end
 
@@ -638,8 +678,8 @@ function command_main(args::Vector{String} = ARGS)::Cint
     end
 end
 
-end # module AstroSGWBProfileCLI
+end # module GWBackgroundProfileCLI
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)
-    exit(Base.invokelatest(AstroSGWBProfileCLI.command_main))
+    exit(Base.invokelatest(GWBackgroundProfileCLI.command_main))
 end

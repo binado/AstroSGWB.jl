@@ -10,7 +10,7 @@ md"""
 
 Sampler-free posterior visualization: builds the conditioned Turing model with the same canonical adapter as `mcmc.jl`, wraps it with `DynamicPPL.LogDensityFunction` (non-linked ⇒ physical-space logposterior, no Jacobian), and evaluates the **logposterior on a regular grid** over the free (sampled) parameters. Plots the result as a 1-D line or 2-D heatmap with CairoMakie.
 
-With `observed = fiducial_spectral_density`, the likelihood is largest at the fiducial
+With `observed` synthesized by `forward_model` at the fiducial, the likelihood is largest at the fiducial
 point (flat priors); the full log-posterior also includes the prior. Useful for checking
 posterior geometry and identifiability before or without running HMC.
 
@@ -30,22 +30,20 @@ begin
     import Pkg
     Pkg.activate(@__DIR__)
     Pkg.instantiate()
-    using AstroSGWB
-    using AstroSGWB:
+    using GWBackground
+    using GWBackground:
                      Detector,
-                     frequencies,
-                     in_band_mask,
-                     build_observation_context,
+                     effective_psd,
                      load_catalog,
+                     average_mode,
+                     AnalyticInclination,
+                     CatalogInclination,
                      W0CDM,
                      ModifiedPropagation
-    using AstroSGWBInference: build_turing_model, condition_turing_model,
-                              fiducial_spectral_density
-    using AstroSGWBInference: hyperparameters
-    using AstroSGWBImportanceModels:
-                                     bns_samples_from_catalog,
+    using GWBackgroundInference: gwbackground_importance_turing_model, forward_model
+    using GWBackgroundImportanceModels:
                                      prepare_bns_madau_dickinson_model
-    using Distributions: Uniform, product_distribution
+    using Distributions: Uniform
     using Turing
     using Turing: DynamicPPL
     using Random
@@ -78,6 +76,12 @@ begin
     local_merger_rate = 161.0
     observation_time_yr = 1.0
 
+    # Analysis band (Hz). The catalog carries no band information: slice
+    # `frequencies` and the rows of `polarization_power` with this cut before computing the
+    # effective PSD. Matches the generator band of the production catalog.
+    minimum_frequency = 2.0
+    maximum_frequency = 4096.0
+
     cosmology_parameters = (;
         H0 = 67.66,
         Ωm = 0.3096,
@@ -89,9 +93,15 @@ begin
         cosmology_parameters...,
         γ = 2.7,
         κ = 3.0,
-        zpeak = 2.0
+        zpeak = 2.0,
+        # S7: the local merger rate (Gpc^-3 yr^-1) is an ordinary hyperparameter read as
+        # `Λ.R₀`, not a prepare-time keyword. The grid cell pins it at this fiducial by
+        # conditioning; name it in `sample_only` to free it.
+        R₀ = local_merger_rate
     )
 
+    # The prior declares every name, sampled or pinned; the `R₀` entry is the nominal
+    # distribution its conditioning pins against.
     hyperprior_dists = (
         H0 = Uniform(20.0, 140.0),
         Ωm = Uniform(0.05, 0.95),
@@ -100,40 +110,52 @@ begin
         Ξₙ = Uniform(0.05, 3.0),
         γ = Uniform(0.5, 10.0),
         κ = Uniform(0.05, 10.0),
-        zpeak = Uniform(0.05, 10.0)
+        zpeak = Uniform(0.05, 10.0),
+        R₀ = Uniform(10.0, 1000.0)
     )
-    hyperprior = product_distribution(hyperprior_dists)
+    hyperprior = hyperprior_dists
 end
 
 # ╔═╡ bc7d6e5f-8a9b-4c0d-8e1f-3a4b5c6d7e8f
 begin
     @info "loading catalog" catalog_path detectors = join((d.name for d in detectors), ",")
-    loaded = load_catalog(catalog_path)
-    catalog = loaded.catalog
+    catalog = load_catalog(catalog_path)
+    # Derived from the catalog's `inclination` column; override with an explicit
+    # `AnalyticInclination()` / `CatalogInclination()` if needed.
+    resolved_average_mode = average_mode(catalog)
+    @info "average mode" mode = string(resolved_average_mode)
     C = W0CDM
     P = ModifiedPropagation
-    samples = bns_samples_from_catalog(catalog.samples, C, fiducials)
-    prepared_model = prepare_bns_madau_dickinson_model(
-        samples,
-        fiducials,
-        C,
-        P;
-        observation_time = observation_time_yr,
-        local_merger_rate = local_merger_rate
-    )
-    observation = build_observation_context(
-        frequencies(loaded.metadata.grid), detectors,
-        in_band_mask(loaded.metadata.grid), observation_time_yr)
-    order = hyperparameters(prepared_model)
+    samples = catalog.samples
+
+    # Re-reference the stored EM-distance polarization power to the fiducial GW distance, matching the
+    # `+2 log Ξ_fid` term the prepared model's log-weights carry. No-op under Ξ₀ = 1.
+    # Out-of-place on purpose: the correction is not idempotent and Pluto re-runs cells.
+    polarization_power = apply_gw_distance_correction(
+        catalog.polarization_power, catalog.samples.redshift, propagation(P, fiducials))
+
+    # Band selection is the caller's job: restrict to the analysis band before
+    # computing the effective PSD, so every bin handed to the model is scored.
+    band = (catalog.frequencies .>= minimum_frequency) .&
+           (catalog.frequencies .<= maximum_frequency)
+    polarization_power = polarization_power[band, :]
+    frequencies = catalog.frequencies[band]
+
+    prepared_model = prepare_bns_madau_dickinson_model(samples, fiducials, C, P)
+    eff_psd = effective_psd(frequencies, detectors)
+    # S2: the prior declares the hyperparameter names; there is no model to ask.
+    order = keys(hyperprior_dists)
     @info order
     sample_only_tup = sample_only === nothing ? nothing : Tuple(sample_only)
 
-    @info "catalog loaded" n_frequency_bins=length(observation.frequencies) n_proposal_samples=length(
+    @info "catalog loaded" n_frequency_bins=length(frequencies) n_proposal_samples=length(
         samples.redshift,
     )
 
-    @info "using fiducial in-band spectrum from cache as observed data"
-    observed = fiducial_spectral_density(prepared_model, catalog.fluxes, samples, fiducials)
+    @info "using fiducial spectrum from cache as observed data"
+    observed = forward_model(
+        prepared_model, polarization_power, samples, fiducials;
+        average_mode = resolved_average_mode).spectral_density
 
     nothing
 end
@@ -142,27 +164,29 @@ end
 md"""
 ## Logposterior grid
 
-Wrap the conditioned Turing model with `DynamicPPL.LogDensityFunction` (non-linked ⇒ physical-space logposterior, no Jacobian) and evaluate it on a regular grid over the free-parameter axes defined by `sample_only`.
+Wrap the Turing model with `DynamicPPL.LogDensityFunction` (non-linked ⇒ physical-space logposterior, no Jacobian) and evaluate it on a regular grid over the free-parameter axes defined by `sample_only`.
 """
 
 # ╔═╡ de9f8a7b-0c1d-4e2f-8031-5c6d7e8f9a0b
 begin
-    model = build_turing_model(
-        prepared_model, catalog.fluxes, samples, fiducials, observation, hyperprior;
-        track = false, observed = observed)
-    conditioned = condition_turing_model(model, fiducials, hyperprior, sample_only_tup)
-    lf = DynamicPPL.LogDensityFunction(conditioned)
+    # S3: the prior declares every hyperparameter name; conditioning on the complement
+    # pins the rest, so the model carries exactly the free parameters by construction.
+    # `R₀` is pinned at its fiducial unless named in `sample_only`.
+    sampled_prior = sample_only_tup === nothing ?
+                    Base.structdiff(hyperprior, (; R₀ = hyperprior.R₀)) :
+                    NamedTuple{sample_only_tup}(hyperprior)
+    fixed = Base.structdiff(fiducials, sampled_prior)
+    model = gwbackground_importance_turing_model(
+        prepared_model, polarization_power, samples, hyperprior, observed,
+        frequencies, eff_psd, observation_time_yr, resolved_average_mode, false) | fixed
+    lf = DynamicPPL.LogDensityFunction(model)
 
-    free_order = if sample_only_tup === nothing
-        order
-    else
-        Tuple(s for s in order if s in sample_only_tup)
-    end
+    free_order = keys(sampled_prior)
 
-    z0 = convert(Vector{Float64}, DynamicPPL.VarInfo(conditioned)[:])
+    z0 = convert(Vector{Float64}, DynamicPPL.VarInfo(model)[:])
     length(z0) == length(free_order) || error(
         "VarInfo free vector has length $(length(z0)) but free_order has length $(length(free_order)). " *
-        "The conditioned model's variable layout does not match the expected free_order."
+        "The model's variable layout does not match the expected free_order."
     )
     (1 <= length(free_order) <= 2) || error(
         "this notebook supports 1 or 2 free parameters; got $(length(free_order)). " *
