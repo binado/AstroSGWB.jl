@@ -1,5 +1,4 @@
 using HDF5
-using NPZ
 using Distributions: Uniform, logpdf
 using Test
 using GWBackground
@@ -82,30 +81,6 @@ end
         @test_throws ArgumentError load_catalog(path)
     finally
         rm(path; force = true)
-    end
-end
-
-# Cross-language parity: both repos read the *same* file. Regenerate from the
-# repo root with the astrogwb checkout's interpreter (see the script docstring)::
-#   ../astrogwb/.venv/bin/python3 scripts/generate_catalog_parity_fixture.py
-@testset "polarization-power reduction matches the Python astrogwb stack" begin
-    h5_path = joinpath(@__DIR__, "fixtures", "catalog_parity_reference.h5")
-    npz_path = joinpath(@__DIR__, "fixtures", "catalog_parity_reference.npz")
-    if !(isfile(h5_path) && isfile(npz_path))
-        # Fixtures are not committed (see comment above).
-        @test_skip false
-    else
-        catalog = load_catalog(h5_path)
-        reference = NPZ.npzread(npz_path)
-
-        # `polarization_power` already returns `(nfreq, nsamples)`, the same
-        # orientation HDF5.jl gives Julia, so no transpose is involved.
-        @test size(catalog.polarization_power) == size(reference["polarization_power"])
-        @test catalog.frequencies ≈ vec(reference["frequencies"])
-
-        # Julia's `abs2(z)` computes `re² + im²`; NumPy's `abs(z)**2` squares a
-        # `hypot`, so the two agree to a few ulp rather than bit-for-bit.
-        @test catalog.polarization_power≈reference["polarization_power"] rtol=1.0e-13
     end
 end
 

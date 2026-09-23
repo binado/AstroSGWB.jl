@@ -67,18 +67,17 @@ end
     @test length(model.z_grid) == length(DEFAULT_Z_GRID)
     @test length(model.proposal_log_pdf) == length(SAMPLES.redshift)
     @test all(isfinite, model.proposal_log_pdf)
-    # All three refrozen when `DEFAULT_Z_GRID` moved from [1e-3, 20] to [0, 20] to match
-    # `astrogwb.cosmology.distance_and_volume_grid`, which requires a grid starting at 0.
-    # Unlike the S5/S6 refreeze, this one moves `proposal_log_pdf` and `rate` as well —
-    # the grid *is* the integration domain, so restoring the missing first cell changes
-    # both the density normalization (+0.32%) and `∫dN/dz` (+0.169%). Measured shift in
-    # `log_weights`: -2.09e-2 at z = 0.1, -1.05e-2 at z = 0.2. Dropping the underflow
-    # floor in the same commit contributes ~1e-15 absolute, i.e. nothing.
-    @test model.proposal_log_pdf ≈ [-6.2539635957301094, -4.9113292473890375]
+    # Refrozen when `distance_and_volume_grid` moved from cumulative trapezoid to
+    # astrogwb's composite 4-node Gauss–Legendre rule (issue #71): d_L and dV_c/dz
+    # shift at the ~1e-4 relative level (the trapezoid error on this 256-point grid),
+    # moving `proposal_log_pdf` (+~7e-5 rel), `rate` (−2.3e-4 rel) and `log_weights`
+    # (−2e-4 abs) together. Target and proposal still share one code path, so the
+    # exact-zero property tested below is unaffected.
+    @test model.proposal_log_pdf ≈ [-6.253514632867456, -4.9109400095936175]
 
     rate, log_weights = model(TARGET, SAMPLES)
-    @test rate ≈ 0.031168377918986516 rtol = 1.0e-13
-    @test log_weights ≈ [-0.10995559838341759, -0.16653907807566956] rtol = 1.0e-12
+    @test rate ≈ 0.031161206161168884 rtol = 1.0e-13
+    @test log_weights ≈ [-0.11018316810385884, -0.16670234873376785] rtol = 1.0e-12
     @test size(log_weights) == size(SAMPLES.redshift)
     @test all(isfinite, log_weights)
 
@@ -88,8 +87,13 @@ end
     # is a setup error and must be loud at prepare time.
     @test_throws ArgumentError prepared((
         redshift = [0.1, 25.0], luminosity_distance = [430.0, 880.0]))
+    # A one-node grid is *valid* under the relaxed (astrogwb) grid contract — this
+    # throws because the samples fall outside [z_min, z_max].
     @test_throws ArgumentError prepared(; z_grid = [0.0])
+    # Grid-contract violations surface from `distance_and_volume_grid` itself:
+    # descending and negative grids.
     @test_throws ArgumentError prepared(; z_grid = [0.0, 1.0, 0.5])
+    @test_throws ArgumentError prepared(; z_grid = [-1e-3, 1.0])
 end
 
 @testset "prepare and hot path share one kernel" begin
@@ -115,10 +119,9 @@ end
 end
 
 @testset "DEFAULT_Z_GRID starts at zero" begin
-    # Comoving distance is accumulated along the grid assuming `d_c(grid[1]) = 0`:
-    # `distance_and_volume_grid` documents the grid must start at zero but does not
-    # check it (grid validation is caller-owned), so the production grid's zero lower
-    # bound is asserted here instead.
+    # Comoving distance is accumulated from the internally prepended d_c(0) = 0;
+    # `distance_and_volume_grid` validates ascending/non-negative itself, but the
+    # production grid's zero lower bound is part of its contract, so assert it here.
     @test first(DEFAULT_Z_GRID) == 0.0
     @test last(DEFAULT_Z_GRID) == 20.0
     @test length(DEFAULT_Z_GRID) == 256

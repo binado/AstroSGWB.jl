@@ -1,9 +1,8 @@
 using QuadGK
 using Test
 using ForwardDiff
-using BackgroundCosmology: hubble_constant_si, cosmology, cosmology_type,
-                           cosmology_config_name,
-                           SUPPORTED_COSMOLOGIES, comoving_distance, W0CDM, W0WaCDM,
+using BackgroundCosmology: hubble_constant_si, cosmology,
+                           comoving_distance, W0CDM, W0WaCDM,
                            GR, ModifiedPropagation,
                            propagation, propagation_type, propagation_config_name,
                            SUPPORTED_PROPAGATIONS, hubble_distance
@@ -125,11 +124,6 @@ end
     h_cpl = (; h_w0..., wa = 0.2)
     @test cosmology(W0WaCDM, h_cpl) == W0WaCDM(67.0, 0.315, -0.9, 0.2)
     @test cosmology(h_cpl) == W0WaCDM(67.0, 0.315, -0.9, 0.2)
-
-    @test cosmology_config_name(LambdaCDM) == "LambdaCDM"
-    @test cosmology_type("W0CDM") === W0CDM
-    @test Set(SUPPORTED_COSMOLOGIES) == Set((LambdaCDM, W0CDM, W0WaCDM))
-    @test_throws ArgumentError cosmology_type("not_a_model")
 end
 
 @testset "propagation axis" begin
@@ -237,23 +231,65 @@ end
     end
 end
 
+@testset "scalar distance path is pinned against adaptive QuadGK" begin
+    # The fixed-order Gauss–Legendre rule replaced adaptive quadgk; order 40 is the
+    # smallest order with margin below ~1e-12 relative up to z = 20 (32 misses it for
+    # ΛCDM), the largest redshift used anywhere in the workspace tests.
+    for c in (LambdaCDM(67.0, 0.315), W0CDM(67.0, 0.315, -0.9),
+        W0WaCDM(67.0, 0.315, -0.9, 0.2))
+        for z in (0.1, 1.0, 2.5, 10.0, 20.0)
+            reference, _ = quadgk(x -> inv(E(x, c)), 0.0, z; rtol = 1e-13)
+            @test comoving_distance(z, c) ≈ hubble_distance(c) * reference rtol = 1e-12
+        end
+    end
+end
+
 @testset "distance_and_volume_grid" begin
     z_grid = collect(LinRange(0.0, 20.0, 1025))
 
-    # The batched cumulative path is an approximation to the scalar QuadGK reference.
+    # Grid and scalar paths are now both Gauss–Legendre and agree to rounding error.
     for c in (LambdaCDM(67.0, 0.315), W0CDM(67.0, 0.315, -0.9),
         W0WaCDM(67.0, 0.315, -0.9, 0.2))
         g = distance_and_volume_grid(c, z_grid)
-        @test g.comoving_distance ≈ comoving_distance.(z_grid, Ref(c)) rtol = 2e-4
-        @test g.luminosity_distance ≈ luminosity_distance.(z_grid, Ref(c)) rtol = 2e-4
+        @test g.comoving_distance ≈ comoving_distance.(z_grid, Ref(c)) rtol = 1e-12
+        @test g.luminosity_distance ≈ luminosity_distance.(z_grid, Ref(c)) rtol = 1e-12
         @test g.differential_comoving_volume ≈
-              differential_comoving_volume.(z_grid, Ref(c)) rtol = 4e-4
+              differential_comoving_volume.(z_grid, Ref(c)) rtol = 1e-12
     end
+
+    # astrogwb's contract: the grid need not start at zero — 0 is prepended
+    # internally. A shifted grid is bit-identical, at the shared nodes, to the
+    # zero-prepended grid: the leading zero-width interval contributes exactly 0
+    # and every following interval is the same affine map.
+    c = LambdaCDM(67.0, 0.315)
+    z_shift = collect(LinRange(0.5, 20.0, 128))
+    g_shift = distance_and_volume_grid(c, z_shift)
+    g_prepended = distance_and_volume_grid(c, [0.0; z_shift])
+    @test g_shift.comoving_distance == g_prepended.comoving_distance[2:end]
+    @test g_shift.luminosity_distance == g_prepended.luminosity_distance[2:end]
+    @test g_shift.differential_comoving_volume ==
+          g_prepended.differential_comoving_volume[2:end]
+    # A shifted grid at production density is also accurate, except for its first
+    # interval [0, 0.5], which is ~25x wider than the rest and dominates the
+    # composite-rule error (~1e-9 there). (The 128-point grid above is deliberately
+    # coarse — validity is not accuracy, and the grid policy is caller-owned.)
+    z_fine = collect(LinRange(0.5, 20.0, 1024))
+    g_fine = distance_and_volume_grid(c, z_fine)
+    @test g_fine.comoving_distance ≈ comoving_distance.(z_fine, Ref(c)) rtol = 1e-8
+
+    # A single node is valid: one 4-node rule over [0, z]. Structurally sound, but
+    # one wide interval is not an accurate composite rule — caller-owned policy.
+    g_single = distance_and_volume_grid(c, [2.0])
+    @test length(g_single.comoving_distance) == 1
+    @test all(isfinite, g_single.comoving_distance)
+    @test g_single.comoving_distance[1] > 0
 
     # ForwardDiff propagates through the full grid calculation.
     for (build, x0) in (
         (v -> LambdaCDM(67.0, v), 0.315),
-        (v -> LambdaCDM(v, 0.315), 67.0)
+        (v -> LambdaCDM(v, 0.315), 67.0),
+        (v -> W0CDM(67.0, 0.315, v), -0.9),
+        (v -> W0WaCDM(67.0, 0.315, -0.9, v), 0.2)
     )
         f_grid = v -> sum(distance_and_volume_grid(build(v), z_grid).luminosity_distance)
         d = ForwardDiff.derivative(f_grid, x0)
@@ -263,10 +299,23 @@ end
         @test d ≈ (f_grid(x0 + h) - f_grid(x0 - h)) / (2h) rtol = 1e-5
     end
 
-    c = LambdaCDM(67.0, 0.315)
+    # And through the scalar path.
+    for (build, x0) in (
+        (v -> LambdaCDM(67.0, v), 0.315),
+        (v -> LambdaCDM(v, 0.315), 67.0),
+        (v -> W0CDM(67.0, 0.315, v), -0.9),
+        (v -> W0WaCDM(67.0, 0.315, -0.9, v), 0.2)
+    )
+        f_scalar = v -> luminosity_distance(1.5, build(v))
+        d = ForwardDiff.derivative(f_scalar, x0)
+        @test isfinite(d)
+        @test d != 0.0
+        h = sqrt(eps(x0))
+        @test d ≈ (f_scalar(x0 + h) - f_scalar(x0 - h)) / (2h) rtol = 1e-5
+    end
+
     @test_throws ArgumentError distance_and_volume_grid(c, Float64[])
-    @test_throws ArgumentError distance_and_volume_grid(c, [0.0])
-    @test_throws ArgumentError distance_and_volume_grid(c, [1e-3, 1.0])
     @test_throws ArgumentError distance_and_volume_grid(c, [0.0, 1.0, 0.5])
     @test_throws ArgumentError distance_and_volume_grid(c, [0.0, 1.0, 1.0])
+    @test_throws ArgumentError distance_and_volume_grid(c, [-1e-3, 1.0])
 end
