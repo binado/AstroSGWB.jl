@@ -8,12 +8,11 @@ The root repository is organized as a monorepo comprised of different small pack
 
 | Path | Role |
 |------|------|
-| [`Trapezoid/`](Trapezoid/) | Shared trapezoidal integration (`trapz` / `cumtrapz`) |
 | [`GWBackground/`](GWBackground/) | Core library: redshift and spectral-density evaluation, detector PSDs/ORFs, catalog I/O (re-exports cosmology helpers) |
 | [`GWBackgroundInference/`](GWBackgroundInference/) | Inference layer on top of `GWBackground`: Turing model construction, log-posterior helpers, chain I/O |
 | [`GWBackgroundImportanceModels/`](GWBackgroundImportanceModels/) | Canonical concrete importance adapters, including the BNS Madau–Dickinson model used by production workflows |
 | [`GWDistributions/`](GWDistributions/) | Shared population-distribution building blocks and the optional `PopulationModel` contract |
-| [`BackgroundCosmology/`](BackgroundCosmology/) | Cosmology and GW-propagation models, distances, and reusable interpolation caches |
+| [`BackgroundCosmology/`](BackgroundCosmology/) | Flat-ΛCDM distance and volume kernels |
 | [`notebooks/`](notebooks/) | **Canonical MCMC workflows** (Pluto / Jupytext): model configuration, `load_catalog`, NUTS sampling, diagnostics. |
 | [`config/`](config/) | TOML for developer scripts and headless MCMC runs (e.g. [`config/mcmc/example.toml`](config/mcmc/example.toml)). |
 | [`scripts/`](scripts/) | Developer utilities (profiling, chain tools, benchmarks) and [`scripts/run_mcmc.jl`](scripts/run_mcmc.jl) for config-driven cluster runs. |

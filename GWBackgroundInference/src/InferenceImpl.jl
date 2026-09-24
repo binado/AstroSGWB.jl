@@ -2,17 +2,16 @@ module InferenceImpl
 
 using GWBackground
 using GWBackground:
-                 AbstractAverageMode,
-                 AnalyticInclination,
-                 CatalogInclination,
-                 inner_product,
-                 frequency_bin_width,
-                 gaussian_bin_scale,
-                 year_to_second
+                    AbstractAverageMode,
+                    AnalyticInclination,
+                    CatalogInclination,
+                    inner_product,
+                    frequency_bin_width,
+                    gaussian_bin_scale,
+                    year_to_second
 using Distributions: Distributions, MvNormal
 using LinearAlgebra: Diagonal
 using Random: Random
-using Trapezoid: trapz, cumtrapz
 using Turing
 
 include("forward.jl")
