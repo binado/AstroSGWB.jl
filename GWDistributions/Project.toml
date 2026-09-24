@@ -1,6 +1,6 @@
 name = "GWDistributions"
 uuid = "04d2795f-0c6c-4919-9dae-19f280fe5e84"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["binado <bernardopveronese@gmail.com>"]
 
 [deps]
@@ -14,12 +14,11 @@ DataInterpolations = "8.10.0"
 Distributions = "0.25.125"
 QuadGK = "2.11.3"
 Random = "1.11.0"
-BackgroundCosmology = "0.1.0"
+julia = "1.12"
 
 [extras]
-BackgroundCosmology = "2d447719-857e-46c1-9a42-11db63d1a3c6"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "ForwardDiff", "BackgroundCosmology"]
+test = ["Test", "ForwardDiff"]

@@ -11,8 +11,8 @@ The root repository is organized as a monorepo comprised of different small pack
 | [`GWBackground/`](GWBackground/) | Core library: redshift and spectral-density evaluation, detector PSDs/ORFs, catalog I/O (re-exports cosmology helpers) |
 | [`GWBackgroundInference/`](GWBackgroundInference/) | Inference layer on top of `GWBackground`: Turing model construction, log-posterior helpers, chain I/O |
 | [`GWBackgroundImportanceModels/`](GWBackgroundImportanceModels/) | Canonical concrete importance adapters, including the BNS Madau–Dickinson model used by production workflows |
-| [`GWDistributions/`](GWDistributions/) | Shared population-distribution building blocks and the optional `PopulationModel` contract |
-| [`BackgroundCosmology/`](BackgroundCosmology/) | Flat-ΛCDM distance and volume kernels |
+| [`GWDistributions/`](GWDistributions/) | Shared population-distribution building blocks ([README](GWDistributions/README.md)); standalone — installable from this repo with `subdir` |
+| [`BackgroundCosmology/`](BackgroundCosmology/) | FLRW cosmology kernels: distances and volume grids ([README](BackgroundCosmology/README.md)); standalone — installable from this repo with `subdir` |
 | [`notebooks/`](notebooks/) | **Canonical MCMC workflows** (Pluto / Jupytext): model configuration, `load_catalog`, NUTS sampling, diagnostics. |
 | [`config/`](config/) | TOML for developer scripts and headless MCMC runs (e.g. [`config/mcmc/example.toml`](config/mcmc/example.toml)). |
 | [`scripts/`](scripts/) | Developer utilities (profiling, chain tools, benchmarks) and [`scripts/run_mcmc.jl`](scripts/run_mcmc.jl) for config-driven cluster runs. |
@@ -34,11 +34,17 @@ Run tests:
 
 ```bash
 just test
-# or
+# or, per package
+julia --project=BackgroundCosmology -e 'using Pkg; Pkg.test()'
 julia --project=GWBackground -e 'using Pkg; Pkg.test()'
 julia --project=GWBackgroundInference -e 'using Pkg; Pkg.test()'
 julia --project=GWBackgroundImportanceModels -e 'using Pkg; Pkg.test()'
+julia --project=GWDistributions -e 'using Pkg; Pkg.test()'
 ```
+
+`BackgroundCosmology` and `GWDistributions` are self-contained: copying either package directory
+out of the workspace and running `Pkg.test()` there resolves registered dependencies only, with
+no path or workspace-only dependencies.
 
 ## MCMC inference
 
