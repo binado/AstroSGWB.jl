@@ -61,8 +61,3 @@ GWBackgroundInference/out-test/
 GWBackgroundInference/build/
 GWBackgroundInference/deps/build.log
 GWBackgroundInference/deps/parity_precompile.h5
-
-# Cross-language catalog parity fixture (generate with
-# `../astrogwb/.venv/bin/python3 scripts/generate_catalog_parity_fixture.py`)
-GWBackground/test/fixtures/catalog_parity_reference.h5
-GWBackground/test/fixtures/catalog_parity_reference.npz

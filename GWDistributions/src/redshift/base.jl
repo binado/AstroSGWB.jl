@@ -33,9 +33,9 @@ function source_frame_distribution end
 Default redshift integration grid: 256 uniformly-spaced points on [0, 20].
 Shared across callers that do not pass an explicit grid.
 
-The grid must start at `0` and be strictly increasing.
-`distance_and_volume_grid` enforces these requirements because its cumulative
-comoving-distance integral assumes `d_c(0) = 0`.
+The grid starts at `0` and is strictly increasing. `distance_and_volume_grid`
+requires a non-negative, strictly increasing grid and prepends `0` internally,
+because its cumulative comoving-distance integral starts at `d_c(0) = 0`.
 """
 const DEFAULT_Z_GRID = collect(LinRange(0.0, 20.0, 256))
 

@@ -27,13 +27,6 @@ H0(c::AbstractCosmology) = c.H0
 
 Base.broadcastable(c::AbstractCosmology) = Ref(c)
 
-"""Supported configurable cosmology subtypes (registration order)."""
-const SUPPORTED_COSMOLOGIES = (
-    LambdaCDM,
-    W0CDM,
-    W0WaCDM
-)
-
 """
     cosmology(::Type{C}, h::NamedTuple) -> C
 
@@ -57,29 +50,6 @@ end
 
 function (::Type{C})(h::NamedTuple) where {C <: AbstractCosmology}
     return cosmology(C, h)
-end
-
-cosmology_config_name(::Type{LambdaCDM}) = "LambdaCDM"
-cosmology_config_name(::Type{W0CDM}) = "W0CDM"
-cosmology_config_name(::Type{W0WaCDM}) = "W0WaCDM"
-
-const _COSMOLOGY_BY_CONFIG_NAME = Dict(
-    cosmology_config_name(C) => C for C in SUPPORTED_COSMOLOGIES
-)
-
-"""
-    cosmology_type(name::AbstractString) -> Type{<:AbstractCosmology}
-
-Resolve a config/TOML cosmology name to a concrete subtype.
-"""
-function cosmology_type(name::AbstractString)
-    C = get(_COSMOLOGY_BY_CONFIG_NAME, String(name), nothing)
-    C === nothing && throw(
-        ArgumentError(
-        "unknown cosmology \"$(name)\"; valid choices: $(sort(collect(keys(_COSMOLOGY_BY_CONFIG_NAME))))",
-    ),
-    )
-    return C
 end
 
 # ---------------------------------------------------------------------------

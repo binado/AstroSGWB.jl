@@ -41,9 +41,9 @@ module GWBackground
 using GWDistributions
 using BackgroundCosmology
 import BackgroundCosmology: apply_gw_distance_correction, apply_gw_distance_correction!,
-                           cosmology, cosmology_type,
-                           gw_em_distance_ratio,
-                           propagation, propagation_type
+                            cosmology,
+                            gw_em_distance_ratio,
+                            propagation, propagation_type
 
 include("catalog/catalog.jl")
 include("catalog/io.jl")
@@ -84,8 +84,6 @@ export E,
        dark_energy_eos,
        de_density_ratio,
        cosmology,
-       cosmology_type,
-       SUPPORTED_COSMOLOGIES,
        propagation,
        propagation_type,
        propagation_config_name,
@@ -94,8 +92,6 @@ export E,
        luminosity_distance,
        differential_comoving_volume,
        distance_and_volume_grid,
-       trapz,
-       cumtrapz,
        gw_em_distance_ratio,
        apply_gw_distance_correction,
        apply_gw_distance_correction!,
