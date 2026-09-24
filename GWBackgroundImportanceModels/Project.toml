@@ -17,8 +17,8 @@ BackgroundCosmology = {path = "../BackgroundCosmology"}
 
 [compat]
 GWBackground = "0.3"
-GWDistributions = "0.1.0"
-BackgroundCosmology = "0.1.0"
+GWDistributions = "0.2"
+BackgroundCosmology = "0.2"
 DataInterpolations = "8.10.0"
 Enzyme = "0.13"
 Turing = "0.45"

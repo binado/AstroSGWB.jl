@@ -1,6 +1,6 @@
 name = "BackgroundCosmology"
 uuid = "2d447719-857e-46c1-9a42-11db63d1a3c6"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["binado <bernardopveronese@gmail.com>"]
 
 [deps]
