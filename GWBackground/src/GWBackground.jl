@@ -14,12 +14,12 @@ Python `astrogwb` package.
 
 As loaded the polarization-power matrix is referenced to the **electromagnetic** luminosity distance
 (before the fiducial `(D_L/D_gw)²` factor). Call
-[`apply_gw_distance_correction!`](@ref) at the fiducial propagation before preparing an
-importance model; the log-weights carry the compensating `+2 log Ξ_fid` term
+`GWBackgroundImportanceModels.apply_gw_distance_correction!` at the fiducial propagation before
+preparing an importance model; the log-weights carry the compensating `+2 log Ξ_fid` term
 unconditionally, so skipping the call under a non-GR fiducial biases the fit by `Ξ_fid²`.
 The correction is **not idempotent**: an in-place call mutates the catalog it is given,
 so reactive/Pluto call sites should use the out-of-place
-[`apply_gw_distance_correction`](@ref).
+`GWBackgroundImportanceModels.apply_gw_distance_correction`.
 
 The catalog also carries the inclination-averaging convention: [`average_mode`](@ref)
 derives it from the `inclination` column, and it must be threaded to
@@ -40,10 +40,6 @@ module GWBackground
 
 using GWDistributions
 using BackgroundCosmology
-import BackgroundCosmology: apply_gw_distance_correction, apply_gw_distance_correction!,
-                            cosmology,
-                            gw_em_distance_ratio,
-                            propagation, propagation_type
 
 include("catalog/catalog.jl")
 include("catalog/io.jl")
@@ -79,22 +75,13 @@ export E,
        LambdaCDM,
        W0CDM,
        W0WaCDM,
-       GR,
-       ModifiedPropagation,
        dark_energy_eos,
        de_density_ratio,
        cosmology,
-       propagation,
-       propagation_type,
-       propagation_config_name,
-       SUPPORTED_PROPAGATIONS,
        comoving_distance,
        luminosity_distance,
        differential_comoving_volume,
        distance_and_volume_grid,
-       gw_em_distance_ratio,
-       apply_gw_distance_correction,
-       apply_gw_distance_correction!,
        hubble_constant_si,
        H0,
        Ωm

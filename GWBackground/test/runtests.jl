@@ -1,5 +1,7 @@
 using Test
 using GWBackground
+using GWBackgroundImportanceModels: ModifiedPropagation, apply_gw_distance_correction!,
+                                    propagation
 
 include("parity_test_cache.jl")
 include("test_io.jl")

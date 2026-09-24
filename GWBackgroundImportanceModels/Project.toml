@@ -3,6 +3,7 @@ uuid = "a94c092a-ff88-49c3-8bc8-0cc06a025c9e"
 version = "0.1.0"
 
 [deps]
+GWBackground = "6a24b920-6d62-45b7-87dc-84df6f794d62"
 GWDistributions = "04d2795f-0c6c-4919-9dae-19f280fe5e84"
 BackgroundCosmology = "2d447719-857e-46c1-9a42-11db63d1a3c6"
 DataInterpolations = "82cc6244-b520-54b8-b5a6-8a565e85f1d0"
@@ -15,6 +16,7 @@ GWDistributions = {path = "../GWDistributions"}
 BackgroundCosmology = {path = "../BackgroundCosmology"}
 
 [compat]
+GWBackground = "0.3"
 GWDistributions = "0.1.0"
 BackgroundCosmology = "0.1.0"
 DataInterpolations = "8.10.0"
@@ -24,7 +26,6 @@ julia = "1.12"
 
 [extras]
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
-GWBackground = "6a24b920-6d62-45b7-87dc-84df6f794d62"
 GWBackgroundInference = "17b6d0b6-80a1-4842-aa05-e7535ef3d247"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
@@ -34,4 +35,4 @@ LogDensityProblemsAD = "996a588d-648d-4e1f-a8f0-a84b347e47b1"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["ADTypes", "GWBackground", "GWBackgroundInference", "Distributions", "Enzyme", "ForwardDiff", "LogDensityProblems", "LogDensityProblemsAD", "Test"]
+test = ["ADTypes", "GWBackgroundInference", "Distributions", "Enzyme", "ForwardDiff", "LogDensityProblems", "LogDensityProblemsAD", "Test"]

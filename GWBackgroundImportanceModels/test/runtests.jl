@@ -13,6 +13,8 @@ using LogDensityProblemsAD
 using Turing
 using Turing.DynamicPPL
 
+include("test_propagation.jl")
+
 # S7: `R₀` (Gpc⁻³ yr⁻¹) is a live hyperparameter read as `Λ.R₀`, not a frozen struct
 # field. It sits in both points at the same value the old `local_merger_rate` keyword
 # carried, which is why the frozen `rate` fixture below does not move.

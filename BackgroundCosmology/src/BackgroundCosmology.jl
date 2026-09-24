@@ -1,21 +1,15 @@
 module BackgroundCosmology
 
 export AbstractCosmology, LambdaCDM, W0CDM, W0WaCDM,
-       AbstractPropagation, GR, ModifiedPropagation,
        E, dark_energy_eos, de_density_ratio,
        hubble_constant_si, H0, Ωm,
        cosmology,
-       propagation,
-       propagation_type, propagation_config_name, SUPPORTED_PROPAGATIONS,
        comoving_distance, luminosity_distance, differential_comoving_volume,
        hubble_distance,
-       distance_and_volume_grid,
-       gw_em_distance_ratio,
-       apply_gw_distance_correction, apply_gw_distance_correction!
+       distance_and_volume_grid
 
 include("conversion.jl")
 include("model.jl")
 include("distance.jl")
-include("modified_propagation.jl")
 
 end # module
