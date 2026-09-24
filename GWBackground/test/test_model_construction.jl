@@ -1,5 +1,6 @@
 using Test
 using GWBackground
+using GWBackgroundImportanceModels: ModifiedPropagation, propagation
 
 @testset "model cosmology and propagation constructors" begin
     base = (H0 = 67.0, Ωm = 0.3, Ξ₀ = 1.0, Ξₙ = 0.0, γ = 2.7, κ = 5.7, zpeak = 2.0)

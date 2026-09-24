@@ -155,7 +155,7 @@ function prepare_bns_madau_dickinson_model(
     # ForwardDiff fast path in `GWBackground.spectral_density`, which dispatches on
     # `polarization_power::AbstractMatrix{<:Real}`.
     prop_fid = propagation(P, fiducials)
-    log_Ξ_fid = Float64[log(gw_em_distance_ratio(zi, prop_fid)) for zi in z]
+    log_Ξ_fid = Float64[log_gw_em_distance_ratio(zi, prop_fid) for zi in z]
 
     # The call-site correction and this field are computed independently, so a call site
     # that forgets `apply_gw_distance_correction!` under a non-GR fiducial is wrong by
@@ -235,9 +235,9 @@ function (model::BNSMadauDickinsonImportanceModel{C, P})(
 
     z = samples.redshift
     t = _bns_grid_terms(C, Λ, model.z_grid, z)
-    Ξ_θ = gw_em_distance_ratio.(z, Ref(propagation(P, Λ)))
+    log_Ξ_θ = log_gw_em_distance_ratio.(z, Ref(propagation(P, Λ)))
     log_weights = @. t.log_p - model.proposal_log_pdf +
-                     2 * (log(samples.luminosity_distance) - log(t.d_l) - log(Ξ_θ) +
+                     2 * (log(samples.luminosity_distance) - log(t.d_l) - log_Ξ_θ +
                       model.log_Ξ_fid)
 
     rate = t.norm

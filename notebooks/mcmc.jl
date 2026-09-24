@@ -480,26 +480,28 @@ begin
     Pkg.instantiate()
     using GWBackground
     using GWBackground:
-                     Detector,
-                     effective_psd,
-                     load_catalog,
-                     average_mode,
-                     AnalyticInclination,
-                     CatalogInclination,
-                     LambdaCDM,
-                     ModifiedPropagation,
-                     spectral_density,
-                     year_to_second,
-                     Ωgw
+                        Detector,
+                        effective_psd,
+                        load_catalog,
+                        average_mode,
+                        AnalyticInclination,
+                        CatalogInclination,
+                        LambdaCDM,
+                        spectral_density,
+                        year_to_second,
+                        Ωgw
     using GWBackgroundImportanceModels:
-                                     prepare_bns_madau_dickinson_model,
-                                     bns_amplitude_scalings,
-                                     bns_hyperprior,
-                                     bns_hyperprior_amplitude_marginalized
+                                        prepare_bns_madau_dickinson_model,
+                                        bns_amplitude_scalings,
+                                        bns_hyperprior,
+                                        bns_hyperprior_amplitude_marginalized,
+                                        ModifiedPropagation,
+                                        apply_gw_distance_correction,
+                                        propagation
     using GWBackgroundInference: gwbackground_importance_turing_model,
-                              gwbackground_amplitude_marginalized_turing_model,
-                              forward_model, quadrature_grid, reconstruct_amplitude,
-                              rename_posterior_for_netcdf, merge_into_posterior
+                                 gwbackground_amplitude_marginalized_turing_model,
+                                 forward_model, quadrature_grid, reconstruct_amplitude,
+                                 rename_posterior_for_netcdf, merge_into_posterior
     using GWBackgroundInference: MCMCConfig, SamplerConfig, save_config
     using Distributions: Uniform
     using InferenceObjects: InferenceObjects

@@ -52,69 +52,6 @@ function (::Type{C})(h::NamedTuple) where {C <: AbstractCosmology}
     return cosmology(C, h)
 end
 
-# ---------------------------------------------------------------------------
-# GW propagation: an axis orthogonal to the FLRW background. `d_L^GW(z) =
-# Ξ(z) · d_L^EM(z)`, and `Ξ(z)` never touches `Ωm`/`E(z)`/any distance integral,
-# so propagation is threaded as its own type token `P` alongside the cosmology
-# token `C` rather than wrapping a cosmology.
-# ---------------------------------------------------------------------------
-
-"""Abstract supertype for gravitational-wave propagation models."""
-abstract type AbstractPropagation end
-
-"""General relativity propagation: `Ξ(z) ≡ 1` (GW and EM distances coincide)."""
-struct GR <: AbstractPropagation end
-
-"""
-Modified gravitational-wave propagation with `Ξ(z) = Ξ₀ + (1 - Ξ₀)/(1 + z)^Ξₙ`.
-Independent of the FLRW background; combined with a cosmology only when forming
-the GW luminosity distance.
-"""
-struct ModifiedPropagation{T <: Real} <: AbstractPropagation
-    Ξ₀::T
-    Ξₙ::T
-end
-
-# One type parameter for two fields means the default constructor rejects mixed eltypes.
-# That is the *normal* case under ForwardDiff: a run that samples `Ξ₀` while holding `Ξₙ`
-# fixed hands this constructor a `Dual` and a `Float64`. Promote instead of erroring.
-ModifiedPropagation(Ξ₀::Real, Ξₙ::Real) = ModifiedPropagation(promote(Ξ₀, Ξₙ)...)
-
-Base.broadcastable(p::AbstractPropagation) = Ref(p)
-
-"""Supported configurable propagation subtypes (registration order)."""
-const SUPPORTED_PROPAGATIONS = (GR, ModifiedPropagation)
-
-"""
-    propagation(::Type{P}, h::NamedTuple) -> AbstractPropagation
-
-Build propagation subtype `P` from hyperparameter state `h`.
-"""
-propagation(::Type{GR}, h::NamedTuple) = GR()
-propagation(::Type{<:ModifiedPropagation}, h::NamedTuple) = ModifiedPropagation(h.Ξ₀, h.Ξₙ)
-
-propagation_config_name(::Type{GR}) = "GR"
-propagation_config_name(::Type{<:ModifiedPropagation}) = "ModifiedPropagation"
-
-const _PROPAGATION_BY_CONFIG_NAME = Dict(
-    propagation_config_name(P) => P for P in SUPPORTED_PROPAGATIONS
-)
-
-"""
-    propagation_type(name::AbstractString) -> Type{<:AbstractPropagation}
-
-Resolve a config/TOML propagation name to a concrete subtype.
-"""
-function propagation_type(name::AbstractString)
-    P = get(_PROPAGATION_BY_CONFIG_NAME, String(name), nothing)
-    P === nothing && throw(
-        ArgumentError(
-        "unknown propagation \"$(name)\"; valid choices: $(sort(collect(keys(_PROPAGATION_BY_CONFIG_NAME))))",
-    ),
-    )
-    return P
-end
-
 """
     dark_energy_eos(c::AbstractCosmology, z) -> Real
 

@@ -32,17 +32,19 @@ begin
     Pkg.instantiate()
     using GWBackground
     using GWBackground:
-                     Detector,
-                     effective_psd,
-                     load_catalog,
-                     average_mode,
-                     AnalyticInclination,
-                     CatalogInclination,
-                     W0CDM,
-                     ModifiedPropagation
+                        Detector,
+                        effective_psd,
+                        load_catalog,
+                        average_mode,
+                        AnalyticInclination,
+                        CatalogInclination,
+                        W0CDM
     using GWBackgroundInference: gwbackground_importance_turing_model, forward_model
     using GWBackgroundImportanceModels:
-                                     prepare_bns_madau_dickinson_model
+                                        prepare_bns_madau_dickinson_model,
+                                        ModifiedPropagation,
+                                        apply_gw_distance_correction,
+                                        propagation
     using Distributions: Uniform
     using Turing
     using Turing: DynamicPPL

@@ -12,21 +12,24 @@ generics. The two-package split is a convenience, not a coupling.
 module GWBackgroundImportanceModels
 
 using GWDistributions:
-                              DEFAULT_Z_GRID,
-                              MadauDickinsonSourceFrame,
-                              RedshiftInterpolatedDistribution,
-                              normalizer
-using BackgroundCosmology:
-                          AbstractCosmology,
-                          AbstractPropagation,
-                          cosmology,
-                          distance_and_volume_grid,
-                          gw_em_distance_ratio,
-                          propagation
+                       DEFAULT_Z_GRID,
+                       MadauDickinsonSourceFrame,
+                       RedshiftInterpolatedDistribution,
+                       normalizer
+using GWBackground: SGWBCatalog
+using BackgroundCosmology: AbstractCosmology, cosmology, distance_and_volume_grid
 using DataInterpolations: LinearInterpolation
 using Turing
 
-export BNSMadauDickinsonImportanceModel,
+export AbstractPropagation,
+       GR,
+       ModifiedPropagation,
+       propagation,
+       gw_em_distance_ratio,
+       log_gw_em_distance_ratio,
+       apply_gw_distance_correction,
+       apply_gw_distance_correction!,
+       BNSMadauDickinsonImportanceModel,
        prepare_bns_madau_dickinson_model,
        AMPLITUDE_PARAMETERS,
        amplitude_H0,
@@ -37,6 +40,7 @@ export BNSMadauDickinsonImportanceModel,
        bns_hyperprior,
        bns_hyperprior_amplitude_marginalized
 
+include("propagation.jl")
 include("models/bns_madau_dickinson.jl")
 
 end

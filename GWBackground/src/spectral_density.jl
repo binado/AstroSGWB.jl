@@ -6,7 +6,7 @@ using ForwardDiff
 # ι, but `polarization_power` already carries whatever ι convention the waveform catalog
 # was generated under. Only two conventions exist in practice, so the choice is
 # a type token resolved to a scalar prefactor at the public boundary, mirroring
-# the `AbstractPropagation` idiom in `BackgroundCosmology/src/model.jl`.
+# the `AbstractPropagation` idiom in `GWBackgroundImportanceModels/src/propagation.jl`.
 # ---------------------------------------------------------------------------
 
 """Abstract supertype for inclination-averaging conventions."""

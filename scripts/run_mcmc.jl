@@ -14,31 +14,33 @@ const _REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 using GWBackground
 using GWBackground:
-                 load_catalog,
-                 average_mode,
-                 AnalyticInclination,
-                 CatalogInclination,
-                 effective_psd,
-                 ModifiedPropagation,
-                 LambdaCDM,
-                 Detector
+                    load_catalog,
+                    average_mode,
+                    AnalyticInclination,
+                    CatalogInclination,
+                    effective_psd,
+                    LambdaCDM,
+                    Detector
 using GWBackgroundImportanceModels:
-                                 prepare_bns_madau_dickinson_model,
-                                 bns_amplitude_scalings,
-                                 bns_hyperprior,
-                                 bns_hyperprior_amplitude_marginalized
+                                    prepare_bns_madau_dickinson_model,
+                                    bns_amplitude_scalings,
+                                    bns_hyperprior,
+                                    bns_hyperprior_amplitude_marginalized,
+                                    ModifiedPropagation,
+                                    apply_gw_distance_correction!,
+                                    propagation
 using GWBackgroundInference:
-                          gwbackground_importance_turing_model,
-                          gwbackground_amplitude_marginalized_turing_model,
-                          forward_model,
-                          quadrature_grid,
-                          reconstruct_amplitude,
-                          rename_posterior_for_netcdf,
-                          merge_into_posterior,
-                          MCMCConfig,
-                          load_config,
-                          save_config,
-                          posterior_params
+                             gwbackground_importance_turing_model,
+                             gwbackground_amplitude_marginalized_turing_model,
+                             forward_model,
+                             quadrature_grid,
+                             reconstruct_amplitude,
+                             rename_posterior_for_netcdf,
+                             merge_into_posterior,
+                             MCMCConfig,
+                             load_config,
+                             save_config,
+                             posterior_params
 using InferenceObjects: InferenceObjects
 # `to_netcdf` lives in InferenceObjects' NCDatasets extension, which only
 # activates when NCDatasets is loaded; it's an explicit dep of this project.
