@@ -69,6 +69,49 @@ Distributions.jl interface expects.
 """
 
 """
+    _cumtrapz(y, x) -> AbstractVector
+
+Cumulative trapezoidal integral of `y` over nodes `x`, evaluated at each node:
+`out[1] = 0` and `out[i+1] = out[i] + (x[i+1] - x[i]) * (y[i] + y[i+1]) / 2`.
+
+Private copy of the rule every grid consumer here relies on: the fixed max-shifted
+trapezoid analyzed in `QUADRATURE_NODES.md` is the *definition* of the discretized
+normalizer and CDF, not an approximation of some other quadrature.
+"""
+function _cumtrapz(y::AbstractVector, x::AbstractVector{<:Real})
+    n = length(x)
+    length(y) == n || throw(ArgumentError("x and y must have the same length"))
+    n >= 1 || throw(ArgumentError("_cumtrapz requires at least one grid point"))
+    cumulative = similar(y)
+    @inbounds cumulative[1] = zero(y[1])
+    acc = @inbounds cumulative[1]
+    @inbounds for i in 1:(n - 1)
+        dx = x[i + 1] - x[i]
+        acc = acc + dx * (y[i] + y[i + 1]) * 0.5
+        cumulative[i + 1] = acc
+    end
+    return cumulative
+end
+
+"""
+    _trapz(y, x) -> Real
+
+Integral of `y` over nodes `x` by the composite trapezoid rule, using the same
+accumulation order as [`_cumtrapz`](@ref), so `_trapz(y, x) === last(_cumtrapz(y, x))`.
+"""
+function _trapz(y::AbstractVector, x::AbstractVector{<:Real})
+    n = length(x)
+    length(y) == n || throw(ArgumentError("x and y must have the same length"))
+    n >= 1 || throw(ArgumentError("_trapz requires at least one grid point"))
+    acc = zero(@inbounds y[1])
+    @inbounds for i in 1:(n - 1)
+        dx = x[i + 1] - x[i]
+        acc = acc + dx * (y[i] + y[i + 1]) * 0.5
+    end
+    return acc
+end
+
+"""
     quadrature_grid(prior; num_nodes = 1024, span_sigma = 10.0) -> AbstractRange
 
 A quadrature grid covering essentially all of `prior`'s mass.
@@ -230,7 +273,7 @@ dense re-mesh:
 function _fine_mesh(c::AmplitudeConditional)
     log_y = _log_integrand(c)
     shifted = exp.(log_y .- maximum(log_y))
-    cdf = cumtrapz(shifted, c.grid)
+    cdf = _cumtrapz(shifted, c.grid)
     cdf ./= cdf[end]
 
     n = length(c.grid)
@@ -257,7 +300,7 @@ the MLE amplitude: the factor *is* the normalizing constant of the conditional t
 function log_normalizer(c::AmplitudeConditional)
     log_y = _log_integrand(c)
     log_y_max = maximum(log_y)
-    return log_y_max + log(trapz(exp.(log_y .- log_y_max), c.grid))
+    return log_y_max + log(_trapz(exp.(log_y .- log_y_max), c.grid))
 end
 
 """
@@ -312,7 +355,7 @@ the refined mesh.
 """
 function Distributions.quantile(c::AmplitudeConditional, q::Real)
     fine, fine_shifted = _fine_mesh(c)
-    cdf = cumtrapz(fine_shifted, fine)
+    cdf = _cumtrapz(fine_shifted, fine)
     cdf ./= cdf[end]
     return _quantile_from_cdf(cdf, fine, q)
 end

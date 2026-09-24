@@ -1,7 +1,6 @@
 module GWDistributions
 
 using DataInterpolations: LinearInterpolation
-using Trapezoid: trapz, cumtrapz
 
 export MadauDickinsonSourceFrame, source_frame_distribution, DEFAULT_Z_GRID
 export AbstractSourceFrame, Interpolated1DDistribution, normalizer,

@@ -3,13 +3,27 @@ using Distributions: Uniform, Normal, ContinuousUnivariateDistribution,
                      logpdf, quantile, mean, std, insupport
 using Random: Xoshiro
 using GWBackgroundInference: AmplitudeConditional, quadrature_grid, log_normalizer,
-                          effective_nodes, reconstruct_amplitude
+                             effective_nodes, reconstruct_amplitude
+using GWBackgroundInference.InferenceImpl: _trapz, _cumtrapz
 
-# Independent of Trapezoid.trapz, so the tests below check the quadrature rather than
-# restating it.
+# Independent of the implementation's `_trapz`, so the tests below check the quadrature
+# rather than restating it.
 function _reference_trapezoid(f, x)
     y = f.(x)
     return sum(0.5 .* (y[1:(end - 1)] .+ y[2:end]) .* diff(collect(x)))
+end
+
+@testset "private trapezoid helpers" begin
+    # Piecewise-linear y on a unit grid: the rule is exact, bitwise in Float64.
+    x = [0.0, 1.0, 2.0, 3.0]
+    y = [1.0, 3.0, 5.0, 7.0]  # y = 2x + 1, ∫₀³ = 12
+    @test _trapz(y, x) == 12.0
+    cumulative = _cumtrapz(y, x)
+    @test first(cumulative) == 0.0
+    @test last(cumulative) === _trapz(y, x)
+
+    @test_throws ArgumentError _trapz([1.0], [0.0, 1.0])
+    @test_throws ArgumentError _cumtrapz([1.0], [0.0, 1.0])
 end
 
 function _conditional(

@@ -1,7 +1,6 @@
 using ForwardDiff
 using Random
 using Distributions: insupport, logpdf
-using Trapezoid: trapz
 
 function _madau_dickinson_with_denom_exp(z, γ, denom_exp, zpeak)
     one_plus_z = 1 + z
@@ -41,14 +40,15 @@ end
                   source_frame_distribution(source_model, z_grid) / (1 + z_grid)
     @test distribution.dist.x == z_grid
     @test distribution.dist.y ≈ expected
-    @test normalizer(distribution) === trapz(distribution.dist.y, distribution.dist.x)
+    @test normalizer(distribution) ===
+          GWDistributions._trapz(distribution.dist.y, distribution.dist.x)
 
     # Shape-only integral × amplitude recovers the same normalizer
     shape = madau_dickinson_source_frame_distribution.(
         z_grid; γ = Λ.γ, κ = Λ.κ, zpeak = Λ.zpeak)
     shape_y = @. grid.differential_comoving_volume * shape / (1 + z_grid)
     @test normalizer(distribution) ≈
-          (1.0e-9 * Λ.R₀ / JULIAN_YEAR_SEC) * trapz(shape_y, z_grid)
+          (1.0e-9 * Λ.R₀ / JULIAN_YEAR_SEC) * GWDistributions._trapz(shape_y, z_grid)
 
     # Wrap-inner constructor
     wrapped = RedshiftInterpolatedDistribution(Interpolated1DDistribution(z_grid, expected))
